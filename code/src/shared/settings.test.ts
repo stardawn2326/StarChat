@@ -33,11 +33,14 @@ describe('settings sanitization', () => {
     expect(sanitizeAppSettings({ petInteractionMode: true }).petInteractionMode).toBe(true);
   });
 
-  it('sanitizes the selectable system and CosyVoice speech providers', () => {
+  it('uses CosyVoice as the only speech provider', () => {
     const defaults = sanitizeAppSettings({});
-    expect(defaults.ttsProvider).toBe('system');
+    expect(defaults.ttsProvider).toBe('cosyvoice');
     expect(defaults.cosyVoiceBaseUrl).toBe('http://127.0.0.1:50000');
     expect(defaults.cosyVoiceSpeaker).toBe('中文女');
+
+    const legacySystem = sanitizeAppSettings({ ttsProvider: 'system' } as never);
+    expect(legacySystem.ttsProvider).toBe('cosyvoice');
 
     const cosy = sanitizeAppSettings({
       ttsProvider: 'cosyvoice',

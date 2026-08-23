@@ -26,7 +26,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDefinition[] = [
   { id: 'live2d', title: 'Live2D 模型', icon: '◈', description: '只读导入、水印、表情动作与状态', summary: ({ modelPath }) => modelPath ? '外部模型已配置' : '尚未配置外部模型' },
   { id: 'composition', title: '模型构图', icon: '▣', description: '截取视口、缩放、偏移和恢复', summary: ({ modelPath }) => modelPath ? '按模型独立保存构图' : '选择模型后可调整' },
   { id: 'window', title: '窗口与交互', icon: '⌘', description: '窗口位置、置顶、锁定和点击穿透', summary: ({ alwaysOnTop }) => alwaysOnTop ? '置顶 · 普通状态点击穿透' : '普通状态点击穿透' },
-  { id: 'service', title: '服务来源', icon: '⇄', description: '对话 API、系统语音与 CosyVoice 本地服务', summary: () => '对话密钥隔离 · 语音可切换' },
+  { id: 'service', title: '服务来源', icon: '⇄', description: '对话 API 与 CosyVoice 本地语音服务', summary: () => '对话密钥隔离 · CosyVoice 专用' },
   { id: 'data', title: '数据与安全', icon: '◇', description: '人格导入导出、敏感设置和重置', summary: () => '角色包不包含 API Key' },
   { id: 'debug', title: '调试与关于', icon: '⌁', description: 'Cubism 指标、语义调试和许可说明', summary: () => '仅桌宠持有唯一 Cubism runtime' }
 ];

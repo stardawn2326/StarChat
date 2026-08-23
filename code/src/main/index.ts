@@ -12,7 +12,7 @@ import {
   Tray
 } from 'electron';
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
 import type {
@@ -41,6 +41,7 @@ import { inspectExternalLive2DModel } from './live2d-importer';
 import { nextPetDragBounds } from './window-drag';
 import { buildCompanionSystemPrompt, companionSummary, presentationForAssistantText, recordCompanionExchange } from '../shared/companion';
 import { synthesizeCosyVoice } from './tts/cosyvoice';
+import { ensureCosyVoiceService, stopManagedCosyVoiceService } from './tts/cosyvoice-service';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -65,6 +66,17 @@ const LIVE2D_MODEL_BASE = 'live2d://model/';
 const CLICK_TARGET_TITLE = 'BAOYIN_CLICK_TARGET';
 const interactionTestEnabled = process.env.BAOYIN_INTERACTION_TEST === '1' || process.argv.includes('--baoyin-interaction-test');
 const singleInstanceLock = app.requestSingleInstanceLock();
+
+function cosyVoiceProjectRoots(): string[] {
+  const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR;
+  return [
+    process.env.BAOYIN_COSYVOICE_PROJECT_ROOT ?? '',
+    portableExecutableDir ? resolve(portableExecutableDir, '..') : '',
+    resolve(app.getAppPath(), '..'),
+    resolve(dirname(process.execPath), '..'),
+    process.cwd()
+  ].filter(Boolean);
+}
 
 if (!singleInstanceLock) {
   void app.quit();
@@ -775,7 +787,9 @@ function registerIpc(): void {
   ipcMain.handle('tts:synthesize', async (event, request: { text?: unknown }) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口请求语音');
     const text = typeof request?.text === 'string' ? request.text : '';
-    return synthesizeCosyVoice(text, getStore().readSettings());
+    const settings = getStore().readSettings();
+    await ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots());
+    return synthesizeCosyVoice(text, settings);
   });
   ipcMain.handle('settings:save', (_event, request: SaveSettingsRequest) => {
     const store = getStore();
@@ -1068,6 +1082,9 @@ if (singleInstanceLock) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     settingsStore = new SettingsStore(app.getPath('userData'));
+    const settings = settingsStore.readSettings();
+    void ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots())
+      .catch((error: unknown) => console.warn('CosyVoice startup failed:', error));
     registerLive2DProtocol();
     registerIpc();
     createPetWindow();
@@ -1093,6 +1110,7 @@ app.on('before-quit', () => {
   persistPetBounds(true);
   isQuitting = true;
   stopCursorPolling();
+  stopManagedCosyVoiceService();
   globalShortcut.unregisterAll();
   tray?.destroy();
   tray = null;

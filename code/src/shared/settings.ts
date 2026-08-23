@@ -33,8 +33,7 @@ export interface AppSettings {
   cursorRangeY: number;
   cursorIdleMotion: number;
   presentation: PresentationSettings;
-  ttsProvider: 'system' | 'cosyvoice';
-  ttsSystemVoice: string;
+  ttsProvider: 'cosyvoice';
   ttsRate: number;
   ttsVolume: number;
   cosyVoiceBaseUrl: string;
@@ -101,8 +100,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   cursorRangeY: 1,
   cursorIdleMotion: 0.035,
   presentation: DEFAULT_PRESENTATION_SETTINGS,
-  ttsProvider: 'system',
-  ttsSystemVoice: '',
+  ttsProvider: 'cosyvoice',
   ttsRate: 1,
   ttsVolume: 1,
   cosyVoiceBaseUrl: 'http://127.0.0.1:50000',
@@ -247,8 +245,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
     cursorRangeY: Number.isFinite(cursorRangeY) ? Math.min(1, Math.max(0.1, cursorRangeY)) : DEFAULT_APP_SETTINGS.cursorRangeY,
     cursorIdleMotion: Number.isFinite(cursorIdleMotion) ? Math.min(0.15, Math.max(0, cursorIdleMotion)) : DEFAULT_APP_SETTINGS.cursorIdleMotion,
     presentation: sanitizePresentationSettings(input.presentation),
-    ttsProvider: input.ttsProvider === 'cosyvoice' ? 'cosyvoice' : 'system',
-    ttsSystemVoice: typeof input.ttsSystemVoice === 'string' ? input.ttsSystemVoice.trim() : '',
+    ttsProvider: 'cosyvoice',
     ttsRate: Number.isFinite(ttsRate) ? Math.min(2, Math.max(0.5, ttsRate)) : DEFAULT_APP_SETTINGS.ttsRate,
     ttsVolume: Number.isFinite(ttsVolume) ? Math.min(1, Math.max(0, ttsVolume)) : DEFAULT_APP_SETTINGS.ttsVolume,
     cosyVoiceBaseUrl:
