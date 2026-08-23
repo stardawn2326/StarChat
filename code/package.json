@@ -1,6 +1,6 @@
 {
   "name": "baoyin-ai-assistant",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Project-008 白音 AI 助手的 Windows 桌宠首阶段工程。",
   "type": "module",

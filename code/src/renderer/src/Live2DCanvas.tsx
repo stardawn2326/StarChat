@@ -116,7 +116,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
         // and the presentation event above can replace expressionEffects.
         // Apply the model-native exp3 switch last, after Cubism has finished
         // loading; this never edits, crops, or masks the external model asset.
-        module.controller.playExpression(showWatermark ? 'watermark_on' : 'watermark_off');
+        module.controller.setWatermarkVisible(showWatermark);
         setRuntimeStatus('真实 Cubism WebGL 已启动 · 外部资源只读引用');
       })
       .catch((error: unknown) => {
@@ -230,7 +230,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime || !ready) return;
-    runtime.controller.playExpression(showWatermark ? 'watermark_on' : 'watermark_off');
+    runtime.controller.setWatermarkVisible(showWatermark);
   }, [showWatermark, ready, runtimeRef]);
 
   useEffect(() => {

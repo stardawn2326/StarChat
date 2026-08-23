@@ -105,6 +105,9 @@ const bridge = {
       return () => ipcRenderer.removeListener('presentation:event', listener);
     }
   },
+  tts: {
+    synthesize: (text: string): Promise<string> => ipcRenderer.invoke('tts:synthesize', { text })
+  },
   pet: {
     show: (): void => ipcRenderer.send('pet:show'),
     center: (): void => ipcRenderer.send('pet:center'),

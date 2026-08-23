@@ -29,5 +29,8 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(mainSourceText).toContain("document.title = role === 'pet' ? '' : '白音 AI 助手'");
     expect(stylesSource).toMatch(/\.pet-shell\.pet-hovered\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-shell\.pet-model-editing\s*\{\s*outline:\s*none/s);
+    expect(mainSource).toContain('autoHideMenuBar: true');
+    expect(petSource).not.toContain('model-viewport-controls');
+    expect(stylesSource).toMatch(/html, body, #root\s*\{[^}]*background:\s*transparent/s);
   });
 });

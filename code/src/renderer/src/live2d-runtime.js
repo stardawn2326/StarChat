@@ -68,6 +68,8 @@ let modelBase = null;
 let currentTransform = { userScale: 1, userX: 0, userY: 0 };
 let lipSyncValue = 0;
 let lipSyncHandler = null;
+let persistentWatermarkHandler = null;
+let persistentWatermarkEffect = null;
 let gazeEnabled = true;
 
 function finite(value, fallback) {
@@ -374,6 +376,12 @@ function installModelEvents() {
     internalModel?.coreModel?.setParameterValueById?.('ParamMouthOpenY', lipSyncValue);
   };
   internalModel?.on?.('beforeModelUpdate', lipSyncHandler);
+  persistentWatermarkHandler = () => {
+    if (persistentWatermarkEffect?.id) {
+      internalModel?.coreModel?.setParameterValueById?.(persistentWatermarkEffect.id, persistentWatermarkEffect.value);
+    }
+  };
+  internalModel?.on?.('beforeModelUpdate', persistentWatermarkHandler);
   model?.on?.('hit', (hitAreas) => {
     const motionManager = model?.internalModel?.motionManager;
     const hitBody = (hitAreas ?? []).some((area) => /body|head/i.test(area));
@@ -462,7 +470,10 @@ export const controller = {
       app.stage.removeChild(model);
     }
     if (lipSyncHandler) model?.internalModel?.off?.('beforeModelUpdate', lipSyncHandler);
+    if (persistentWatermarkHandler) model?.internalModel?.off?.('beforeModelUpdate', persistentWatermarkHandler);
     lipSyncHandler = null;
+    persistentWatermarkHandler = null;
+    persistentWatermarkEffect = null;
     lipSyncValue = 0;
     model?.destroy?.({ children: true });
     model = null;
@@ -589,6 +600,13 @@ export const controller = {
 
   setLipSync(value) {
     lipSyncValue = clamp(finite(Number(value), 0), 0, 1);
+  },
+
+  setWatermarkVisible(visible) {
+    const route = semanticAdapter?.setWatermark(visible) ?? routeFor(visible ? 'watermark_on' : 'watermark_off', 'system');
+    const effect = route?.effects?.find((candidate) => candidate?.id && Number.isFinite(Number(candidate.value)));
+    persistentWatermarkEffect = effect ? { id: effect.id, value: Number(effect.value) } : null;
+    persistentWatermarkHandler?.();
   },
 
   getMetrics() {

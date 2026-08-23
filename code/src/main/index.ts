@@ -40,6 +40,7 @@ import { SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
 import { nextPetDragBounds } from './window-drag';
 import { buildCompanionSystemPrompt, companionSummary, presentationForAssistantText, recordCompanionExchange } from '../shared/companion';
+import { synthesizeCosyVoice } from './tts/cosyvoice';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -365,6 +366,7 @@ function createPetWindow(): void {
     minWidth: 240,
     minHeight: 240,
     frame: false,
+    autoHideMenuBar: true,
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
@@ -382,6 +384,8 @@ function createPetWindow(): void {
   });
 
   petWindow?.setTitle('');
+  petWindow.setMenuBarVisibility(false);
+  petWindow.setBackgroundColor('#00000000');
   applyPetWindowSettings();
   petWindow.setIgnoreMouseEvents(true, { forward: true });
   petWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -768,6 +772,11 @@ async function runChat(
 
 function registerIpc(): void {
   ipcMain.handle('state:get', () => getPublicState());
+  ipcMain.handle('tts:synthesize', async (event, request: { text?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口请求语音');
+    const text = typeof request?.text === 'string' ? request.text : '';
+    return synthesizeCosyVoice(text, getStore().readSettings());
+  });
   ipcMain.handle('settings:save', (_event, request: SaveSettingsRequest) => {
     const store = getStore();
     const previousSettings = store.readSettings();

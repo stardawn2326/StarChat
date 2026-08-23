@@ -23,6 +23,10 @@ export interface SaveSettingsRequest {
   licenseAccepted?: boolean;
 }
 
+export interface TtsSynthesizeRequest {
+  text: string;
+}
+
 export type SettingsPreviewDetail =
   | { domain: 'window'; patch: Partial<Pick<AppSettings, 'petBounds' | 'petWindowOpacity' | 'petHoverBorderOpacity' | 'petHoverShowDelayMs' | 'petHoverFadeMs'>> }
   | { domain: 'settings'; patch: Partial<AppSettings> }

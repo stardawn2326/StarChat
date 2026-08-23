@@ -33,6 +33,12 @@ export interface AppSettings {
   cursorRangeY: number;
   cursorIdleMotion: number;
   presentation: PresentationSettings;
+  ttsProvider: 'system' | 'cosyvoice';
+  ttsSystemVoice: string;
+  ttsRate: number;
+  ttsVolume: number;
+  cosyVoiceBaseUrl: string;
+  cosyVoiceSpeaker: string;
 }
 
 export interface ModelViewportSettings {
@@ -94,7 +100,13 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   cursorRangeX: 1,
   cursorRangeY: 1,
   cursorIdleMotion: 0.035,
-  presentation: DEFAULT_PRESENTATION_SETTINGS
+  presentation: DEFAULT_PRESENTATION_SETTINGS,
+  ttsProvider: 'system',
+  ttsSystemVoice: '',
+  ttsRate: 1,
+  ttsVolume: 1,
+  cosyVoiceBaseUrl: 'http://127.0.0.1:50000',
+  cosyVoiceSpeaker: '中文女'
 };
 
 function isKnownPrivateMikuPath(value: unknown): boolean {
@@ -164,6 +176,8 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
   const petHoverBorderOpacity = Number(input.petHoverBorderOpacity);
   const petHoverShowDelayMs = Number(input.petHoverShowDelayMs);
   const petHoverFadeMs = Number(input.petHoverFadeMs);
+  const ttsRate = Number(input.ttsRate);
+  const ttsVolume = Number(input.ttsVolume);
   const defaultShowWatermark = isKnownPrivateMikuPath(input.live2dModelPath) ? false : DEFAULT_APP_SETTINGS.live2dShowWatermark;
   const modelViewportByModel = sanitizeModelViewportMap(input.modelViewportByModel);
   const bounds = input.petBounds;
@@ -232,7 +246,19 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
     cursorRangeX: Number.isFinite(cursorRangeX) ? Math.min(1, Math.max(0.1, cursorRangeX)) : DEFAULT_APP_SETTINGS.cursorRangeX,
     cursorRangeY: Number.isFinite(cursorRangeY) ? Math.min(1, Math.max(0.1, cursorRangeY)) : DEFAULT_APP_SETTINGS.cursorRangeY,
     cursorIdleMotion: Number.isFinite(cursorIdleMotion) ? Math.min(0.15, Math.max(0, cursorIdleMotion)) : DEFAULT_APP_SETTINGS.cursorIdleMotion,
-    presentation: sanitizePresentationSettings(input.presentation)
+    presentation: sanitizePresentationSettings(input.presentation),
+    ttsProvider: input.ttsProvider === 'cosyvoice' ? 'cosyvoice' : 'system',
+    ttsSystemVoice: typeof input.ttsSystemVoice === 'string' ? input.ttsSystemVoice.trim() : '',
+    ttsRate: Number.isFinite(ttsRate) ? Math.min(2, Math.max(0.5, ttsRate)) : DEFAULT_APP_SETTINGS.ttsRate,
+    ttsVolume: Number.isFinite(ttsVolume) ? Math.min(1, Math.max(0, ttsVolume)) : DEFAULT_APP_SETTINGS.ttsVolume,
+    cosyVoiceBaseUrl:
+      typeof input.cosyVoiceBaseUrl === 'string' && input.cosyVoiceBaseUrl.trim()
+        ? input.cosyVoiceBaseUrl.trim().replace(/\/+$/, '')
+        : DEFAULT_APP_SETTINGS.cosyVoiceBaseUrl,
+    cosyVoiceSpeaker:
+      typeof input.cosyVoiceSpeaker === 'string' && input.cosyVoiceSpeaker.trim()
+        ? input.cosyVoiceSpeaker.trim()
+        : DEFAULT_APP_SETTINGS.cosyVoiceSpeaker
   };
 }
 

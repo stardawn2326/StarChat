@@ -33,6 +33,26 @@ describe('settings sanitization', () => {
     expect(sanitizeAppSettings({ petInteractionMode: true }).petInteractionMode).toBe(true);
   });
 
+  it('sanitizes the selectable system and CosyVoice speech providers', () => {
+    const defaults = sanitizeAppSettings({});
+    expect(defaults.ttsProvider).toBe('system');
+    expect(defaults.cosyVoiceBaseUrl).toBe('http://127.0.0.1:50000');
+    expect(defaults.cosyVoiceSpeaker).toBe('中文女');
+
+    const cosy = sanitizeAppSettings({
+      ttsProvider: 'cosyvoice',
+      ttsRate: 9,
+      ttsVolume: -1,
+      cosyVoiceBaseUrl: 'http://127.0.0.1:50000///',
+      cosyVoiceSpeaker: '  中文女  '
+    });
+    expect(cosy.ttsProvider).toBe('cosyvoice');
+    expect(cosy.ttsRate).toBe(2);
+    expect(cosy.ttsVolume).toBe(0);
+    expect(cosy.cosyVoiceBaseUrl).toBe('http://127.0.0.1:50000');
+    expect(cosy.cosyVoiceSpeaker).toBe('中文女');
+  });
+
   it('uses a private Miku-only watermark default while keeping the setting reversible', () => {
     expect(sanitizeAppSettings({}).live2dShowWatermark).toBe(true);
     expect(sanitizeAppSettings({ live2dModelPath: 'D:\\BaiduNetdiskDownload\\miku\\miku\\miku.model3.json' }).live2dShowWatermark).toBe(false);

@@ -90,4 +90,11 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(runtimeSource).not.toContain('model.position.set(userX');
     expect(runtimeSource).toContain('do not call applyModelTransform here');
   });
+
+  it('keeps the model-provided watermark switch persistent across expressions and reloads', () => {
+    expect(runtimeSource).toContain('setWatermarkVisible');
+    expect(runtimeSource).toContain('persistentWatermarkHandler');
+    expect(canvasSource).toContain('controller.setWatermarkVisible(showWatermark)');
+    expect(canvasSource).not.toContain("playExpression(showWatermark ? 'watermark_on' : 'watermark_off')");
+  });
 });

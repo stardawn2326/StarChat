@@ -178,10 +178,6 @@ function PetApp(): JSX.Element {
       if (event.button !== 0) {
         return;
       }
-      const target = event.target;
-      if (target instanceof Element && target.closest('.model-viewport-controls')) {
-        return;
-      }
       if (locked.current || activePointer.current || (!modelEditMode && (!interactionMode || !hoveredRef.current))) {
         return;
       }
@@ -269,10 +265,6 @@ function PetApp(): JSX.Element {
       }
     };
     const handleWheel = (event: WheelEvent): void => {
-      const target = event.target;
-      if (target instanceof Element && target.closest('.model-viewport-controls')) {
-        return;
-      }
       if (!modelEditMode || locked.current) {
         return;
       }
@@ -369,14 +361,6 @@ function PetApp(): JSX.Element {
           <span>{appState.live2d.message}</span>
         </section>
       )}
-      {modelEditMode && modelReady ? (
-        <div className="model-viewport-controls" role="toolbar" aria-label="模型视口调整">
-          <span>调整模型：拖动 · 滚轮缩放</span>
-          <button type="button" onClick={() => persistModelViewport(updateModelViewport({ modelOffsetX: 0, modelOffsetY: 0 }))}>模型居中</button>
-          <button type="button" onClick={() => persistModelViewport(updateModelViewport({ modelOffsetX: 0, modelOffsetY: 0, modelScale: 0.92 }))}>适应高度</button>
-          <button type="button" onClick={() => persistModelViewport(updateModelViewport(DEFAULT_MODEL_VIEWPORT))}>恢复默认</button>
-        </div>
-      ) : null}
     </main>
   );
 }

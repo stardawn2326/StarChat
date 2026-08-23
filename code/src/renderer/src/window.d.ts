@@ -70,6 +70,9 @@ declare global {
         emit(event: PresentationEvent): void;
         onEvent(callback: (event: PresentationBridgeEvent) => void): () => void;
       };
+      tts: {
+        synthesize(text: string): Promise<string>;
+      };
       pet: {
         show(): void;
         center(): void;

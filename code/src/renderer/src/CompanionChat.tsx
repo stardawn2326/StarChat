@@ -1,13 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, PublicAppState } from '../../shared/ipc';
+import type { AppSettings } from '../../shared/settings';
 
 interface CompanionChatProps { state: PublicAppState }
 
-function speak(text: string): void {
-  if (!text.trim() || !('speechSynthesis' in window)) return;
+async function speak(text: string, settings: AppSettings): Promise<void> {
+  if (!text.trim()) return;
+  if (settings.ttsProvider === 'cosyvoice') {
+    const audio = new Audio(await window.baoyin.tts.synthesize(text));
+    audio.volume = settings.ttsVolume;
+    audio.playbackRate = settings.ttsRate;
+    audio.onplaying = () => window.baoyin.presentation.emit({ type: 'speech', speaking: true, source: 'assistant' });
+    audio.onended = audio.onerror = () => window.baoyin.presentation.emit({ type: 'speech', speaking: false, source: 'assistant' });
+    await audio.play();
+    return;
+  }
+  if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const utterance = new SpeechSynthesisUtterance(text);
   utterance.lang = 'zh-CN';
+  utterance.rate = settings.ttsRate;
+  utterance.volume = settings.ttsVolume;
+  const selectedVoice = window.speechSynthesis.getVoices().find((voice) => voice.name === settings.ttsSystemVoice);
+  if (selectedVoice) utterance.voice = selectedVoice;
   utterance.onstart = () => window.baoyin.presentation.emit({ type: 'speech', speaking: true, source: 'assistant' });
   utterance.onend = utterance.onerror = () => window.baoyin.presentation.emit({ type: 'speech', speaking: false, source: 'assistant' });
   window.speechSynthesis.speak(utterance);
@@ -20,6 +35,8 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const activeId = useRef<string | null>(null);
   const assistantText = useRef('');
+  const settingsRef = useRef(state.settings);
+  settingsRef.current = state.settings;
 
   useEffect(() => window.baoyin.chat.onEvent((event) => {
     if (event.requestId !== activeId.current) return;
@@ -39,7 +56,10 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
       });
       activeId.current = null;
       setRequestId(null);
-      speak(finalText);
+      void speak(finalText, settingsRef.current).catch((reason: unknown) => {
+        window.baoyin.presentation.emit({ type: 'speech', speaking: false, source: 'assistant' });
+        setError(reason instanceof Error ? reason.message : '语音播放失败');
+      });
     } else {
       setError(event.message);
       activeId.current = null;
@@ -77,6 +97,6 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     </div>
     {error ? <p className="error-banner">{error}</p> : null}
     <div className="companion-composer"><textarea value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送</button>{requestId ? <button className="secondary-button" type="button" onClick={() => void window.baoyin.chat.cancel(requestId)}>停止</button> : null}</div>
-    <p className="runtime-capability-note">语音使用当前可用的中文系统声音；播放时驱动模型口型。API Key只保存在主进程用户数据目录。</p>
+    <p className="runtime-capability-note">语音提供器：{state.settings.ttsProvider === 'cosyvoice' ? `CosyVoice · ${state.settings.cosyVoiceSpeaker}` : 'Windows 系统语音'}；播放时驱动模型口型。API Key只保存在主进程用户数据目录。</p>
   </div>;
 }
