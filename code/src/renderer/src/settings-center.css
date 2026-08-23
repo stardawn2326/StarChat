@@ -1,0 +1,19 @@
+html[data-baoyin-window="settings"], body[data-window="settings"], body[data-window="settings"] #root { height: 100%; min-height: 0; overflow: hidden; }
+body[data-window="settings"] .settings-center-shell { height: 100vh; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
+body[data-window="settings"] .settings-center-shell::-webkit-scrollbar { width: 0; height: 0; }
+body[data-window="settings"] .titlebar { position: sticky; top: 0; z-index: 20; -webkit-app-region: drag; }
+body[data-window="settings"] .titlebar button, body[data-window="settings"] .settings-home, body[data-window="settings"] .settings-details, body[data-window="settings"] input, body[data-window="settings"] textarea, body[data-window="settings"] select, body[data-window="settings"] button { -webkit-app-region: no-drag; }
+
+.companion-chat { display: grid; gap: 14px; }
+.companion-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.companion-status span { display: grid; gap: 4px; padding: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; color: #aaa1ba; }
+.companion-status strong { color: #fff; font-size: 14px; }
+.companion-messages { min-height: 240px; max-height: 440px; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: 12px; background: rgba(0,0,0,.18); }
+.companion-message { max-width: 84%; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.07); }
+.companion-message.user { align-self: flex-end; background: rgba(143,98,211,.25); }
+.companion-message p { margin: 5px 0 0; white-space: pre-wrap; line-height: 1.55; }
+.companion-composer { display: flex; align-items: flex-end; gap: 8px; }
+.companion-composer textarea { flex: 1; resize: vertical; }
+@media (max-width: 620px) { .companion-status { grid-template-columns: repeat(2, 1fr); } }
+.role-create-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+.runtime-capability-note { padding: 10px 12px; border: 1px dashed rgba(203, 183, 246, .35); border-radius: 10px; color: #b9aec7; font-size: 11px; line-height: 1.55; }

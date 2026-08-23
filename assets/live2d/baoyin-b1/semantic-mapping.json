@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "status": "provisional-until-human-label-review",
+  "source": "assets/character/白音-B1-十二表情设定.png and assets/character/白音-B1-八动作姿态.png",
+  "expressions": [
+    {"id":"neutral","referenceIndex":1,"label":"自然待机","parameters":{"ParamEyeLOpen":1,"ParamEyeROpen":1,"ParamMouthForm":0,"ParamMouthOpenY":0,"ParamBlush":0}},
+    {"id":"caring_smile","referenceIndex":2,"label":"关心微笑","parameters":{"ParamEyeLOpen":0.8,"ParamEyeROpen":0.8,"ParamMouthForm":0.45,"ParamMouthOpenY":0.05,"ParamBlush":0.1}},
+    {"id":"bright_smile","referenceIndex":3,"label":"明亮笑容","parameters":{"ParamEyeLOpen":0.75,"ParamEyeROpen":0.75,"ParamMouthForm":0.7,"ParamMouthOpenY":0.65,"ParamBlush":0.08},"visibility":["Mouth_Teeth"]},
+    {"id":"annoyed","referenceIndex":4,"label":"轻微不满","parameters":{"ParamEyeLOpen":0.55,"ParamEyeROpen":0.55,"ParamBrowL":-0.35,"ParamBrowR":-0.35,"ParamMouthForm":-0.45,"ParamBlush":0.05}},
+    {"id":"embarrassed","referenceIndex":5,"label":"尴尬躲闪","parameters":{"ParamEyeLOpen":0.45,"ParamEyeROpen":0.45,"ParamBrowL":0.2,"ParamBrowR":0.2,"ParamMouthForm":-0.1,"ParamBlush":0.55}},
+    {"id":"tsundere_pout","referenceIndex":6,"label":"傲娇鼓脸","parameters":{"ParamEyeLOpen":0.6,"ParamEyeROpen":0.6,"ParamBrowL":-0.5,"ParamBrowR":-0.5,"ParamMouthForm":-0.65,"ParamMouthOpenY":0}},
+    {"id":"worried","referenceIndex":7,"label":"担忧","parameters":{"ParamEyeLOpen":0.65,"ParamEyeROpen":0.65,"ParamBrowL":0.55,"ParamBrowR":0.55,"ParamMouthForm":-0.2,"ParamBlush":0}},
+    {"id":"anxious","referenceIndex":8,"label":"不安","parameters":{"ParamEyeLOpen":0.6,"ParamEyeROpen":0.6,"ParamBrowL":0.4,"ParamBrowR":0.4,"ParamMouthForm":-0.35,"ParamBlush":0.1},"visibility":["TearOrSweat_Optional"]},
+    {"id":"blush","referenceIndex":9,"label":"害羞","parameters":{"ParamEyeLOpen":0.7,"ParamEyeROpen":0.7,"ParamMouthForm":0.1,"ParamBlush":0.85}},
+    {"id":"surprised","referenceIndex":10,"label":"惊讶","parameters":{"ParamEyeLOpen":1,"ParamEyeROpen":1,"ParamMouthForm":0,"ParamMouthOpenY":0.7,"ParamEyeBallY":0.1},"visibility":["Mouth_O"]},
+    {"id":"confused_blank","referenceIndex":11,"label":"短暂困惑","parameters":{"ParamEyeLOpen":0.95,"ParamEyeROpen":0.95,"ParamEyeBallX":0.15,"ParamMouthForm":0,"ParamMouthOpenY":0.15}},
+    {"id":"sleepy","referenceIndex":12,"label":"困倦","parameters":{"ParamEyeLOpen":0.25,"ParamEyeROpen":0.25,"ParamMouthForm":-0.05,"ParamMouthOpenY":0.05}}
+  ],
+  "actions": [
+    {"id":"idle","referenceIndex":1,"label":"待机呼吸","motionFile":"motions/idle.motion3.json","implementation":"breath-plus-small-body-sway"},
+    {"id":"greet","referenceIndex":2,"label":"挥手问候","motionFile":"motions/greet.motion3.json","implementation":"upper-body-wave-only"},
+    {"id":"look_away","referenceIndex":3,"label":"移开视线","motionFile":"motions/look-away.motion3.json","implementation":"head-angle-plus-eye-ball"},
+    {"id":"lean_forward","referenceIndex":4,"label":"前倾倾听","motionFile":"motions/lean-forward.motion3.json","implementation":"body-angle-y-small"},
+    {"id":"nod","referenceIndex":5,"label":"点头回应","motionFile":"motions/nod.motion3.json","implementation":"head-angle-y-small"},
+    {"id":"shake_head","referenceIndex":6,"label":"摇头拒绝","motionFile":"motions/shake-head.motion3.json","implementation":"head-angle-x-small"},
+    {"id":"thinking","referenceIndex":7,"label":"认真思考","motionFile":"motions/thinking.motion3.json","implementation":"upper-body-hand-pose-optional"},
+    {"id":"stretch","referenceIndex":8,"label":"伸展","motionFile":"motions/stretch.motion3.json","implementation":"optional-full-body-pose"}
+  ],
+  "verificationNote": "参考板没有文字标签；referenceIndex 仅按当前网格视觉顺序暂定，制作前需要人工确认语义。"
+}

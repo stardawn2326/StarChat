@@ -1,0 +1,64 @@
+{
+  "name": "baoyin-ai-assistant",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Project-008 白音 AI 助手的 Windows 桌宠首阶段工程。",
+  "type": "module",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "verify:live2d": "vitest run src/main/live2d-verification.test.ts",
+    "build": "electron-vite build",
+    "package:win": "electron-vite build && electron-builder.cmd --win portable"
+  },
+  "dependencies": {
+    "@pixi/app": "6.5.10",
+    "@pixi/constants": "6.5.10",
+    "@pixi/core": "6.5.10",
+    "@pixi/display": "6.5.10",
+    "@pixi/extensions": "6.5.10",
+    "@pixi/interaction": "6.5.10",
+    "@pixi/loaders": "6.5.10",
+    "@pixi/math": "6.5.10",
+    "@pixi/runner": "6.5.10",
+    "@pixi/settings": "6.5.10",
+    "@pixi/sprite": "6.5.10",
+    "@pixi/ticker": "6.5.10",
+    "@pixi/utils": "6.5.10",
+    "pixi-live2d-display": "0.4.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "@types/node": "^22.10.5",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "electron": "^35.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.1.0",
+    "typescript": "^5.7.3",
+    "vite": "^5.4.14",
+    "vitest": "^2.1.8"
+  },
+  "build": {
+    "appId": "com.baoyin.aiassistant",
+    "productName": "白音 AI 助手",
+    "directories": {
+      "output": "../outputs"
+    },
+    "files": [
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "portable"
+      ],
+      "signAndEditExecutable": false
+    }
+  }
+}

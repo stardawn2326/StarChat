@@ -1,0 +1,34 @@
+import { describe, expect, it } from 'vitest';
+import { DEFAULT_ROLE_PACKAGE } from './default-role';
+import { createPersonalityRequestSnapshot } from './personality-contract';
+import { buildCompanionSystemPrompt, companionSummary, createCompanionState, presentationForAssistantText, recordCompanionExchange } from './companion';
+
+describe('companion relationship, memory and presentation contract', () => {
+  const snapshot = createPersonalityRequestSnapshot(DEFAULT_ROLE_PACKAGE, 1);
+
+  it('grows the relationship gradually and remembers explicit user facts without duplicates', () => {
+    const initial = createCompanionState(snapshot.roleId, 1);
+    const first = recordCompanionExchange(initial, snapshot, '我喜欢紫色，也喜欢安静的音乐。', '知道了。', 2);
+    const second = recordCompanionExchange(first, snapshot, '我喜欢紫色，也喜欢安静的音乐。', '不会忘。', 3);
+    expect(first.interactionCount).toBe(1);
+    expect(first.affinity).toBeGreaterThan(0);
+    expect(first.affinity).toBeLessThan(10);
+    expect(second.memories).toHaveLength(1);
+    expect(companionSummary(second, snapshot.relationshipStages).stageIndex).toBe(0);
+  });
+
+  it('injects only the current relationship stage and saved memories into a request prompt', () => {
+    const state = recordCompanionExchange(createCompanionState(snapshot.roleId), snapshot, '我叫小明。', '记住了。', 4);
+    const prompt = buildCompanionSystemPrompt(snapshot, state);
+    expect(prompt).toContain(snapshot.systemPrompt);
+    expect(prompt).toContain('我叫小明');
+    expect(prompt).toContain('不得突然越级');
+    expect(prompt).not.toContain('API Key');
+  });
+
+  it('maps assistant meaning through the role whitelist instead of arbitrary Cubism parameters', () => {
+    const events = presentationForAssistantText('这件事我不能答应。', snapshot.semanticMappings);
+    expect(events).toContainEqual({ type: 'expression', name: 'annoyed', source: 'assistant', layer: 'dialogue_emotion' });
+    expect(events).toContainEqual({ type: 'action', name: 'shake_head', source: 'assistant', layer: 'reply_state' });
+  });
+});

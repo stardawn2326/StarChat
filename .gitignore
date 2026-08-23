@@ -1,0 +1,33 @@
+# Dependencies and generated build output
+code/node_modules/
+code/out/
+outputs/
+.pnpm-store/
+
+# Runtime data, logs, local research caches
+data/
+logs/
+.firecrawl/
+tools/video-analysis-python/
+
+# User-local configuration and secrets
+**/settings.json
+**/secrets.json
+**/roles.json
+**/companion-state.json
+*.log
+
+# External or licensed Live2D source assets must never enter this repository
+*.moc3
+*.model3.json
+*.physics3.json
+*.pose3.json
+*.motion3.json
+*.exp3.json
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/

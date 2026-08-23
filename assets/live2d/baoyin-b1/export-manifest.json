@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "modelId": "baoyin-b1",
+  "status": "not-exported",
+  "sourceProject": "source/baoyin-b1.cmo3",
+  "requiredFiles": [
+    {"path":"runtime/baoyin-b1.model3.json","kind":"model","status":"missing"},
+    {"path":"runtime/baoyin-b1.moc3","kind":"moc","status":"missing"},
+    {"path":"runtime/textures/texture_00.png","kind":"texture","status":"missing"},
+    {"path":"runtime/baoyin-b1.physics3.json","kind":"physics","status":"missing"},
+    {"path":"runtime/expressions/neutral.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/caring_smile.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/bright_smile.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/annoyed.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/embarrassed.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/tsundere_pout.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/worried.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/anxious.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/blush.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/surprised.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/confused_blank.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/expressions/sleepy.exp3.json","kind":"expression","status":"missing"},
+    {"path":"runtime/motions/idle.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/greet.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/look-away.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/lean-forward.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/nod.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/shake-head.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/thinking.motion3.json","kind":"motion","status":"missing"},
+    {"path":"runtime/motions/stretch.motion3.json","kind":"motion","status":"missing"}
+  ],
+  "exportRules": [
+    "导出前保存新的 .cmo3 版本并记录版本号",
+    "runtime 不覆盖旧目录，使用日期或版本目录保留回滚",
+    "用 Cubism Viewer 或桌宠宿主逐项验证模型加载、物理和表情",
+    "model3.json 的 expression/motion 名称必须与 semantic-mapping.json 一致"
+  ],
+  "verifiedEvidence": []
+}

@@ -1,0 +1,5 @@
+allowBuilds:
+  electron: true
+  esbuild: true
+patchedDependencies:
+  pixi-live2d-display: patches/pixi-live2d-display.patch
