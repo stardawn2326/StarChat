@@ -106,7 +106,11 @@ const bridge = {
     }
   },
   tts: {
-    synthesize: (text: string): Promise<string> => ipcRenderer.invoke('tts:synthesize', { text })
+    synthesize: (text: string): Promise<string> => ipcRenderer.invoke('tts:synthesize', { text }),
+    importVoice: (request: { name: string; promptText: string }): Promise<PublicAppState> => ipcRenderer.invoke('voices:import', request),
+    activateVoice: (id: string | null): Promise<PublicAppState> => ipcRenderer.invoke('voices:activate', { id }),
+    deleteVoice: (id: string): Promise<PublicAppState> => ipcRenderer.invoke('voices:delete', { id }),
+    previewVoice: (id: string, text: string): Promise<string> => ipcRenderer.invoke('voices:preview', { id, text })
   },
   pet: {
     show: (): void => ipcRenderer.send('pet:show'),

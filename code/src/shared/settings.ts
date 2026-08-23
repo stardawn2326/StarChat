@@ -38,6 +38,8 @@ export interface AppSettings {
   ttsVolume: number;
   cosyVoiceBaseUrl: string;
   cosyVoiceSpeaker: string;
+  cosyVoiceMode: 'sft' | 'zero-shot';
+  activeVoiceProfileId: string | null;
 }
 
 export interface ModelViewportSettings {
@@ -104,7 +106,9 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   ttsRate: 1,
   ttsVolume: 1,
   cosyVoiceBaseUrl: 'http://127.0.0.1:50000',
-  cosyVoiceSpeaker: '中文女'
+  cosyVoiceSpeaker: '中文女',
+  cosyVoiceMode: 'sft',
+  activeVoiceProfileId: null
 };
 
 function isKnownPrivateMikuPath(value: unknown): boolean {
@@ -255,7 +259,12 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
     cosyVoiceSpeaker:
       typeof input.cosyVoiceSpeaker === 'string' && input.cosyVoiceSpeaker.trim()
         ? input.cosyVoiceSpeaker.trim()
-        : DEFAULT_APP_SETTINGS.cosyVoiceSpeaker
+        : DEFAULT_APP_SETTINGS.cosyVoiceSpeaker,
+    cosyVoiceMode: input.cosyVoiceMode === 'zero-shot' ? 'zero-shot' : 'sft',
+    activeVoiceProfileId:
+      typeof input.activeVoiceProfileId === 'string' && input.activeVoiceProfileId.trim()
+        ? input.activeVoiceProfileId.trim()
+        : null
   };
 }
 

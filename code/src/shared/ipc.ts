@@ -5,6 +5,7 @@ import type { PresentationEvent } from './presentation';
 import type { CubismParameterPatch, CubismRuntimeMetrics } from './cubism';
 import type { PresentationSettings } from './presentation-contract';
 import type { CompanionSummary } from './companion';
+import type { VoiceProfile } from './voice-profile';
 
 export interface PublicAppState {
   settings: AppSettings;
@@ -13,6 +14,7 @@ export interface PublicAppState {
   roles: RolePackage[];
   live2d: Live2DModelState;
   companion: CompanionSummary;
+  voices: VoiceProfile[];
 }
 
 export interface SaveSettingsRequest {

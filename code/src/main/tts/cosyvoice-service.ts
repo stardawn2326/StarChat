@@ -14,6 +14,11 @@ export interface CosyVoiceInstallPaths {
 
 let managedProcess: ChildProcess | null = null;
 let startupPromise: Promise<void> | null = null;
+let managedMode: 'sft' | 'zero-shot' | null = null;
+
+export function cosyVoiceLauncherArgs(launcherPath: string, mode: 'sft' | 'zero-shot'): string[] {
+  return [launcherPath, '--voice-mode', mode];
+}
 
 export function cosyVoiceInstallPathsForRoot(projectRoot: string): CosyVoiceInstallPaths {
   return {
@@ -58,9 +63,15 @@ function delay(milliseconds: number): Promise<void> {
 
 export async function ensureCosyVoiceService(
   baseUrl: string,
-  projectRoots: readonly string[]
+  projectRoots: readonly string[],
+  mode: 'sft' | 'zero-shot' = 'sft'
 ): Promise<void> {
-  if (!isManagedCosyVoiceBaseUrl(baseUrl) || await isReady(baseUrl)) return;
+  if (!isManagedCosyVoiceBaseUrl(baseUrl)) return;
+  if (managedProcess && managedMode !== mode) {
+    managedProcess.kill(); managedProcess = null; managedMode = null;
+    for (let index = 0; index < 20 && await isReady(baseUrl); index += 1) await delay(100);
+  }
+  if (await isReady(baseUrl)) return;
   if (startupPromise) return startupPromise;
 
   startupPromise = (async () => {
@@ -70,12 +81,13 @@ export async function ensureCosyVoiceService(
     }
 
     let spawnError: Error | null = null;
-    const child = spawn(install.pythonPath, [install.launcherPath], {
+    const child = spawn(install.pythonPath, cosyVoiceLauncherArgs(install.launcherPath, mode), {
       cwd: install.projectRoot,
       windowsHide: true,
       stdio: 'ignore'
     });
     managedProcess = child;
+    managedMode = mode;
     child.once('error', (error) => { spawnError = error; });
 
     const deadline = Date.now() + START_TIMEOUT_MS;
@@ -98,4 +110,5 @@ export async function ensureCosyVoiceService(
 export function stopManagedCosyVoiceService(): void {
   if (managedProcess && managedProcess.exitCode === null) managedProcess.kill();
   managedProcess = null;
+  managedMode = null;
 }

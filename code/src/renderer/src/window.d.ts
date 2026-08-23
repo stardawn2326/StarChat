@@ -72,6 +72,10 @@ declare global {
       };
       tts: {
         synthesize(text: string): Promise<string>;
+        importVoice(request: { name: string; promptText: string }): Promise<PublicAppState>;
+        activateVoice(id: string | null): Promise<PublicAppState>;
+        deleteVoice(id: string): Promise<PublicAppState>;
+        previewVoice(id: string, text: string): Promise<string>;
       };
       pet: {
         show(): void;

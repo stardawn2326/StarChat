@@ -10,7 +10,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 TOOLS_ROOT = PROJECT_ROOT / "tools"
 COSYVOICE_ROOT = TOOLS_ROOT / "CosyVoice"
-MODEL_DIR = COSYVOICE_ROOT / "pretrained_models" / "CosyVoice-300M-SFT"
+voice_mode = "sft"
+if "--voice-mode" in sys.argv:
+    index = sys.argv.index("--voice-mode")
+    voice_mode = sys.argv[index + 1]
+    del sys.argv[index:index + 2]
+if voice_mode not in {"sft", "zero-shot"}:
+    raise ValueError("--voice-mode must be sft or zero-shot")
+MODEL_DIR = COSYVOICE_ROOT / "pretrained_models" / ("CosyVoice2-0.5B" if voice_mode == "zero-shot" else "CosyVoice-300M-SFT")
 
 for directory in (
     TOOLS_ROOT / "modelscope-cache",
@@ -57,6 +64,27 @@ modelscope.snapshot_download = _project_snapshot_download
 os.chdir(COSYVOICE_ROOT)
 sys.path.insert(0, str(COSYVOICE_ROOT))
 sys.path.insert(0, str(COSYVOICE_ROOT / "third_party" / "Matcha-TTS"))
+
+# The current upstream FastAPI adapter decodes uploads to a 16 kHz tensor,
+# while the newer CosyVoice2 frontend calls load_wav again. Bridge that
+# version boundary here without editing the vendored upstream checkout.
+import torch
+import torchaudio
+import cosyvoice.cli.frontend as cosyvoice_frontend
+
+_frontend_load_wav = cosyvoice_frontend.load_wav
+
+
+def _load_wav_or_tensor(wav, target_sr, min_sr=16000):
+    if not isinstance(wav, torch.Tensor):
+        return _frontend_load_wav(wav, target_sr, min_sr)
+    speech = wav.mean(dim=0, keepdim=True)
+    if target_sr != 16000:
+        speech = torchaudio.transforms.Resample(orig_freq=16000, new_freq=target_sr)(speech)
+    return speech
+
+
+cosyvoice_frontend.load_wav = _load_wav_or_tensor
 
 if "--port" not in sys.argv:
     sys.argv.extend(["--port", "50000"])

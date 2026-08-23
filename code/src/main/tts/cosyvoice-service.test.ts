@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cosyVoiceInstallPathsForRoot, isManagedCosyVoiceBaseUrl } from './cosyvoice-service';
+import { cosyVoiceInstallPathsForRoot, cosyVoiceLauncherArgs, isManagedCosyVoiceBaseUrl } from './cosyvoice-service';
 
 describe('CosyVoice local service installation', () => {
   it('only manages the installed loopback service', () => {
@@ -13,5 +13,12 @@ describe('CosyVoice local service installation', () => {
     const install = cosyVoiceInstallPathsForRoot('C:\\Project-008');
     expect(install.pythonPath).toBe('C:\\Project-008\\tools\\cosyvoice-python310\\python.exe');
     expect(install.launcherPath).toBe('C:\\Project-008\\tools\\start-cosyvoice-server.py');
+  });
+
+  it('selects exactly one local model mode per service process', () => {
+    expect(cosyVoiceLauncherArgs('C:\\Project-008\\tools\\start-cosyvoice-server.py', 'sft')).toEqual([
+      'C:\\Project-008\\tools\\start-cosyvoice-server.py', '--voice-mode', 'sft'
+    ]);
+    expect(cosyVoiceLauncherArgs('C:\\Project-008\\tools\\start-cosyvoice-server.py', 'zero-shot')[2]).toBe('zero-shot');
   });
 });

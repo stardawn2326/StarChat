@@ -38,6 +38,8 @@ describe('settings sanitization', () => {
     expect(defaults.ttsProvider).toBe('cosyvoice');
     expect(defaults.cosyVoiceBaseUrl).toBe('http://127.0.0.1:50000');
     expect(defaults.cosyVoiceSpeaker).toBe('中文女');
+    expect(defaults.cosyVoiceMode).toBe('sft');
+    expect(defaults.activeVoiceProfileId).toBeNull();
 
     const legacySystem = sanitizeAppSettings({ ttsProvider: 'system' } as never);
     expect(legacySystem.ttsProvider).toBe('cosyvoice');
@@ -54,6 +56,16 @@ describe('settings sanitization', () => {
     expect(cosy.ttsVolume).toBe(0);
     expect(cosy.cosyVoiceBaseUrl).toBe('http://127.0.0.1:50000');
     expect(cosy.cosyVoiceSpeaker).toBe('中文女');
+  });
+
+  it('keeps CosyVoice2 custom voice selection explicit and persistent', () => {
+    const settings = sanitizeAppSettings({
+      cosyVoiceMode: 'zero-shot',
+      activeVoiceProfileId: ' voice.demo '
+    });
+    expect(settings.cosyVoiceMode).toBe('zero-shot');
+    expect(settings.activeVoiceProfileId).toBe('voice.demo');
+    expect(sanitizeAppSettings({ cosyVoiceMode: 'unknown' as never }).cosyVoiceMode).toBe('sft');
   });
 
   it('uses a private Miku-only watermark default while keeping the setting reversible', () => {

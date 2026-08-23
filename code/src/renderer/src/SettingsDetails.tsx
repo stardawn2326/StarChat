@@ -7,6 +7,7 @@ import { DEFAULT_APP_SETTINGS, DEFAULT_MODEL_VIEWPORT, type AppSettings, type Mo
 import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
 import { PRESENTATION_SLIDERS, type PresentationSettings } from '../../shared/presentation-contract';
 import { CompanionChat } from './CompanionChat';
+import { useState } from 'react';
 
 const live2dStatusLabels: Record<Live2DModelState['status'], string> = {
   not_configured: '未配置', ready: '只读检查通过', ready_with_warnings: '通过，但有警告', missing: '缺少文件', invalid: '入口无效', unreadable: '文件不可读'
@@ -152,9 +153,37 @@ function WindowDetails(props: SettingsDetailsProps): JSX.Element {
 
 function ServiceDetails(props: SettingsDetailsProps): JSX.Element {
   const settings = props.settingsDraft;
+  const [voiceName, setVoiceName] = useState('白音自定义音色');
+  const [promptText, setPromptText] = useState('');
+  const [voiceStatus, setVoiceStatus] = useState('');
+  const play = async (promise: Promise<string>): Promise<void> => {
+    try {
+      setVoiceStatus('正在生成试听…');
+      const source = await promise;
+      const audio = new Audio(source); audio.volume = settings.ttsVolume; audio.playbackRate = settings.ttsRate;
+      await audio.play(); setVoiceStatus('试听已开始播放');
+    } catch (error) { setVoiceStatus(error instanceof Error ? error.message : String(error)); }
+  };
+  const importVoice = async (): Promise<void> => {
+    try {
+      setVoiceStatus('');
+      await window.baoyin.tts.importVoice({ name: voiceName, promptText });
+      setPromptText(''); setVoiceStatus('音色已导入并设为当前音色');
+    } catch (error) { setVoiceStatus(error instanceof Error ? error.message : String(error)); }
+  };
+  const activateVoice = async (id: string | null): Promise<void> => {
+    try { await window.baoyin.tts.activateVoice(id); setVoiceStatus(id ? '已切换自定义音色' : '已切换内置 SFT 预设'); }
+    catch (error) { setVoiceStatus(error instanceof Error ? error.message : String(error)); }
+  };
+  const deleteVoice = async (id: string, name: string): Promise<void> => {
+    if (!window.confirm(`删除音色“${name}”的应用内副本？原始 WAV 不受影响。`)) return;
+    try { await window.baoyin.tts.deleteVoice(id); setVoiceStatus('音色副本已删除'); }
+    catch (error) { setVoiceStatus(error instanceof Error ? error.message : String(error)); }
+  };
   return <>
     <div className="detail-section"><h2>OpenAI-compatible 对话服务</h2><label>接口地址<input value={settings.apiBaseUrl} onChange={(event) => props.onSettingsChange({ apiBaseUrl: event.target.value })} /></label><label>模型<input value={settings.model} onChange={(event) => props.onSettingsChange({ model: event.target.value })} /></label><div className="range-grid"><RangeField label="温度" value={settings.temperature} min={0} max={2} step={0.01} onChange={(value) => props.onSettingsChange({ temperature: value })} reset={() => props.onSettingsChange({ temperature: 0.7 })} /><RangeField label="最大 tokens" value={settings.maxTokens} min={64} max={8192} step={1} onChange={(value) => props.onSettingsChange({ maxTokens: value })} reset={() => props.onSettingsChange({ maxTokens: 800 })} /></div><TextField label="追加系统提示词" value={settings.systemPrompt} rows={5} onChange={(value) => props.onSettingsChange({ systemPrompt: value })} /><label>新增 API Key<input type="password" value={props.apiKeyDraft} onChange={(event) => props.onApiKeyChange(event.target.value)} placeholder={props.state.hasApiKey ? '已保存，留空表示不变' : '不会进入人格包'} /></label><div className="toolbar"><button className="primary-button" type="button" onClick={props.onSaveService}>保存在线服务</button><button className="secondary-button" type="button" disabled={!props.state.hasApiKey} onClick={props.onClearApiKey}>清除密钥</button></div></div>
-    <div className="detail-section"><h2>语音提供器</h2><p className="detail-note">CosyVoice 是唯一语音引擎，不会调用 Windows 系统语音或自动降级。</p><label>CosyVoice 地址<input value={settings.cosyVoiceBaseUrl} onChange={(event) => props.onSettingsChange({ cosyVoiceBaseUrl: event.target.value })} /></label><label>SFT 说话人<input value={settings.cosyVoiceSpeaker} onChange={(event) => props.onSettingsChange({ cosyVoiceSpeaker: event.target.value })} /></label><div className="range-grid"><RangeField label="语速" value={settings.ttsRate} min={0.5} max={2} step={0.01} onChange={(value) => props.onSettingsChange({ ttsRate: value })} reset={() => props.onSettingsChange({ ttsRate: 1 })} /><RangeField label="音量" value={settings.ttsVolume} min={0} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ ttsVolume: value })} reset={() => props.onSettingsChange({ ttsVolume: 1 })} /></div><p className="security-note">默认地址使用项目内已安装的官方 CosyVoice FastAPI /inference_sft 服务；应用负责单实例启动与退出回收，服务和模型不进入助手 EXE。</p></div>
+    <div className="detail-section"><h2>语音提供器</h2><p className="detail-note">CosyVoice 是唯一语音引擎，不调用 Windows 系统语音。预设 SFT 与 CosyVoice2 自定义音色按需切换，同一时间只运行一个服务。</p><label>CosyVoice 地址<input value={settings.cosyVoiceBaseUrl} onChange={(event) => props.onSettingsChange({ cosyVoiceBaseUrl: event.target.value })} /></label><div className="form-grid"><label>当前模式<input readOnly value={props.state.settings.cosyVoiceMode === 'sft' ? '内置 SFT 预设' : 'CosyVoice2 自定义音色'} /></label>{props.state.settings.cosyVoiceMode === 'sft' ? <label>SFT 说话人<input value={settings.cosyVoiceSpeaker} onChange={(event) => props.onSettingsChange({ cosyVoiceSpeaker: event.target.value })} /></label> : <label>当前自定义音色<select value={props.state.settings.activeVoiceProfileId ?? ''} onChange={(event) => void activateVoice(event.target.value)}>{props.state.voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name}</option>)}</select></label>}</div><button className="secondary-button" type="button" disabled={props.state.settings.cosyVoiceMode === 'sft'} onClick={() => void activateVoice(null)}>使用内置 SFT 预设</button><div className="range-grid"><RangeField label="语速" value={settings.ttsRate} min={0.5} max={2} step={0.01} onChange={(value) => props.onSettingsChange({ ttsRate: value })} reset={() => props.onSettingsChange({ ttsRate: 1 })} /><RangeField label="音量" value={settings.ttsVolume} min={0} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ ttsVolume: value })} reset={() => props.onSettingsChange({ ttsVolume: 1 })} /></div></div>
+    <div className="detail-section"><h2>自定义音色库</h2><p className="detail-note">准备 3–30 秒清晰 WAV，并逐字填写音频实际内容。应用只复制参考音频到本机用户数据目录，不修改原文件，也不把音频打进 EXE。</p><div className="form-grid"><label>音色名称<input value={voiceName} onChange={(event) => setVoiceName(event.target.value)} /></label><label>参考音频对应文本<input value={promptText} onChange={(event) => setPromptText(event.target.value)} placeholder="必须与 WAV 中的说话内容一致" /></label></div><button className="primary-button" type="button" onClick={() => void importVoice()}>选择 WAV 并导入</button><div className="role-create-actions">{props.state.voices.map((voice) => <div key={voice.id} className="status-callout"><strong>{voice.name}</strong><span>{voice.sourceFileName} · {voice.durationSeconds.toFixed(1)} 秒</span><button className="secondary-button" type="button" onClick={() => void activateVoice(voice.id)}>使用</button><button className="secondary-button" type="button" onClick={() => void play(window.baoyin.tts.previewVoice(voice.id, '你好，我是白音。'))}>试听</button><button className="secondary-button" type="button" onClick={() => void deleteVoice(voice.id, voice.name)}>删除</button></div>)}</div>{props.state.voices.length === 0 ? <p className="runtime-capability-note">尚未导入自定义音色。当前仍可使用原有 SFT 预设。</p> : null}{voiceStatus ? <p className="security-note">{voiceStatus}</p> : null}<p className="security-note">自定义音色使用官方 /inference_zero_shot；请只导入本人声音或已获明确许可的声音。</p></div>
   </>;
 }
 

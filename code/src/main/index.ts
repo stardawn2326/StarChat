@@ -42,6 +42,7 @@ import { nextPetDragBounds } from './window-drag';
 import { buildCompanionSystemPrompt, companionSummary, presentationForAssistantText, recordCompanionExchange } from '../shared/companion';
 import { synthesizeCosyVoice } from './tts/cosyvoice';
 import { ensureCosyVoiceService, stopManagedCosyVoiceService } from './tts/cosyvoice-service';
+import { VoiceProfileStore } from './voice-profile-store';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -49,6 +50,7 @@ let settingsWindow: BrowserWindow | null = null;
 let clickTargetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settingsStore: SettingsStore;
+let voiceProfileStore: VoiceProfileStore;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -243,7 +245,8 @@ function getPublicState(): PublicAppState {
     role,
     roles,
     live2d,
-    companion: companionSummary(companion, role.personality.relationshipStages)
+    companion: companionSummary(companion, role.personality.relationshipStages),
+    voices: voiceProfileStore.list()
   };
 }
 
@@ -788,8 +791,55 @@ function registerIpc(): void {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口请求语音');
     const text = typeof request?.text === 'string' ? request.text : '';
     const settings = getStore().readSettings();
-    await ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots());
-    return synthesizeCosyVoice(text, settings);
+    const profile = settings.cosyVoiceMode === 'zero-shot'
+      ? voiceProfileStore.list().find((item) => item.id === settings.activeVoiceProfileId)
+      : undefined;
+    if (settings.cosyVoiceMode === 'zero-shot' && !profile) throw new Error('请先导入并选择一个自定义音色');
+    await ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), settings.cosyVoiceMode);
+    return synthesizeCosyVoice(text, settings, profile ? {
+      promptText: profile.promptText,
+      promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
+    } : undefined);
+  });
+  ipcMain.handle('voices:import', async (event, request: { name?: unknown; promptText?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口导入音色');
+    const result = await dialog.showOpenDialog(settingsWindow!, {
+      title: '选择 3–30 秒参考 WAV', properties: ['openFile'], filters: [{ name: 'WAV 音频', extensions: ['wav'] }]
+    });
+    if (!result.canceled && result.filePaths[0]) {
+      const profile = voiceProfileStore.importWav(result.filePaths[0], {
+        name: typeof request?.name === 'string' ? request.name : '',
+        promptText: typeof request?.promptText === 'string' ? request.promptText : ''
+      });
+      getStore().save({ cosyVoiceMode: 'zero-shot', activeVoiceProfileId: profile.id });
+      sendStateChanged();
+    }
+    return getPublicState();
+  });
+  ipcMain.handle('voices:activate', (event, request: { id?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口切换音色');
+    const id = typeof request?.id === 'string' ? request.id : null;
+    if (id && !voiceProfileStore.list().some((item) => item.id === id)) throw new Error('音色不存在');
+    getStore().save({ cosyVoiceMode: id ? 'zero-shot' : 'sft', activeVoiceProfileId: id });
+    sendStateChanged(); return getPublicState();
+  });
+  ipcMain.handle('voices:delete', (event, request: { id?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口删除音色');
+    const id = typeof request?.id === 'string' ? request.id : '';
+    voiceProfileStore.delete(id);
+    if (getStore().readSettings().activeVoiceProfileId === id) getStore().save({ cosyVoiceMode: 'sft', activeVoiceProfileId: null });
+    sendStateChanged(); return getPublicState();
+  });
+  ipcMain.handle('voices:preview', async (event, request: { id?: unknown; text?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口试听音色');
+    const profile = voiceProfileStore.list().find((item) => item.id === request?.id);
+    if (!profile) throw new Error('音色不存在');
+    const settings = getStore().readSettings();
+    await ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), 'zero-shot');
+    return synthesizeCosyVoice(typeof request.text === 'string' ? request.text : '你好，我是白音。', settings, {
+      promptText: profile.promptText,
+      promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
+    });
   });
   ipcMain.handle('settings:save', (_event, request: SaveSettingsRequest) => {
     const store = getStore();
@@ -1082,8 +1132,9 @@ if (singleInstanceLock) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
     settingsStore = new SettingsStore(app.getPath('userData'));
+    voiceProfileStore = new VoiceProfileStore(app.getPath('userData'));
     const settings = settingsStore.readSettings();
-    void ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots())
+    void ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), settings.cosyVoiceMode)
       .catch((error: unknown) => console.warn('CosyVoice startup failed:', error));
     registerLive2DProtocol();
     registerIpc();
