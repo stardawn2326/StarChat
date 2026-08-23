@@ -730,15 +730,15 @@ async function runChat(
     throw new Error('消息不能为空');
   }
 
+  const snapshot = getStore().createPersonalityRequestSnapshot();
+  const before = getStore().readCompanionState(snapshot.roleId);
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildCompanionSystemPrompt(getStore().createPersonalityRequestSnapshot(), getStore().readCompanionState()) },
+    { role: 'system', content: buildCompanionSystemPrompt(snapshot, before) },
     ...(settings.systemPrompt ? [{ role: 'system', content: settings.systemPrompt } as ChatMessage] : []),
     ...normalizeHistory(request.history).filter((item) => item.role !== 'system'),
     { role: 'user', content: message }
   ];
 
-  const snapshot = getStore().createPersonalityRequestSnapshot();
-  const before = getStore().readCompanionState(snapshot.roleId);
   let responseText = '';
   let beganReply = false;
   const thinking = snapshot.semanticMappings.thinking;
