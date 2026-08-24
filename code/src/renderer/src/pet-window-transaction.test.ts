@@ -42,6 +42,12 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(resizeMove).toContain('petDragStart || !petResizeStart');
   });
 
+  it('moves Alt-drag with an explicit immutable rectangle instead of DPI-sensitive setPosition', () => {
+    const dragMove = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:drag-move'"), mainSource.indexOf("ipcMain.on('pet:drag-end'"));
+    expect(dragMove).toContain('petWindow.setBounds(nextBounds)');
+    expect(dragMove).not.toContain('petWindow.setPosition(nextBounds.x, nextBounds.y)');
+  });
+
   it('routes the wheel to model zoom whenever interaction is enabled', () => {
     const wheelHandler = rendererSource.slice(rendererSource.indexOf('const handleWheel'), rendererSource.indexOf("document.addEventListener('contextmenu'"));
     expect(wheelHandler).toContain('const factor = event.deltaY < 0 ? 1.08 : 0.925');

@@ -47,6 +47,13 @@ describe('Windows transparent pet shell', () => {
     expect(source).toContain('petWindow?.showInactive()');
   });
 
+  it('keeps the pet non-focusable while leaving the settings window focusable', () => {
+    const petCreation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
+    const settingsCreation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
+    expect(petCreation).toContain('focusable: false');
+    expect(settingsCreation).not.toContain('focusable: false');
+  });
+
   it('does not expose recentering from the tray or pet context menu', () => {
     const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
     const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));

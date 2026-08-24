@@ -425,6 +425,7 @@ function createPetWindow(): void {
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
+    focusable: false,
     show: false,
     skipTaskbar: true,
     hasShadow: false,
@@ -1126,9 +1127,9 @@ function registerIpc(): void {
       // before capturing its immutable window dimensions.
       petResizeStart = null;
       petDragStart = { point, bounds: petWindow.getBounds() };
-      // The custom renderer drag is position-only. Keep the native resize
-      // frame disabled while User32 holds the mouse button, so a transparent
-      // frameless hit-test cannot resize the BrowserWindow.
+      // Keep the native resize frame disabled while User32 holds the mouse
+      // button. The drag move sends a complete immutable rectangle so this
+      // transparent frameless hit-test cannot resize the BrowserWindow.
       petWindow.setResizable(false);
     }
   });
@@ -1137,7 +1138,7 @@ function registerIpc(): void {
       return;
     }
     const nextBounds = nextPetDragBounds(petDragStart.bounds, petDragStart.point, point);
-    petWindow.setPosition(nextBounds.x, nextBounds.y);
+    petWindow.setBounds(nextBounds);
   });
   ipcMain.on('pet:drag-end', (event) => {
     if (BrowserWindow.fromWebContents(event.sender) === petWindow) {
