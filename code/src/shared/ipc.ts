@@ -45,6 +45,7 @@ export interface RoleIdRequest {
 export type CubismDebugCommand =
   | { type: 'parameter'; patch: CubismParameterPatch }
   | { type: 'reset' }
+  | { type: 'fit-frame' }
   | { type: 'control'; name: 'neutral' | 'stop_expression' | 'stop_action' };
 
 export interface CubismDebugMetricRequest {

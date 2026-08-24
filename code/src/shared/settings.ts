@@ -193,8 +193,11 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
       ? {
           x: Math.round(bounds.x),
           y: Math.round(bounds.y),
-          width: Math.round(Math.min(1200, Math.max(240, bounds.width))),
-          height: Math.round(Math.min(1200, Math.max(240, bounds.height)))
+          // The main process clamps these to the selected display work area.
+          // Keep storage display-agnostic so slider and native bounds cannot
+          // disagree on high-resolution displays.
+          width: Math.round(Math.min(8192, Math.max(240, bounds.width))),
+          height: Math.round(Math.min(8192, Math.max(240, bounds.height)))
         }
       : DEFAULT_APP_SETTINGS.petBounds;
   return {

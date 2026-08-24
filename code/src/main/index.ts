@@ -356,11 +356,9 @@ function syncPetWindowResizable(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-  // PetWindow dimensions are intentionally controlled by the settings
-  // sliders. A transparent frameless BrowserWindow must never expose the
-  // native resize hit-test to the model/window drag gesture; setBounds still
-  // works for the explicit width/height controls while this is locked.
-  petWindow.setResizable(false);
+  // The frameless window exposes its native resize hit-test only on the thin
+  // renderer frame. Model dragging is a separate renderer gesture.
+  petWindow.setResizable(true);
 }
 
 function applyPetWindowSettings(): void {
@@ -383,7 +381,7 @@ function createPetWindow(): void {
     frame: false,
     autoHideMenuBar: true,
     transparent: true,
-    resizable: false,
+    resizable: true,
     alwaysOnTop: true,
     show: false,
     skipTaskbar: true,
@@ -1102,7 +1100,13 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('baoyin:settings-preview', (event, detail: SettingsPreviewDetail) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !detail || detail.domain !== 'presentation') return;
+    const source = BrowserWindow.fromWebContents(event.sender);
+    if (source === petWindow && detail?.domain === 'settings') {
+      if (!detail.patch || Object.keys(detail.patch).some((key) => key !== 'modelViewportByModel')) return;
+      settingsWindow?.webContents.send('baoyin:settings-preview', detail);
+      return;
+    }
+    if (source !== settingsWindow || !detail || detail.domain !== 'presentation') return;
     if (!detail.patch || typeof detail.patch !== 'object') return;
     const allowed = new Set(['bodyFollowStrength', 'bodyLag', 'inertiaStrength', 'idleSwayStrength', 'physicsEnabled']);
     if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;

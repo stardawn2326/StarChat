@@ -102,16 +102,12 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(canvasSource).not.toContain("playExpression(showWatermark ? 'watermark_on' : 'watermark_off')");
   });
 
-  it('keeps weighted full-body inertia inside the package-owned focus update', () => {
-    expect(runtimeSource).toContain('internalModel?.configureFocus');
+  it('keeps AIRI package focus and model physics as the sole body-motion chain', () => {
+    expect(runtimeSource).not.toContain('configureFocus');
     expect(canvasSource).toContain('runtime.controller.releaseFocus()');
-    expect(packageRuntimeSource).toContain('configureFocus(settings');
-    expect(packageRuntimeSource).toContain('idParamBodyAngleY');
-    expect(packageRuntimeSource).toContain('idParamBodyAngleZ');
-    expect(packageRuntimeSource).toContain('idleSwayStrength');
-    expect(packageRuntimeSource).toContain('setFocusActive(active)');
-    expect(packageRuntimeSource).toContain('bodyVelocityX');
-    expect(packageRuntimeSource).toContain('spring * (targetX - this.bodyFocusX)');
+    expect(packageRuntimeSource).toContain('this.idParamBodyAngleX, this.focusController.x * 10');
+    expect(packageRuntimeSource).not.toContain('spring * (targetX - this.bodyFocusX)');
+    expect(packageRuntimeSource).not.toContain('this.idParamBodyAngleY, this.bodyFocusY');
   });
 
   it('drives lip sync from played audio frames instead of a fixed mouth timer', () => {

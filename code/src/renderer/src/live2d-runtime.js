@@ -309,7 +309,6 @@ function setFocusFromScreenCursor(point) {
       top: Number(point.canvasScreenRect?.top ?? 0)
     }
   });
-  model.internalModel?.setFocusActive?.(true);
   model.focus(worldPoint.x, worldPoint.y);
   state.gazeTargetX = worldPoint.x;
   state.gazeTargetY = worldPoint.y;
@@ -579,16 +578,6 @@ export const controller = {
   configureGaze(config) {
     gazeEnabled = config?.enabled !== false;
     state.physicsEnabled = config?.physicsEnabled !== false;
-    const internalModel = model?.internalModel;
-    internalModel?.configureFocus?.({
-      eyeWeight: clamp(finite(Number(config?.eyeWeight), 1), 0, 1),
-      headWeight: clamp(finite(Number(config?.headWeight), 0.35), 0, 1),
-      bodyWeight: clamp(finite(Number(config?.bodyWeight), 0.72), 0, 1),
-      bodyFollowStrength: clamp(finite(Number(config?.bodyFollowStrength), 0.82), 0, 1),
-      bodyLag: clamp(finite(Number(config?.bodyLag), 0.32), 0.05, 1.5),
-      inertiaStrength: clamp(finite(Number(config?.inertiaStrength), 0.72), 0, 5),
-      idleSwayStrength: clamp(finite(Number(config?.idleSwayStrength), 0.06), 0, 0.15)
-    });
     if (!gazeEnabled) {
       focusAtModelCenter(true);
       state.gazeIdle = true;
@@ -612,7 +601,6 @@ export const controller = {
 
   releaseFocus() {
     if (!model) return;
-    model.internalModel?.setFocusActive?.(false);
     focusAtModelCenter(false);
     state.gazeIdle = true;
   },
@@ -635,6 +623,13 @@ export const controller = {
     const effect = route?.effects?.find((candidate) => candidate?.id && Number.isFinite(Number(candidate.value)));
     persistentWatermarkEffect = effect ? { id: effect.id, value: Number(effect.value) } : null;
     persistentWatermarkHandler?.();
+  },
+
+  getRenderedBounds() {
+    if (!model) return null;
+    const bounds = model.getBounds?.();
+    if (!bounds || ![bounds.x, bounds.y, bounds.width, bounds.height].every(Number.isFinite)) return null;
+    return { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height };
   },
 
   getMetrics() {

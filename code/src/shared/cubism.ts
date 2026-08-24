@@ -99,5 +99,6 @@ export interface CubismRuntimeController {
   tap(x: number, y: number): boolean;
   setLipSync(value: number, form?: number): void;
   setWatermarkVisible(visible: boolean): void;
+  getRenderedBounds(): { x: number; y: number; width: number; height: number } | null;
   getMetrics(): CubismRuntimeMetrics;
 }

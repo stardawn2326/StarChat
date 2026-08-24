@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { CubismDebugCommand, CursorUpdate, PublicAppState } from '../../shared/ipc';
 import type { PresentationEvent } from '../../shared/presentation';
 import {
@@ -8,7 +8,7 @@ import {
   sanitizeModelViewport,
   type ModelViewportSettings
 } from '../../shared/settings';
-import type { PetPointerOperation } from '../../shared/window-contract';
+import { isPetResizeEdge, type PetPointerOperation } from '../../shared/window-contract';
 import { sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
 import { Live2DCanvas } from './Live2DCanvas';
 import { createPetDragScheduler, latestPointerScreenPoint, type PetDragScheduler } from './drag-scheduler';
@@ -59,9 +59,17 @@ function PetApp(): JSX.Element {
   const dragSchedulerRef = useRef<PetDragScheduler | null>(null);
   const locked = useRef(false);
   const hovered = isModelApproximation(cursor);
+  const resizeHovered = Boolean(cursor?.insideWindow && isPetResizeEdge(
+    cursor.localX * cursor.windowWidth,
+    cursor.localY * cursor.windowHeight,
+    cursor.windowWidth,
+    cursor.windowHeight
+  ));
   const hoveredRef = useRef(false);
   const isLocked = appState?.settings.petLocked === true;
-  const interactionMode = (appState?.settings.petInteractionMode === true || modelEditMode) && !isLocked;
+  // Hit regions decide the gesture automatically: model = model offset,
+  // frame = native resize, transparent remainder = click-through.
+  const interactionMode = !isLocked;
   appStateRef.current = appState;
   if (!dragSchedulerRef.current) {
     dragSchedulerRef.current = createPetDragScheduler(
@@ -75,6 +83,14 @@ function PetApp(): JSX.Element {
     const updated = sanitizeModelViewport({ ...viewportRef.current, ...next });
     viewportRef.current = updated;
     setModelViewport(updated);
+    const state = appStateRef.current;
+    const key = normalizeModelViewportKey(state?.live2d.entryPath);
+    if (state && key) {
+      window.baoyin.settings.preview({
+        domain: 'settings',
+        patch: { modelViewportByModel: { ...state.settings.modelViewportByModel, [key]: updated } }
+      });
+    }
     return updated;
   };
 
@@ -94,13 +110,43 @@ function PetApp(): JSX.Element {
     });
   };
 
+  const fitFrameToRenderedModel = useCallback((bounds: { x: number; y: number; width: number; height: number }): void => {
+    const state = appStateRef.current;
+    const key = normalizeModelViewportKey(state?.live2d.entryPath);
+    if (!state || !key) return;
+    const padding = 16;
+    const shiftX = Math.round(bounds.x - padding);
+    const shiftY = Math.round(bounds.y - padding);
+    const nextViewport = sanitizeModelViewport({
+      ...viewportRef.current,
+      modelOffsetX: viewportRef.current.modelOffsetX - shiftX,
+      modelOffsetY: viewportRef.current.modelOffsetY - shiftY
+    });
+    const nextBounds = {
+      x: Math.round(window.screenX + shiftX),
+      y: Math.round(window.screenY + shiftY),
+      width: Math.max(240, Math.ceil(bounds.width + padding * 2)),
+      height: Math.max(240, Math.ceil(bounds.height + padding * 2))
+    };
+    viewportRef.current = nextViewport;
+    setModelViewport(nextViewport);
+    void window.baoyin.settings.save({ settings: {
+      petBounds: nextBounds,
+      modelViewportByModel: { ...state.settings.modelViewportByModel, [key]: nextViewport }
+    } });
+  }, []);
+
   useEffect(() => {
     document.body.dataset.window = 'pet';
-    void window.baoyin.state.get().then((next) => {
+    const applyPetState = (next: PublicAppState): void => {
+      const viewport = modelViewportForPath(next.settings, next.live2d.entryPath);
+      viewportRef.current = viewport;
+      setModelViewport(viewport);
       setAppState(next);
       setPresentationSettings(next.settings.presentation);
-    });
-    const unsubscribeState = window.baoyin.state.onChange(setAppState);
+    };
+    void window.baoyin.state.get().then(applyPetState);
+    const unsubscribeState = window.baoyin.state.onChange(applyPetState);
     const unsubscribePresentation = window.baoyin.presentation.onEvent(setPresentation);
     const unsubscribeCursor = window.baoyin.cursor.onUpdate(setCursor);
     const unsubscribeModelEdit = window.baoyin.app.onModelEditMode(setModelEditMode);
@@ -159,12 +205,12 @@ function PetApp(): JSX.Element {
   }, [hovered, appState?.settings.petHoverFadeMs, appState?.settings.petHoverShowDelayMs]);
 
   useEffect(() => {
-    const nextMode = interactionMode && hovered && !locked.current ? 'interactive' : 'passthrough';
+    const nextMode = interactionMode && (hovered || resizeHovered) && !locked.current ? 'interactive' : 'passthrough';
     if (nextMode !== inputMode.current && !activePointer.current) {
       inputMode.current = nextMode;
       window.baoyin.app.setInputMode(nextMode);
     }
-  }, [hovered, interactionMode, appState?.settings.petLocked]);
+  }, [hovered, resizeHovered, interactionMode, appState?.settings.petLocked]);
 
   useEffect(() => {
     const handleContextMenu = (event: MouseEvent): void => {
@@ -178,9 +224,22 @@ function PetApp(): JSX.Element {
       if (event.button !== 0) {
         return;
       }
-      if (locked.current || activePointer.current || (!modelEditMode && (!interactionMode || !hoveredRef.current))) {
+      if (locked.current || activePointer.current || !interactionMode) {
         return;
       }
+      if (isPetResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight)) {
+        // Leave the frame gesture to Chromium's native frameless resize hit test.
+        // Alt+frame remains the explicit whole-window move gesture.
+        if (!event.altKey) return;
+        activePointer.current = {
+          operation: 'window-drag', pointerId: event.pointerId,
+          screenX: event.screenX, screenY: event.screenY, captureTarget: event.target instanceof Element ? event.target : null
+        };
+        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        event.preventDefault();
+        return;
+      }
+      if (!hoveredRef.current) return;
       const captureTarget = event.target instanceof Element ? event.target : null;
       try {
         captureTarget?.setPointerCapture(event.pointerId);
@@ -188,7 +247,7 @@ function PetApp(): JSX.Element {
         // Some Chromium targets reject capture after a forwarded click. The
         // document-level listener remains the safe fallback.
       }
-      if (modelEditMode) {
+      {
         activePointer.current = {
           operation: 'model-transform',
           pointerId: event.pointerId,
@@ -200,17 +259,6 @@ function PetApp(): JSX.Element {
         event.preventDefault();
         return;
       }
-      activePointer.current = {
-        operation: 'window-drag',
-        pointerId: event.pointerId,
-        screenX: event.screenX,
-        screenY: event.screenY,
-        captureTarget
-      };
-      inputMode.current = 'interactive';
-      window.baoyin.app.setInputMode('interactive');
-      window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
-      event.preventDefault();
     };
     const handlePointerMove = (event: PointerEvent): void => {
       const gesture = activePointer.current;
@@ -279,7 +327,7 @@ function PetApp(): JSX.Element {
     document.addEventListener('pointerup', handlePointerEnd, true);
     document.addEventListener('pointercancel', handlePointerEnd, true);
     document.addEventListener('wheel', handleWheel, { capture: true, passive: false });
-    const initialMode = modelEditMode && !locked.current ? 'interactive' : 'passthrough';
+    const initialMode = 'passthrough';
     inputMode.current = initialMode;
     window.baoyin.app.setInputMode(initialMode);
     return () => {
@@ -316,7 +364,7 @@ function PetApp(): JSX.Element {
   const modelReady = appState.live2d.status === 'ready' || appState.live2d.status === 'ready_with_warnings';
   return (
     <main
-      className={`pet-shell${hintVisible ? ' pet-hovered' : ''}${modelEditMode ? ' pet-model-editing' : ''}`}
+      className={`pet-shell${hintVisible || resizeHovered ? ' pet-hovered' : ''}${modelEditMode ? ' pet-model-editing' : ''}`}
       aria-label="白音透明桌宠窗口"
       data-pet-role="pet"
       data-pet-hovered={hovered ? 'true' : 'false'}
@@ -329,6 +377,7 @@ function PetApp(): JSX.Element {
       data-model-scale={modelViewport.modelScale}
       style={{ '--pet-hover-border-opacity': appState.settings.petHoverBorderOpacity } as CSSProperties}
     >
+      <div className="pet-resize-frame" aria-hidden="true" />
       {modelReady ? (
         <Live2DCanvas
           event={presentation}
@@ -354,6 +403,7 @@ function PetApp(): JSX.Element {
           tapPoint={tapPoint}
           showWatermark={appState.settings.live2dShowWatermark}
           debugCommand={debugCommand}
+          onFitFrame={fitFrameToRenderedModel}
         />
       ) : (
         <section className="pet-safe-state" aria-label="外部模型状态">

@@ -69,6 +69,14 @@ function App(): JSX.Element {
       setSettingsDraft(next);
       setAppState((previous) => previous ? { ...previous, settings: syncPetBoundsIntoSettings(previous.settings, bounds) } : previous);
     });
+    const unsubscribePreview = window.baoyin.settings.onPreview((detail) => {
+      if (detail.domain !== 'settings' || !detail.patch.modelViewportByModel) return;
+      const current = settingsRef.current;
+      if (!current) return;
+      const next = { ...current, modelViewportByModel: detail.patch.modelViewportByModel };
+      settingsRef.current = next;
+      setSettingsDraft(next);
+    });
     const popstate = (): void => setPage(null);
     window.addEventListener('popstate', popstate);
     window.history.replaceState({ settingsPage: null }, '', '#home');
@@ -76,6 +84,7 @@ function App(): JSX.Element {
       delete document.body.dataset.window;
       unsubscribe();
       unsubscribeBounds();
+      unsubscribePreview();
       window.removeEventListener('popstate', popstate);
       if (settingsTimer.current) window.clearTimeout(settingsTimer.current);
       if (presentationTimer.current) window.clearTimeout(presentationTimer.current);
@@ -282,7 +291,7 @@ function App(): JSX.Element {
 
   return <main className="app-shell settings-center-shell">
     <header className="titlebar"><div className="drag-region"><span className="status-dot" /><span>白音 AI 助手 · 配置中心</span></div><div className="window-actions"><button aria-label="显示桌宠" type="button" onClick={() => window.baoyin.app.showPet()}>⌂</button><button aria-label="最小化" type="button" onClick={() => window.baoyin.app.minimize()}>－</button><button aria-label="隐藏设置" type="button" onClick={() => window.baoyin.app.hideSettings()}>×</button></div></header>
-    {page ? <SettingsDetails state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onLicenseChange={setLicenseAccepted} licenseAccepted={licenseAccepted} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0, modelScale: 0.92 })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} /> : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />}
+    {page ? <SettingsDetails state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onLicenseChange={setLicenseAccepted} licenseAccepted={licenseAccepted} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} /> : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />}
   </main>;
 }
 

@@ -99,7 +99,7 @@ diff --git a/dist/cubism4.es.js b/dist/cubism4.es.js
      this.updateNaturalMovements(dt * 1e3, now * 1e3);
      (_c = this.physics) == null ? void 0 : _c.evaluate(model, dt);
      (_d = this.pose) == null ? void 0 : _d.updateParameters(model, dt);
-@@ -5435,13 +5443,46 @@ class Cubism4InternalModel extends InternalModel {
+@@ -5435,13 +5443,28 @@ class Cubism4InternalModel extends InternalModel {
      model.update();
      model.loadParameters();
    }
@@ -125,31 +125,13 @@ diff --git a/dist/cubism4.es.js b/dist/cubism4.es.js
 +  setFocusActive(active) {
 +    this.focusActive = active !== false;
 +  }
-+  updateFocus(dt = 1 / 60, now = 0) {
-+    const settings = this.focusSettings;
-+    const eyeWeight = settings.eyeWeight;
-+    const headWeight = Math.sqrt(settings.headWeight);
-+    const step = Math.min(0.05, Math.max(1 / 240, dt));
-+    const idleX = this.focusActive ? 0 : Math.sin(now * 0.83) * settings.idleSwayStrength * 2.4;
-+    const idleY = this.focusActive ? 0 : Math.sin(now * 1.07 + 1.2) * settings.idleSwayStrength * 1.35;
-+    const targetX = this.focusController.x + idleX;
-+    const targetY = this.focusController.y + idleY;
-+    const spring = Math.min(180, Math.max(18, 36 / (settings.bodyLag + 0.08)));
-+    const inertia = Math.min(1, settings.inertiaStrength / 2);
-+    const damping = 2 * Math.sqrt(spring) * (0.9 - 0.38 * inertia);
-+    this.bodyVelocityX += (spring * (targetX - this.bodyFocusX) - damping * this.bodyVelocityX) * step;
-+    this.bodyVelocityY += (spring * (targetY - this.bodyFocusY) - damping * this.bodyVelocityY) * step;
-+    this.bodyFocusX = Math.min(1.6, Math.max(-1.6, this.bodyFocusX + this.bodyVelocityX * step));
-+    this.bodyFocusY = Math.min(1.6, Math.max(-1.6, this.bodyFocusY + this.bodyVelocityY * step));
-+    const bodyGain = Math.sqrt(settings.bodyWeight) * (0.8 + 1.5 * settings.bodyFollowStrength);
-+    this.coreModel.addParameterValueById(this.idParamEyeBallX, this.focusController.x * eyeWeight);
-+    this.coreModel.addParameterValueById(this.idParamEyeBallY, this.focusController.y * eyeWeight);
-+    this.coreModel.addParameterValueById(this.idParamAngleX, this.focusController.x * 30 * headWeight);
-+    this.coreModel.addParameterValueById(this.idParamAngleY, this.focusController.y * 30 * headWeight);
-+    this.coreModel.addParameterValueById(this.idParamAngleZ, this.focusController.x * this.focusController.y * -30 * headWeight);
-+    this.coreModel.addParameterValueById(this.idParamBodyAngleX, this.bodyFocusX * 10 * bodyGain);
-+    this.coreModel.addParameterValueById(this.idParamBodyAngleY, this.bodyFocusY * 7 * bodyGain);
-+    this.coreModel.addParameterValueById(this.idParamBodyAngleZ, this.bodyFocusX * this.bodyFocusY * -8 * bodyGain);
++  updateFocus(_dt = 1 / 60, _now = 0) {
++    this.coreModel.addParameterValueById(this.idParamEyeBallX, this.focusController.x);
++    this.coreModel.addParameterValueById(this.idParamEyeBallY, this.focusController.y);
++    this.coreModel.addParameterValueById(this.idParamAngleX, this.focusController.x * 30);
++    this.coreModel.addParameterValueById(this.idParamAngleY, this.focusController.y * 30);
++    this.coreModel.addParameterValueById(this.idParamAngleZ, this.focusController.x * this.focusController.y * -30);
++    this.coreModel.addParameterValueById(this.idParamBodyAngleX, this.focusController.x * 10);
    }
    updateNaturalMovements(dt, now) {
      var _a;
@@ -180,7 +162,7 @@ diff --git a/dist/cubism4.js b/dist/cubism4.js
        this.updateNaturalMovements(dt * 1e3, now * 1e3);
        (_c = this.physics) == null ? void 0 : _c.evaluate(model, dt);
        (_d = this.pose) == null ? void 0 : _d.updateParameters(model, dt);
-@@ -5435,13 +5443,46 @@ var __async = (__this, __arguments, generator) => {
+@@ -5435,13 +5443,28 @@ var __async = (__this, __arguments, generator) => {
        model.update();
        model.loadParameters();
      }
@@ -206,31 +188,13 @@ diff --git a/dist/cubism4.js b/dist/cubism4.js
 +    setFocusActive(active) {
 +      this.focusActive = active !== false;
 +    }
-+    updateFocus(dt = 1 / 60, now = 0) {
-+      const settings = this.focusSettings;
-+      const eyeWeight = settings.eyeWeight;
-+      const headWeight = Math.sqrt(settings.headWeight);
-+      const step = Math.min(0.05, Math.max(1 / 240, dt));
-+      const idleX = this.focusActive ? 0 : Math.sin(now * 0.83) * settings.idleSwayStrength * 2.4;
-+      const idleY = this.focusActive ? 0 : Math.sin(now * 1.07 + 1.2) * settings.idleSwayStrength * 1.35;
-+      const targetX = this.focusController.x + idleX;
-+      const targetY = this.focusController.y + idleY;
-+      const spring = Math.min(180, Math.max(18, 36 / (settings.bodyLag + 0.08)));
-+      const inertia = Math.min(1, settings.inertiaStrength / 2);
-+      const damping = 2 * Math.sqrt(spring) * (0.9 - 0.38 * inertia);
-+      this.bodyVelocityX += (spring * (targetX - this.bodyFocusX) - damping * this.bodyVelocityX) * step;
-+      this.bodyVelocityY += (spring * (targetY - this.bodyFocusY) - damping * this.bodyVelocityY) * step;
-+      this.bodyFocusX = Math.min(1.6, Math.max(-1.6, this.bodyFocusX + this.bodyVelocityX * step));
-+      this.bodyFocusY = Math.min(1.6, Math.max(-1.6, this.bodyFocusY + this.bodyVelocityY * step));
-+      const bodyGain = Math.sqrt(settings.bodyWeight) * (0.8 + 1.5 * settings.bodyFollowStrength);
-+      this.coreModel.addParameterValueById(this.idParamEyeBallX, this.focusController.x * eyeWeight);
-+      this.coreModel.addParameterValueById(this.idParamEyeBallY, this.focusController.y * eyeWeight);
-+      this.coreModel.addParameterValueById(this.idParamAngleX, this.focusController.x * 30 * headWeight);
-+      this.coreModel.addParameterValueById(this.idParamAngleY, this.focusController.y * 30 * headWeight);
-+      this.coreModel.addParameterValueById(this.idParamAngleZ, this.focusController.x * this.focusController.y * -30 * headWeight);
-+      this.coreModel.addParameterValueById(this.idParamBodyAngleX, this.bodyFocusX * 10 * bodyGain);
-+      this.coreModel.addParameterValueById(this.idParamBodyAngleY, this.bodyFocusY * 7 * bodyGain);
-+      this.coreModel.addParameterValueById(this.idParamBodyAngleZ, this.bodyFocusX * this.bodyFocusY * -8 * bodyGain);
++    updateFocus(_dt = 1 / 60, _now = 0) {
++      this.coreModel.addParameterValueById(this.idParamEyeBallX, this.focusController.x);
++      this.coreModel.addParameterValueById(this.idParamEyeBallY, this.focusController.y);
++      this.coreModel.addParameterValueById(this.idParamAngleX, this.focusController.x * 30);
++      this.coreModel.addParameterValueById(this.idParamAngleY, this.focusController.y * 30);
++      this.coreModel.addParameterValueById(this.idParamAngleZ, this.focusController.x * this.focusController.y * -30);
++      this.coreModel.addParameterValueById(this.idParamBodyAngleX, this.focusController.x * 10);
      }
      updateNaturalMovements(dt, now) {
        var _a;

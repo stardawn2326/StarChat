@@ -24,6 +24,7 @@ interface Live2DCanvasProps {
   tapPoint?: { x: number; y: number } | null;
   showWatermark?: boolean;
   debugCommand?: CubismDebugCommand | null;
+  onFitFrame?: (bounds: { x: number; y: number; width: number; height: number }) => void;
 }
 
 function entryFileName(entryPath: string | null): string | null {
@@ -34,7 +35,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -237,7 +238,10 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     const runtime = runtimeRef.current;
     if (!runtime || !debugCommand) return;
     try {
-      if (debugCommand.type === 'parameter') {
+      if (debugCommand.type === 'fit-frame') {
+        const bounds = runtime.controller.getRenderedBounds();
+        if (bounds) onFitFrame?.(bounds);
+      } else if (debugCommand.type === 'parameter') {
         runtime.controller.setParameters([debugCommand.patch]);
       } else if (debugCommand.type === 'reset') {
         runtime.controller.resetParameters();
@@ -258,7 +262,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     } catch (error: unknown) {
       setRuntimeStatus(error instanceof Error ? error.message : 'Cubism 调试命令失败');
     }
-  }, [debugCommand, ready, runtimeRef]);
+  }, [debugCommand, ready, runtimeRef, onFitFrame]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
