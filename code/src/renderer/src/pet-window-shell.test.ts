@@ -47,4 +47,13 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(petSource).toContain('const displayedModelOpacity = hintVisible && hovered ? Math.min(modelViewport.modelOpacity, 0.3) : modelViewport.modelOpacity');
     expect(petSource).toContain('modelOpacity: displayedModelOpacity');
   });
+
+  it('hides the visual resize frame completely while the pet is locked and click-through', () => {
+    expect(stylesSource).toContain('.pet-shell[data-pet-locked="true"] .pet-resize-frame');
+    expect(stylesSource).toMatch(/\.pet-shell\[data-pet-locked="true"\] \.pet-resize-frame\s*\{[^}]*display:\s*none/s);
+  });
+
+  it('shows the resize affordance only for an actual frame hit, never for model or transparent hits', () => {
+    expect(petSource).toContain("interactionMode && !isLocked && hitRegion === 'frame'");
+  });
 });

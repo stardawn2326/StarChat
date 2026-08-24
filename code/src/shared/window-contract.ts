@@ -9,7 +9,7 @@ export interface ModelFeaturePoint { x: number; y: number; }
 export interface FocusGeometry { canvasScreenRect: { left: number; top: number; width: number; height: number }; eyeAnchor: ModelFeaturePoint; visibleHalfExtent: ModelFeaturePoint; }
 export interface StableViewportProjection extends CanvasCssSize { referenceHeight: number; viewScale: number; cssPixelsPerWorldUnit: number; }
 export interface ModelBounds { left: number; right: number; top: number; bottom: number; }
-export type PetPointerOperation = 'model-transform' | 'window-drag' | 'window-resize';
+export type PetPointerOperation = 'model-transform' | 'window-drag' | 'window-and-model-drag' | 'window-resize';
 export type PetResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 export const PET_RESIZE_EDGE_PX = 8;
 

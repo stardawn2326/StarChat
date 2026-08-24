@@ -13,7 +13,7 @@ import {
 import { compensateModelViewportForWindowOrigin, petResizeEdge, type PetPointerOperation, type PetResizeEdge } from '../../shared/window-contract';
 import { sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
 import { Live2DCanvas } from './Live2DCanvas';
-import { createPetDragScheduler, latestPointerScreenPoint, type PetDragScheduler } from './drag-scheduler';
+import { createPetDragScheduler, type PetDragScheduler } from './drag-scheduler';
 
 const neutralEvent: PresentationEvent = { type: 'expression', name: 'neutral', source: 'system' };
 
@@ -27,6 +27,15 @@ interface ActivePointer {
   windowY?: number;
   resizeEdge?: PetResizeEdge;
   captureTarget: Element | null;
+}
+
+function latestPointerScreenPoint(event: PointerEvent): { screenX: number; screenY: number } {
+  const coalesced = event.getCoalescedEvents?.() ?? [];
+  const latest = coalesced.at(-1) ?? event;
+  return {
+    screenX: window.screenX + latest.clientX,
+    screenY: window.screenY + latest.clientY
+  };
 }
 
 function PetApp(): JSX.Element {
@@ -68,7 +77,7 @@ function PetApp(): JSX.Element {
   const interactionModeRef = useRef(false);
   interactionModeRef.current = interactionMode;
   const isLocked = appState ? !interactionMode : false;
-  const frameHover = Boolean(cursor?.insideWindow && interactionMode && !isLocked);
+  const frameHover = Boolean(cursor?.insideWindow && interactionMode && !isLocked && hitRegion === 'frame');
   const displayedModelOpacity = hintVisible && hovered ? Math.min(modelViewport.modelOpacity, 0.3) : modelViewport.modelOpacity;
   // Hit regions decide the gesture automatically: model = model offset,
   // frame = native resize, transparent remainder = click-through.
@@ -261,26 +270,35 @@ function PetApp(): JSX.Element {
       const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
       if (event.altKey) {
         if (!resizeEdge && !hoveredRef.current) return;
+        const point = latestPointerScreenPoint(event);
         const captureTarget = event.target instanceof Element ? event.target : null;
         try { captureTarget?.setPointerCapture(event.pointerId); } catch { /* document fallback */ }
-        activePointer.current = { operation: 'window-drag', pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY, captureTarget };
-        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        activePointer.current = {
+          operation: hoveredRef.current ? 'window-and-model-drag' : 'window-drag',
+          pointerId: event.pointerId,
+          screenX: point.screenX,
+          screenY: point.screenY,
+          captureTarget
+        };
+        window.baoyin.pet.dragStart(point);
         event.preventDefault();
         return;
       }
       if (resizeEdge) {
+        const point = latestPointerScreenPoint(event);
         const captureTarget = event.target instanceof Element ? event.target : null;
         try { captureTarget?.setPointerCapture(event.pointerId); } catch { /* document fallback */ }
         activePointer.current = {
           operation: 'window-resize', pointerId: event.pointerId, resizeEdge,
-          screenX: event.screenX, screenY: event.screenY, viewport: viewportRef.current,
+          screenX: point.screenX, screenY: point.screenY, viewport: viewportRef.current,
           windowX: window.screenX, windowY: window.screenY, captureTarget
         };
-        window.baoyin.pet.resizeStart({ screenX: event.screenX, screenY: event.screenY, edge: resizeEdge });
+        window.baoyin.pet.resizeStart({ ...point, edge: resizeEdge });
         event.preventDefault();
         return;
       }
       if (!hoveredRef.current) return;
+      const point = latestPointerScreenPoint(event);
       const captureTarget = event.target instanceof Element ? event.target : null;
       try {
         captureTarget?.setPointerCapture(event.pointerId);
@@ -291,8 +309,8 @@ function PetApp(): JSX.Element {
       activePointer.current = {
         operation: 'model-transform',
         pointerId: event.pointerId,
-        screenX: event.screenX,
-        screenY: event.screenY,
+        screenX: point.screenX,
+        screenY: point.screenY,
         viewport: viewportRef.current,
         captureTarget
       };
@@ -312,20 +330,23 @@ function PetApp(): JSX.Element {
       if (!gesture || gesture.pointerId !== event.pointerId) {
         return;
       }
+      const point = latestPointerScreenPoint(event);
       if (gesture.operation === 'model-transform' && gesture.viewport) {
         updateModelViewport({
-          modelOffsetX: gesture.viewport.modelOffsetX + event.screenX - gesture.screenX,
-          modelOffsetY: gesture.viewport.modelOffsetY + event.screenY - gesture.screenY
+          modelOffsetX: gesture.viewport.modelOffsetX + point.screenX - gesture.screenX,
+          modelOffsetY: gesture.viewport.modelOffsetY + point.screenY - gesture.screenY
         });
         event.preventDefault();
         return;
       }
-      if (gesture.operation === 'window-drag') {
-        dragSchedulerRef.current?.queue(latestPointerScreenPoint(event));
+      if (gesture.operation === 'window-drag' || gesture.operation === 'window-and-model-drag') {
+        // The model transform remains fixed inside the moving window, so Alt
+        // drag carries the model and its window as one screen-space group.
+        dragSchedulerRef.current?.queue(point);
         event.preventDefault();
       }
       if (gesture.operation === 'window-resize') {
-        window.baoyin.pet.resizeMove(latestPointerScreenPoint(event));
+        window.baoyin.pet.resizeMove(point);
         window.requestAnimationFrame(() => {
           if (activePointer.current !== gesture || !gesture.viewport) return;
           const compensated = compensateResizeViewport(gesture);
@@ -354,7 +375,7 @@ function PetApp(): JSX.Element {
         event?.preventDefault();
         return;
       }
-      if (gesture.operation === 'window-drag') {
+      if (gesture.operation === 'window-drag' || gesture.operation === 'window-and-model-drag') {
         if (cancelled) dragSchedulerRef.current?.cancel();
         else dragSchedulerRef.current?.flush();
         window.baoyin.pet.dragEnd();
@@ -363,7 +384,8 @@ function PetApp(): JSX.Element {
         const nextMode = interactionModeRef.current && !transparentHit ? 'interactive' : 'passthrough';
         inputMode.current = nextMode;
         window.baoyin.app.setInputMode(nextMode);
-        if (event && !cancelled && Math.hypot(event.screenX - gesture.screenX, event.screenY - gesture.screenY) < 5 && !locked.current) {
+        const point = event ? latestPointerScreenPoint(event) : null;
+        if (event && point && !cancelled && Math.hypot(point.screenX - gesture.screenX, point.screenY - gesture.screenY) < 5 && !locked.current) {
           const width = Math.max(1, window.innerWidth);
           const height = Math.max(1, window.innerHeight);
           setTapPoint({ x: (event.clientX / width - 0.5) * 2, y: (0.5 - event.clientY / height) * 2 });

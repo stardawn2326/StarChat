@@ -37,4 +37,14 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(rendererSource).not.toContain('if (!modelEditMode || locked.current)');
     expect(rendererSource).toContain('persistModelViewport(next)');
   });
+
+  it('treats Alt-drag on the model as one model-and-window group transaction', () => {
+    expect(rendererSource).toContain("hoveredRef.current ? 'window-and-model-drag'");
+    expect(rendererSource).toContain("gesture.operation === 'window-and-model-drag'");
+  });
+
+  it('derives native resize coordinates from the current window origin and local pointer position', () => {
+    expect(rendererSource).toContain('window.screenX + latest.clientX');
+    expect(rendererSource).toContain('window.screenY + latest.clientY');
+  });
 });
