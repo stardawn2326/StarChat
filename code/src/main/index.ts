@@ -432,6 +432,9 @@ function createPetWindow(): void {
     backgroundMaterial: 'none',
     accentColor: false,
     transparent: true,
+    // A transparent, non-focusable pet must be a Win32 tool window, not a normal
+    // top-level DWM window; otherwise Shell/menu activation can repaint its NC area.
+    type: 'toolbar',
     resizable: false,
     alwaysOnTop: true,
     focusable: false,
@@ -768,9 +771,12 @@ function showPetContextMenu(): void {
   Menu.buildFromTemplate([
     { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
     { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
+    { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
     { type: 'separator' },
     { label: '退出白音', click: () => app.quit() }
-  ]).popup({ window: petWindow });
+  // Do not make the transparent pet HWND the native menu owner: owner activation
+  // is the second trigger for the Windows inactive non-client artifact.
+  ]).popup();
 }
 
 function normalizeHistory(value: unknown): ChatMessage[] {

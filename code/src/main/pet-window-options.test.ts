@@ -72,4 +72,20 @@ describe('Windows transparent pet shell', () => {
     expect(tray).not.toContain('桌宠回中');
     expect(petMenu).not.toContain('桌宠回中');
   });
+
+  it('keeps the tray visibility action available from the model context menu', () => {
+    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
+    expect(petMenu).toContain('显示/隐藏桌宠');
+  });
+
+  it('uses a Windows tool-window class for the transparent pet shell', () => {
+    const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
+    expect(creation).toContain("type: 'toolbar'");
+  });
+
+  it('does not make the transparent pet HWND the native context-menu owner', () => {
+    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
+    expect(petMenu).not.toContain('.popup({ window: petWindow })');
+    expect(petMenu).toContain('.popup()');
+  });
 });

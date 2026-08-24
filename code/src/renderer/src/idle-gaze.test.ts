@@ -13,4 +13,15 @@ describe('AIRI-style idle gaze', () => {
     expect(middle.x).toBeLessThan(0.75);
     expect(end.x).toBeGreaterThan(middle.x);
   });
+
+  it('samples meaningful upward and downward idle gaze angles', () => {
+    const values = [0.5, 1, 0, 0, 0.5, 0, 0, 0]; let index = 0;
+    const gaze = new IdleGazeController(() => values[index++] ?? 0.5);
+    gaze.update(1000, 1);
+    const downward = gaze.update(1900, 1);
+    gaze.update(6600, 1);
+    const upward = gaze.update(7600, 1);
+    expect(downward.y).toBeGreaterThan(0.55);
+    expect(upward.y).toBeLessThan(-0.55);
+  });
 });
