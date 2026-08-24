@@ -25,4 +25,19 @@ describe('PetWindow pointer transaction contracts', () => {
   it('uses the shared north/west origin compensation helper during resize', () => {
     expect(rendererSource).toContain('compensateModelViewportForWindowOrigin');
   });
+
+  it('handles Alt-drag before any resize edge so the southeast border cannot enlarge the window', () => {
+    const pointerDown = rendererSource.slice(rendererSource.indexOf('const handlePointerDown'), rendererSource.indexOf('const compensateResizeViewport'));
+    expect(pointerDown.indexOf('if (event.altKey)')).toBeGreaterThanOrEqual(0);
+    expect(pointerDown.indexOf('if (event.altKey)')).toBeLessThan(pointerDown.indexOf('if (resizeEdge)'));
+    expect(pointerDown).toContain("operation: 'window-and-model-drag'");
+    expect(pointerDown).not.toContain("operation: 'window-drag'");
+    expect(rendererSource).toContain("gesture.operation === 'window-and-model-drag'");
+  });
+
+  it('coalesces resize viewport compensation and avoids settings IPC on every transparent resize frame', () => {
+    expect(rendererSource).toContain('resizeViewportFrameRef');
+    expect(rendererSource).toContain('updateModelViewport(compensated, false)');
+    expect(rendererSource).toContain('updated.modelOffsetX === viewportRef.current.modelOffsetX');
+  });
 });

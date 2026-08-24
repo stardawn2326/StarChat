@@ -32,7 +32,7 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*3px[^}]*border-radius:\s*14px[^}]*background:\s*transparent[^}]*pointer-events:\s*none/s);
     expect(mainSource).toContain('petWindow.setResizable(false)');
     expect(mainSource).toContain("ipcMain.on('pet:resize-start'");
-    expect(mainSource).toContain('autoHideMenuBar: true');
+    expect(mainSource).toContain('autoHideMenuBar: false');
     expect(petSource).not.toContain('model-viewport-controls');
     expect(stylesSource).toMatch(/html, body, #root\s*\{[^}]*background:\s*transparent/s);
   });
@@ -41,5 +41,12 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(petSource).toContain("data-pet-frame-hover={frameHover ? 'true' : 'false'}");
     expect(stylesSource).toContain('.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame');
     expect(stylesSource).not.toContain('.pet-shell.pet-hovered:not([data-pet-locked="true"]) .pet-resize-frame');
+  });
+
+  it('dims the model to exactly 30 percent only while locked and hovered', () => {
+    expect(petSource).toContain('const displayedModelOpacity = isLocked && hovered ? Math.min(modelViewport.modelOpacity, 0.3) : modelViewport.modelOpacity;');
+    expect(petSource).toContain('modelOpacity: displayedModelOpacity');
+    expect(petSource).toContain('if (hovered && isLocked)');
+    expect(petSource).not.toContain('modelOpacity: modelViewport.modelOpacity * (isLocked && hovered ? 0.5 : 1)');
   });
 });
