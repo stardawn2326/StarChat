@@ -39,7 +39,7 @@ import { streamChatCompletion } from './api/openai-compatible';
 import { SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
 import { nextPetDragBounds } from './window-drag';
-import { buildCompanionSystemPrompt, companionSummary, presentationForAssistantText, recordCompanionExchange } from '../shared/companion';
+import { buildCompanionSystemPrompt, companionSummary, recordCompanionExchange } from '../shared/companion';
 import { synthesizeCosyVoice } from './tts/cosyvoice';
 import { ensureCosyVoiceService, stopManagedCosyVoiceService } from './tts/cosyvoice-service';
 import { VoiceProfileStore } from './voice-profile-store';
@@ -778,9 +778,6 @@ async function runChat(
     sendChatEvent(sender, { type: 'delta', requestId, delta });
   }
   const nextCompanion = getStore().saveCompanionState(recordCompanionExchange(before, snapshot, message, responseText));
-  for (const event of presentationForAssistantText(responseText, snapshot.semanticMappings)) {
-    sendAssistantPresentation(event);
-  }
   sendChatEvent(sender, { type: 'complete', requestId, response: responseText, companion: companionSummary(nextCompanion, snapshot.relationshipStages) });
   sendStateChanged();
 }
@@ -1183,7 +1180,14 @@ function isSafePresentationEvent(value: unknown): value is PresentationEvent {
   }
   const event = value as Partial<PresentationEvent>;
   if (event.type === 'speech') {
-    return event.source === 'assistant' && typeof event.speaking === 'boolean';
+    const mouthOpen = event.mouthOpen;
+    const mouthForm = event.mouthForm;
+    const timestamp = event.timestamp;
+    return event.source === 'assistant'
+      && typeof event.speaking === 'boolean'
+      && (mouthOpen === undefined || (Number.isFinite(mouthOpen) && mouthOpen >= 0 && mouthOpen <= 1))
+      && (mouthForm === undefined || (Number.isFinite(mouthForm) && mouthForm >= -1 && mouthForm <= 1))
+      && (timestamp === undefined || Number.isFinite(timestamp));
   }
   if (event.source !== 'system' && event.source !== 'assistant') {
     return false;

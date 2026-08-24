@@ -221,19 +221,10 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     const runtime = runtimeRef.current;
     if (!runtime || !ready || event.type !== 'speech') return;
     if (!event.speaking) {
-      runtime.controller.setLipSync(0);
+      runtime.controller.setLipSync(0, 0);
       return;
     }
-    let open = false;
-    runtime.controller.setLipSync(0.55);
-    const timer = window.setInterval(() => {
-      open = !open;
-      runtime.controller.setLipSync(open ? 0.72 : 0.18);
-    }, 110);
-    return () => {
-      window.clearInterval(timer);
-      runtime.controller.setLipSync(0);
-    };
+    runtime.controller.setLipSync(event.mouthOpen ?? 0, event.mouthForm ?? 0);
   }, [event, ready, runtimeRef]);
 
   useEffect(() => {

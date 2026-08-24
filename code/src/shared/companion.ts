@@ -101,6 +101,10 @@ export function buildCompanionSystemPrompt(snapshot: PersonalityRequestSnapshot,
 }
 
 function intentFromText(text: string): string {
+  if (/(才不是|笨蛋|哼|别得意|不许笑)/u.test(text)) return 'tsundere';
+  if (/(害羞|不好意思|脸红|别一直看)/u.test(text)) return 'shy';
+  if (/(紧张|不安|焦虑|慌张)/u.test(text)) return 'anxious';
+  if (/(好困|困了|想睡|休息一下|晚安)/u.test(text)) return 'sleepy';
   if (/(不能|无法|不可以|拒绝|抱歉)/u.test(text)) return 'refusal';
   if (/(错误|失败|出问题|异常)/u.test(text)) return 'error';
   if (/(担心|小心|注意安全|没事吧)/u.test(text)) return 'caring';
@@ -119,7 +123,11 @@ const FALLBACK_PRESENTATION: Record<string, RoleSemanticMapping> = {
   error: { expression: 'worried' },
   caring: { expression: 'caring_smile', action: 'nod' },
   happy: { expression: 'bright_smile', action: 'nod' },
-  surprised: { expression: 'surprised', action: 'lean_forward' }
+  surprised: { expression: 'surprised', action: 'lean_forward' },
+  tsundere: { expression: 'tsundere_pout', action: 'look_away' },
+  shy: { expression: 'blush', action: 'look_away' },
+  anxious: { expression: 'anxious' },
+  sleepy: { expression: 'sleepy' }
 };
 
 export function presentationForAssistantText(text: string, mappings: Readonly<Record<string, RoleSemanticMapping>>): PresentationEvent[] {

@@ -67,6 +67,8 @@ let firstViewport = { ...DEFAULT_VIEWPORT };
 let modelBase = null;
 let currentTransform = { userScale: 1, userX: 0, userY: 0 };
 let lipSyncValue = 0;
+let lipSyncForm = 0;
+let mouthFormSupported = false;
 let lipSyncHandler = null;
 let persistentWatermarkHandler = null;
 let persistentWatermarkEffect = null;
@@ -373,8 +375,13 @@ async function playPackageMotion(route, requestedName, interrupt) {
 
 function installModelEvents() {
   const internalModel = model?.internalModel;
+  const coreModel = internalModel?.coreModel;
+  mouthFormSupported = Number(coreModel?.getParameterIndex?.('ParamMouthForm')) >= 0;
   lipSyncHandler = () => {
-    internalModel?.coreModel?.setParameterValueById?.('ParamMouthOpenY', lipSyncValue);
+    coreModel?.setParameterValueById?.('ParamMouthOpenY', lipSyncValue);
+    if (mouthFormSupported) {
+      coreModel?.setParameterValueById?.('ParamMouthForm', lipSyncForm);
+    }
   };
   internalModel?.on?.('beforeModelUpdate', lipSyncHandler);
   persistentWatermarkHandler = () => {
@@ -476,6 +483,8 @@ export const controller = {
     persistentWatermarkHandler = null;
     persistentWatermarkEffect = null;
     lipSyncValue = 0;
+    lipSyncForm = 0;
+    mouthFormSupported = false;
     model?.destroy?.({ children: true });
     model = null;
     app?.destroy?.(false);
@@ -616,8 +625,9 @@ export const controller = {
     return tapAtNormalizedPoint(x, y);
   },
 
-  setLipSync(value) {
+  setLipSync(value, form = 0) {
     lipSyncValue = clamp(finite(Number(value), 0), 0, 1);
+    lipSyncForm = clamp(finite(Number(form), 0), -1, 1);
   },
 
   setWatermarkVisible(visible) {

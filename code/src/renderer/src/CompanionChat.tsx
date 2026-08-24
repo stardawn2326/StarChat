@@ -1,17 +1,110 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, PublicAppState } from '../../shared/ipc';
+import type { RoleSemanticMapping } from '../../shared/role-package';
 import type { AppSettings } from '../../shared/settings';
+import { presentationForAssistantText } from '../../shared/companion';
+import {
+  EmotionCueGate,
+  LipSyncEnvelope,
+  StreamingSentenceBuffer,
+  mouthFormAtProgress,
+  timeDomainRms
+} from './speech-performance';
 
 interface CompanionChatProps { state: PublicAppState }
 
-async function speak(text: string, settings: AppSettings): Promise<void> {
-  if (!text.trim()) return;
-  const audio = new Audio(await window.baoyin.tts.synthesize(text));
+type CancelPlayback = (() => void) | null;
+
+function emitSpeech(speaking: boolean, mouthOpen = 0, mouthForm = 0): void {
+  window.baoyin.presentation.emit({
+    type: 'speech',
+    speaking,
+    source: 'assistant',
+    mouthOpen: Math.min(1, Math.max(0, mouthOpen)),
+    mouthForm: Math.min(1, Math.max(-1, mouthForm)),
+    timestamp: Date.now()
+  });
+}
+
+async function playAnalyzedSpeech(
+  text: string,
+  source: string,
+  settings: AppSettings,
+  registerCancel: (cancel: CancelPlayback) => void
+): Promise<void> {
+  const audio = new Audio(source);
   audio.volume = settings.ttsVolume;
   audio.playbackRate = settings.ttsRate;
-  audio.onplaying = () => window.baoyin.presentation.emit({ type: 'speech', speaking: true, source: 'assistant' });
-  audio.onended = audio.onerror = () => window.baoyin.presentation.emit({ type: 'speech', speaking: false, source: 'assistant' });
-  await audio.play();
+  const context = new AudioContext();
+  const mediaSource = context.createMediaElementSource(audio);
+  const analyser = context.createAnalyser();
+  analyser.fftSize = 512;
+  analyser.smoothingTimeConstant = 0;
+  mediaSource.connect(analyser);
+  analyser.connect(context.destination);
+  const samples = new Uint8Array(analyser.fftSize);
+  const envelope = new LipSyncEnvelope();
+
+  await new Promise<void>((resolve, reject) => {
+    let animationFrame = 0;
+    let finished = false;
+    let lastSampleAt = performance.now();
+    let lastEmitAt = Number.NEGATIVE_INFINITY;
+
+    const finish = (error?: Error): void => {
+      if (finished) return;
+      finished = true;
+      window.cancelAnimationFrame(animationFrame);
+      audio.pause();
+      emitSpeech(false);
+      registerCancel(null);
+      void context.close();
+      if (error) reject(error);
+      else resolve();
+    };
+
+    const sampleAudio = (now: number): void => {
+      if (finished) return;
+      const elapsed = Math.max(1, now - lastSampleAt);
+      lastSampleAt = now;
+      analyser.getByteTimeDomainData(samples);
+      const mouthOpen = envelope.update(timeDomainRms(samples), elapsed);
+      const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 0;
+      const progress = duration > 0 ? audio.currentTime / duration : 0;
+      const mouthForm = mouthOpen > 0.03 ? mouthFormAtProgress(text, progress) : 0;
+      if (now - lastEmitAt >= 33) {
+        emitSpeech(true, mouthOpen, mouthForm);
+        lastEmitAt = now;
+      }
+      animationFrame = window.requestAnimationFrame(sampleAudio);
+    };
+
+    audio.onended = () => finish();
+    audio.onerror = () => finish(new Error('语音音频播放失败'));
+    registerCancel(() => finish());
+    void context.resume()
+      .then(() => audio.play())
+      .then(() => {
+        if (finished) return;
+        emitSpeech(true, 0, 0);
+        animationFrame = window.requestAnimationFrame(sampleAudio);
+      })
+      .catch((error: unknown) => finish(error instanceof Error ? error : new Error('语音播放失败')));
+  });
+}
+
+function emitSegmentPresentation(
+  text: string,
+  mappings: Readonly<Record<string, RoleSemanticMapping>>,
+  expressionGate: EmotionCueGate,
+  actionGate: EmotionCueGate
+): void {
+  const now = Date.now();
+  for (const event of presentationForAssistantText(text, mappings)) {
+    if (event.type === 'expression' && !expressionGate.accept(event.name, now)) continue;
+    if (event.type === 'action' && !actionGate.accept(event.name, now)) continue;
+    window.baoyin.presentation.emit(event);
+  }
 }
 
 export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
@@ -22,40 +115,102 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
   const activeId = useRef<string | null>(null);
   const assistantText = useRef('');
   const settingsRef = useRef(state.settings);
+  const mappingsRef = useRef(state.role.presentation.semanticMappings);
+  const sentenceBufferRef = useRef(new StreamingSentenceBuffer());
+  const synthesisTailRef = useRef<Promise<void>>(Promise.resolve());
+  const playbackTailRef = useRef<Promise<void>>(Promise.resolve());
+  const speechGenerationRef = useRef(0);
+  const cancelPlaybackRef = useRef<CancelPlayback>(null);
+  const expressionGateRef = useRef(new EmotionCueGate(1600));
+  const actionGateRef = useRef(new EmotionCueGate(2200));
   settingsRef.current = state.settings;
+  mappingsRef.current = state.role.presentation.semanticMappings;
 
-  useEffect(() => window.baoyin.chat.onEvent((event) => {
-    if (event.requestId !== activeId.current) return;
-    if (event.type === 'delta') {
-      assistantText.current += event.delta;
-      setMessages((current) => {
-        const next = [...current];
-        if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: assistantText.current };
-        return next;
+  const cancelSpeech = (): void => {
+    speechGenerationRef.current += 1;
+    sentenceBufferRef.current.reset();
+    cancelPlaybackRef.current?.();
+    cancelPlaybackRef.current = null;
+    synthesisTailRef.current = Promise.resolve();
+    playbackTailRef.current = Promise.resolve();
+    expressionGateRef.current.reset();
+    actionGateRef.current.reset();
+    emitSpeech(false);
+  };
+
+  const enqueueSpeech = (text: string): void => {
+    const segment = text.trim();
+    if (!segment) return;
+    const generation = speechGenerationRef.current;
+    const sourcePromise = synthesisTailRef.current.then(() => {
+      if (generation !== speechGenerationRef.current) return '';
+      return window.baoyin.tts.synthesize(segment);
+    });
+    synthesisTailRef.current = sourcePromise.then(() => undefined, () => undefined);
+    const playback = playbackTailRef.current.then(async () => {
+      const source = await sourcePromise;
+      if (!source || generation !== speechGenerationRef.current) return;
+      emitSegmentPresentation(segment, mappingsRef.current, expressionGateRef.current, actionGateRef.current);
+      await playAnalyzedSpeech(segment, source, settingsRef.current, (cancel) => {
+        if (generation === speechGenerationRef.current) cancelPlaybackRef.current = cancel;
       });
-    } else if (event.type === 'complete') {
-      const finalText = assistantText.current || event.response;
-      setMessages((current) => {
-        const next = [...current];
-        if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: finalText };
-        return next.slice(-20);
-      });
-      activeId.current = null;
-      setRequestId(null);
-      void speak(finalText, settingsRef.current).catch((reason: unknown) => {
-        window.baoyin.presentation.emit({ type: 'speech', speaking: false, source: 'assistant' });
-        setError(reason instanceof Error ? reason.message : '语音播放失败');
-      });
-    } else {
-      setError(event.message);
-      activeId.current = null;
-      setRequestId(null);
-    }
-  }), []);
+    });
+    playbackTailRef.current = playback.catch((reason: unknown) => {
+      if (generation !== speechGenerationRef.current) return;
+      emitSpeech(false);
+      setError(reason instanceof Error ? reason.message : '语音播放失败');
+    });
+  };
+
+  useEffect(() => {
+    const unsubscribe = window.baoyin.chat.onEvent((event) => {
+      if (event.requestId !== activeId.current) return;
+      if (event.type === 'delta') {
+        assistantText.current += event.delta;
+        for (const sentence of sentenceBufferRef.current.push(event.delta)) enqueueSpeech(sentence);
+        setMessages((current) => {
+          const next = [...current];
+          if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: assistantText.current };
+          return next;
+        });
+      } else if (event.type === 'complete') {
+        const finalText = assistantText.current || event.response;
+        for (const sentence of sentenceBufferRef.current.flush()) enqueueSpeech(sentence);
+        const generation = speechGenerationRef.current;
+        void playbackTailRef.current.then(() => {
+          if (generation !== speechGenerationRef.current) return;
+          emitSpeech(false);
+          window.baoyin.presentation.emit({
+            type: 'expression',
+            name: 'neutral',
+            source: 'assistant',
+            layer: 'dialogue_emotion'
+          });
+        });
+        setMessages((current) => {
+          const next = [...current];
+          if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: finalText };
+          return next.slice(-20);
+        });
+        activeId.current = null;
+        setRequestId(null);
+      } else {
+        cancelSpeech();
+        setError(event.message);
+        activeId.current = null;
+        setRequestId(null);
+      }
+    });
+    return () => {
+      unsubscribe();
+      cancelSpeech();
+    };
+  }, []);
 
   const send = async (): Promise<void> => {
     const message = draft.trim();
     if (!message || requestId) return;
+    cancelSpeech();
     setError(null);
     setDraft('');
     assistantText.current = '';
@@ -70,6 +225,13 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     }
   };
 
+  const stop = (): void => {
+    if (requestId) void window.baoyin.chat.cancel(requestId);
+    cancelSpeech();
+    activeId.current = null;
+    setRequestId(null);
+  };
+
   return <div className="companion-chat">
     <div className="companion-status">
       <span>关系阶段<strong>{state.companion.stageLabel}</strong></span>
@@ -82,7 +244,7 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
       {messages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
     </div>
     {error ? <p className="error-banner">{error}</p> : null}
-    <div className="companion-composer"><textarea value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送</button>{requestId ? <button className="secondary-button" type="button" onClick={() => void window.baoyin.chat.cancel(requestId)}>停止</button> : null}</div>
-    <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；播放时驱动模型口型。API Key只保存在主进程用户数据目录。</p>
+    <div className="companion-composer"><textarea value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送</button>{requestId ? <button className="secondary-button" type="button" onClick={stop}>停止</button> : null}</div>
+    <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p>
   </div>;
 }

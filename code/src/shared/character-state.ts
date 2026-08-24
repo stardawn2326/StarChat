@@ -65,8 +65,9 @@ export class CharacterStateResolver {
   }
 
   finishAction(): void {
-    this.actions.delete('special_action');
-    this.actions.delete('idle_action');
+    const active = [...this.actions.entries()]
+      .sort((a, b) => actionPriority[b[0]] - actionPriority[a[0]])[0];
+    if (active) this.actions.delete(active[0]);
   }
 
   snapshot(): CharacterStateSnapshot {

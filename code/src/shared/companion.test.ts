@@ -31,4 +31,11 @@ describe('companion relationship, memory and presentation contract', () => {
     expect(events).toContainEqual({ type: 'expression', name: 'annoyed', source: 'assistant', layer: 'dialogue_emotion' });
     expect(events).toContainEqual({ type: 'action', name: 'shake_head', source: 'assistant', layer: 'reply_state' });
   });
+
+  it('covers shy, tsundere, anxious and sleepy dialogue with semantic fallbacks', () => {
+    expect(presentationForAssistantText('才、才不是特意关心你。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'tsundere_pout' });
+    expect(presentationForAssistantText('有点不好意思，别一直看我。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'blush' });
+    expect(presentationForAssistantText('我有些紧张，不知道会不会出问题。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'anxious' });
+    expect(presentationForAssistantText('好困，想稍微休息一下。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'sleepy' });
+  });
 });

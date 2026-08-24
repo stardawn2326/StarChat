@@ -8,6 +8,7 @@ import { pixiWorldPointFromCursor } from './airi-world-coordinate';
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const runtimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
 const canvasSource = readFileSync(resolve(testDirectory, 'Live2DCanvas.tsx'), 'utf8');
+const chatSource = readFileSync(resolve(testDirectory, 'CompanionChat.tsx'), 'utf8');
 const packageJson = JSON.parse(readFileSync(resolve(testDirectory, '../../../package.json'), 'utf8')) as {
   dependencies?: Record<string, string>;
 };
@@ -111,5 +112,15 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(packageRuntimeSource).toContain('setFocusActive(active)');
     expect(packageRuntimeSource).toContain('bodyVelocityX');
     expect(packageRuntimeSource).toContain('spring * (targetX - this.bodyFocusX)');
+  });
+
+  it('drives lip sync from played audio frames instead of a fixed mouth timer', () => {
+    expect(chatSource).toContain('createAnalyser()');
+    expect(chatSource).toContain("type: 'speech'");
+    expect(chatSource).toContain('speaking,');
+    expect(chatSource).toContain('mouthOpen');
+    expect(canvasSource).not.toContain('open = !open');
+    expect(canvasSource).not.toContain('0.72 : 0.18');
+    expect(runtimeSource).toContain("getParameterIndex?.('ParamMouthForm')");
   });
 });

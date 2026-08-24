@@ -15,7 +15,14 @@ export type PresentationControlName = 'stop_action' | 'stop_expression' | 'neutr
 export type PresentationEvent =
   | { type: 'expression'; name: ExpressionName; source: 'system' | 'assistant'; layer?: PresentationLayer }
   | { type: 'action'; name: ActionName; source: 'system' | 'assistant'; layer?: PresentationLayer }
-  | { type: 'speech'; speaking: boolean; source: 'assistant' }
+  | {
+      type: 'speech';
+      speaking: boolean;
+      source: 'assistant';
+      mouthOpen?: number;
+      mouthForm?: number;
+      timestamp?: number;
+    }
   | { type: 'control'; name: PresentationControlName; source: 'system'; layer: 'manual' | 'safety' };
 
 export class PresentationBus {
