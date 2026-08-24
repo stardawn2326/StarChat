@@ -12,7 +12,10 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: false');
     expect(creation).toContain("backgroundMaterial: 'none'");
+    expect(creation).toContain("titleBarStyle: 'hidden'");
+    expect(creation).toContain('accentColor: false');
     expect(creation).toContain('titleBarOverlay: false');
+    expect(creation).toContain("petWindow.setBackgroundMaterial('none')");
   });
 
   it('neutralizes non-client chrome on the settings window as well', () => {
@@ -42,5 +45,12 @@ describe('Windows transparent pet shell', () => {
     expect(blurHandler).not.toContain('setAlwaysOnTop');
     expect(source).not.toContain('petWindow?.focus()');
     expect(source).toContain('petWindow?.showInactive()');
+  });
+
+  it('does not expose recentering from the tray or pet context menu', () => {
+    const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
+    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
+    expect(tray).not.toContain('桌宠回中');
+    expect(petMenu).not.toContain('桌宠回中');
   });
 });

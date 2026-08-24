@@ -418,8 +418,10 @@ function createPetWindow(): void {
     thickFrame: false,
     roundedCorners: false,
     autoHideMenuBar: false,
+    titleBarStyle: 'hidden',
     titleBarOverlay: false,
     backgroundMaterial: 'none',
+    accentColor: false,
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
@@ -439,6 +441,7 @@ function createPetWindow(): void {
   petWindow?.setTitle('');
   petWindow.setMenuBarVisibility(false);
   petWindow.setBackgroundColor('#00000000');
+  petWindow.setBackgroundMaterial('none');
   applyPetWindowSettings();
   petWindow.setIgnoreMouseEvents(true, { forward: true });
   petWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -721,7 +724,6 @@ function createTray(): void {
       { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
       { label: '开启/关闭桌宠交互', click: togglePetInteractionMode },
       { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
-      { label: '桌宠回中', click: centerPetWindow },
       { type: 'separator' },
       { label: '退出白音', click: () => app.quit() }
     ])
@@ -755,7 +757,6 @@ function showPetContextMenu(): void {
   Menu.buildFromTemplate([
     { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
     { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
-    { label: '桌宠回中', click: centerPetWindow },
     { type: 'separator' },
     { label: '退出白音', click: () => app.quit() }
   ]).popup({ window: petWindow });
@@ -1143,7 +1144,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petInteractionEnabled(getStore().readSettings())) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || !petInteractionEnabled(getStore().readSettings())) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
     petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });

@@ -416,7 +416,7 @@ function PetApp(): JSX.Element {
       finalizeActivePointer(event, event.type === 'pointercancel');
     };
     const handleWheel = (event: WheelEvent): void => {
-      if (!modelEditMode || locked.current) {
+      if (locked.current) {
         return;
       }
       event.preventDefault();
@@ -449,7 +449,7 @@ function PetApp(): JSX.Element {
       cancelActivePointer();
       dragSchedulerRef.current?.cancel();
     };
-  }, [interactionMode, modelEditMode]);
+  }, [interactionMode]);
 
   if (!appState) {
     return <main className="pet-shell pet-loading" aria-label="白音桌宠窗口" data-pet-role="pet" />;

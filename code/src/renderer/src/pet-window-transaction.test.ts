@@ -35,6 +35,14 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(rendererSource).toContain("gesture.operation === 'window-and-model-drag'");
   });
 
+  it('routes the wheel to model zoom whenever interaction is enabled', () => {
+    const wheelHandler = rendererSource.slice(rendererSource.indexOf('const handleWheel'), rendererSource.indexOf("document.addEventListener('contextmenu'"));
+    expect(wheelHandler).toContain('const factor = event.deltaY < 0 ? 1.08 : 0.925');
+    expect(wheelHandler).toContain('updateModelViewport({ modelScale: viewportRef.current.modelScale * factor })');
+    expect(wheelHandler).toContain('if (locked.current)');
+    expect(wheelHandler).not.toContain('!modelEditMode || locked.current');
+  });
+
   it('coalesces resize viewport compensation and avoids settings IPC on every transparent resize frame', () => {
     expect(rendererSource).toContain('resizeViewportFrameRef');
     expect(rendererSource).toContain('updateModelViewport(compensated, false)');
