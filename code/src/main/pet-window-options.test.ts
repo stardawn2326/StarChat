@@ -18,6 +18,13 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain("petWindow.setBackgroundMaterial('none')");
   });
 
+  it('pins a transparent pet to a full native rectangle so DWM cannot paint an inactive non-client strip', () => {
+    const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
+    expect(source).toContain('function syncPetWindowShape');
+    expect(source).toContain('petWindow.setShape([{ x: 0, y: 0, width: bounds.width, height: bounds.height }])');
+    expect(creation).toContain('syncPetWindowShape();');
+  });
+
   it('neutralizes non-client chrome on the settings window as well', () => {
     const creation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
     expect(creation).toContain("title: ''");

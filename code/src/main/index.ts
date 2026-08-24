@@ -322,6 +322,7 @@ function restorePetBounds(): void {
   };
   restoringPetBounds = true;
   petWindow.setBounds(safePetBounds(initial, display));
+  syncPetWindowShape();
   restoringPetBounds = false;
 }
 
@@ -365,6 +366,15 @@ function syncPetWindowResizable(): void {
   // Custom edge gestures own resizing. Native DWM resize paints a white
   // non-client strip on transparent frameless windows.
   petWindow.setResizable(false);
+  syncPetWindowShape();
+}
+
+function syncPetWindowShape(): void {
+  if (process.platform !== 'win32' || !petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  const bounds = petWindow.getBounds();
+  petWindow.setShape([{ x: 0, y: 0, width: bounds.width, height: bounds.height }]);
 }
 
 function applyPetWindowSettings(): void {
@@ -469,6 +479,7 @@ function createPetWindow(): void {
     arrangeInteractionTestWindow();
   });
   petWindow.on('resize', () => {
+    syncPetWindowShape();
     persistPetBounds();
     sendPetBoundsChanged();
     arrangeInteractionTestWindow();
