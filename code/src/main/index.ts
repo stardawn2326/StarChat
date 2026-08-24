@@ -1122,6 +1122,9 @@ function registerIpc(): void {
       Number.isFinite(point?.screenY) &&
       petWindow
     ) {
+      // A new Alt-drag is authoritative. Drop any stale resize transaction
+      // before capturing its immutable window dimensions.
+      petResizeStart = null;
       petDragStart = { point, bounds: petWindow.getBounds() };
       // The custom renderer drag is position-only. Keep the native resize
       // frame disabled while User32 holds the mouse button, so a transparent
@@ -1144,12 +1147,12 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || !petInteractionEnabled(getStore().readSettings())) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || petResizeStart || !petInteractionEnabled(getStore().readSettings())) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
     petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });
   ipcMain.on('pet:resize-move', (event, point: PetDragPoint) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petResizeStart) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || !petResizeStart) return;
     const next = nextPetResizeBounds(petResizeStart.bounds, petResizeStart.request, point, petResizeStart.request.edge);
     petWindow.setBounds(safePetBounds(next, petResizeStart.display));
   });

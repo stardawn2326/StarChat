@@ -35,6 +35,13 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(rendererSource).toContain("gesture.operation === 'window-and-model-drag'");
   });
 
+  it('makes the main-process drag transaction exclude every resize move and clears stale resize state', () => {
+    const dragStart = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:drag-start'"), mainSource.indexOf("ipcMain.on('pet:drag-move'"));
+    const resizeMove = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:resize-move'"), mainSource.indexOf("ipcMain.on('pet:resize-end'"));
+    expect(dragStart).toContain('petResizeStart = null');
+    expect(resizeMove).toContain('petDragStart || !petResizeStart');
+  });
+
   it('routes the wheel to model zoom whenever interaction is enabled', () => {
     const wheelHandler = rendererSource.slice(rendererSource.indexOf('const handleWheel'), rendererSource.indexOf("document.addEventListener('contextmenu'"));
     expect(wheelHandler).toContain('const factor = event.deltaY < 0 ? 1.08 : 0.925');
