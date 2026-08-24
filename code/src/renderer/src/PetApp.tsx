@@ -8,7 +8,7 @@ import {
   sanitizeModelViewport,
   type ModelViewportSettings
 } from '../../shared/settings';
-import { isPetResizeEdge, type PetPointerOperation } from '../../shared/window-contract';
+import { isPetResizeEdge, petResizeEdge, type PetPointerOperation, type PetResizeEdge } from '../../shared/window-contract';
 import { sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
 import { Live2DCanvas } from './Live2DCanvas';
 import { createPetDragScheduler, latestPointerScreenPoint, type PetDragScheduler } from './drag-scheduler';
@@ -21,6 +21,7 @@ interface ActivePointer {
   screenX: number;
   screenY: number;
   viewport?: ModelViewportSettings;
+  resizeEdge?: PetResizeEdge;
   captureTarget: Element | null;
 }
 
@@ -227,15 +228,13 @@ function PetApp(): JSX.Element {
       if (locked.current || activePointer.current || !interactionMode) {
         return;
       }
-      if (isPetResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight)) {
-        // Leave the frame gesture to Chromium's native frameless resize hit test.
-        // Alt+frame remains the explicit whole-window move gesture.
-        if (!event.altKey) return;
+      const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
+      if (resizeEdge) {
         activePointer.current = {
-          operation: 'window-drag', pointerId: event.pointerId,
+          operation: 'window-resize', pointerId: event.pointerId, resizeEdge,
           screenX: event.screenX, screenY: event.screenY, captureTarget: event.target instanceof Element ? event.target : null
         };
-        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        window.baoyin.pet.resizeStart({ screenX: event.screenX, screenY: event.screenY, edge: resizeEdge });
         event.preventDefault();
         return;
       }
@@ -247,7 +246,12 @@ function PetApp(): JSX.Element {
         // Some Chromium targets reject capture after a forwarded click. The
         // document-level listener remains the safe fallback.
       }
-      {
+      if (event.altKey) {
+        activePointer.current = { operation: 'window-drag', pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY, captureTarget };
+        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        event.preventDefault();
+        return;
+      } else {
         activePointer.current = {
           operation: 'model-transform',
           pointerId: event.pointerId,
@@ -275,6 +279,10 @@ function PetApp(): JSX.Element {
       }
       if (gesture.operation === 'window-drag') {
         dragSchedulerRef.current?.queue(latestPointerScreenPoint(event));
+        event.preventDefault();
+      }
+      if (gesture.operation === 'window-resize') {
+        window.baoyin.pet.resizeMove(latestPointerScreenPoint(event));
         event.preventDefault();
       }
     };
@@ -311,6 +319,10 @@ function PetApp(): JSX.Element {
           window.setTimeout(() => setTapPoint(null), 0);
         }
       }
+      if (gesture.operation === 'window-resize') {
+        window.baoyin.pet.resizeEnd();
+        event.preventDefault();
+      }
     };
     const handleWheel = (event: WheelEvent): void => {
       if (!modelEditMode || locked.current) {
@@ -343,6 +355,7 @@ function PetApp(): JSX.Element {
            dragSchedulerRef.current?.flush();
            window.baoyin.pet.dragEnd();
          }
+        if (gesture.operation === 'window-resize') window.baoyin.pet.resizeEnd();
         if (gesture.operation === 'model-transform') persistModelViewport(viewportRef.current);
         try {
           if (gesture.captureTarget?.hasPointerCapture(gesture.pointerId)) {
@@ -371,6 +384,7 @@ function PetApp(): JSX.Element {
       data-pet-interaction-mode={interactionMode ? 'true' : 'false'}
       data-pet-model-edit-mode={modelEditMode ? 'true' : 'false'}
       data-pet-locked={isLocked ? 'true' : 'false'}
+      data-pet-locked-hover={isLocked && hovered ? 'true' : 'false'}
       data-live2d-status={appState.live2d.status}
       data-model-offset-x={modelViewport.modelOffsetX}
       data-model-offset-y={modelViewport.modelOffsetY}
@@ -382,7 +396,7 @@ function PetApp(): JSX.Element {
         <Live2DCanvas
           event={presentation}
           live2d={appState.live2d}
-          modelViewport={modelViewport}
+          modelViewport={{ ...modelViewport, modelOpacity: modelViewport.modelOpacity * (isLocked && hovered ? 0.5 : 1) }}
           cursor={cursor}
           gazeConfig={{
             enabled: appState.settings.cursorTrackingEnabled,

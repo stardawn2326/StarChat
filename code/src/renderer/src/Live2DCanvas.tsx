@@ -7,6 +7,7 @@ import { DEFAULT_MODEL_VIEWPORT, type ModelViewportSettings } from '../../shared
 import { CharacterStateResolver } from '../../shared/character-state';
 import { canvasViewport, composeAbsoluteModelTransform } from '../../shared/window-contract';
 import { CursorFollowGate } from './cursor-follow-gate';
+import { IdleGazeController } from './idle-gaze';
 
 interface RuntimeModule {
   controller: CubismRuntimeController;
@@ -48,14 +49,24 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
   const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number } | null>(null);
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
+  const idleGazeRef = useRef(new IdleGazeController());
 
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);
     if (decision.release) {
-      runtime.controller.releaseFocus();
+      idleGazeRef.current.reset();
+    }
+    if (decision.mode === 'released') {
+      const target = idleGazeRef.current.update(update.timestamp);
+      runtime.controller.setFocusFromScreenCursor({
+        screenX: window.screenX + canvasRect.left + canvasRect.width * (0.5 + target.x * 0.5),
+        screenY: window.screenY + canvasRect.top + canvasRect.height * (0.5 + target.y * 0.5),
+        canvasScreenRect: { left: window.screenX + canvasRect.left, top: window.screenY + canvasRect.top }
+      }, false);
       return;
     }
     if (decision.mode !== 'following') return;
+    idleGazeRef.current.reset();
     runtime.controller.setFocusFromScreenCursor({
       screenX: update.screenX,
       screenY: update.screenY,

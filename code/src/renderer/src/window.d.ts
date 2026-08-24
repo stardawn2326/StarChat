@@ -5,6 +5,7 @@ import type {
   CursorUpdate,
   DisplaySummary,
   PetDragPoint,
+  PetResizeStart,
   PetInputMode,
   PresentationBridgeEvent,
   PublicAppState,
@@ -85,6 +86,9 @@ declare global {
         dragStart(point: PetDragPoint): void;
         dragMove(point: PetDragPoint): void;
         dragEnd(): void;
+        resizeStart(request: PetResizeStart): void;
+        resizeMove(point: PetDragPoint): void;
+        resizeEnd(): void;
       };
       chat: {
         start(request: StartChatRequest): Promise<string>;

@@ -104,7 +104,8 @@ describe('AIRI production Live2D architecture gates', () => {
 
   it('keeps AIRI package focus and model physics as the sole body-motion chain', () => {
     expect(runtimeSource).not.toContain('configureFocus');
-    expect(canvasSource).toContain('runtime.controller.releaseFocus()');
+    expect(canvasSource).toContain('new IdleGazeController()');
+    expect(canvasSource).toContain("decision.mode === 'released'");
     expect(packageRuntimeSource).toContain('this.idParamBodyAngleX, this.focusController.x * 10');
     expect(packageRuntimeSource).not.toContain('spring * (targetX - this.bodyFocusX)');
     expect(packageRuntimeSource).not.toContain('this.idParamBodyAngleY, this.bodyFocusY');

@@ -79,6 +79,9 @@ export interface PetDragPoint {
   screenX: number;
   screenY: number;
 }
+export interface PetResizeStart extends PetDragPoint {
+  edge: import('./window-contract').PetResizeEdge;
+}
 
 export interface CursorUpdate {
   screenX: number;

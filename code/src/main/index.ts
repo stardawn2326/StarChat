@@ -21,6 +21,7 @@ import type {
   CursorUpdate,
   DisplaySummary,
   PetDragPoint,
+  PetResizeStart,
   PetInputMode,
   PublicAppState,
   CubismDebugCommand,
@@ -34,7 +35,7 @@ import type {
 import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, validateRolePackage } from '../shared/role-package';
 import type { CubismRuntimeMetrics } from '../shared/cubism';
 import type { PresentationEvent, PresentationLayer } from '../shared/presentation';
-import { clampPetWindowBounds, type WindowBounds } from '../shared/window-contract';
+import { clampPetWindowBounds, nextPetResizeBounds, type WindowBounds } from '../shared/window-contract';
 import { streamChatCompletion } from './api/openai-compatible';
 import { SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
@@ -57,6 +58,7 @@ let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let registeredSettingsShortcut = '';
 const INTERACTION_SHORTCUT = 'CommandOrControl+Alt+I';
 let petDragStart: { point: PetDragPoint; bounds: Electron.Rectangle } | null = null;
+let petResizeStart: { request: PetResizeStart; bounds: Electron.Rectangle } | null = null;
 let petModelEditMode = false;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
@@ -356,9 +358,9 @@ function syncPetWindowResizable(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-  // The frameless window exposes its native resize hit-test only on the thin
-  // renderer frame. Model dragging is a separate renderer gesture.
-  petWindow.setResizable(true);
+  // Custom edge gestures own resizing. Native DWM resize paints a white
+  // non-client strip on transparent frameless windows.
+  petWindow.setResizable(false);
 }
 
 function applyPetWindowSettings(): void {
@@ -366,7 +368,8 @@ function applyPetWindowSettings(): void {
     return;
   }
   const settings = getStore().readSettings();
-  petWindow.setAlwaysOnTop(settings.alwaysOnTop);
+  petWindow.setAlwaysOnTop(true, 'floating', 1);
+  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   petWindow.setOpacity(settings.petWindowOpacity);
   syncPetWindowResizable();
 }
@@ -381,7 +384,7 @@ function createPetWindow(): void {
     frame: false,
     autoHideMenuBar: true,
     transparent: true,
-    resizable: true,
+    resizable: false,
     alwaysOnTop: true,
     show: false,
     skipTaskbar: true,
@@ -427,6 +430,10 @@ function createPetWindow(): void {
     persistPetBounds();
     sendPetBoundsChanged();
     arrangeInteractionTestWindow();
+  });
+  petWindow.on('blur', () => {
+    const window = petWindow;
+    if (window && !window.isDestroyed()) window.setAlwaysOnTop(true, 'floating', 1);
   });
   petWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -604,7 +611,8 @@ function togglePetModelEditMode(): void {
 }
 
 function togglePetInteractionMode(): void {
-  const next = getStore().save({ petInteractionMode: !getStore().readSettings().petInteractionMode });
+  const enabled = !getStore().readSettings().petInteractionMode;
+  const next = getStore().save({ petInteractionMode: enabled, petLocked: !enabled });
   applyPetInputMode(next.petInteractionMode ? 'interactive' : 'passthrough');
   sendStateChanged();
 }
@@ -660,18 +668,14 @@ function toggleSettings(): void {
 }
 
 function createTray(): void {
-  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><circle cx="16" cy="16" r="15" fill="#9272c3"/><path d="M10 8h9c4 0 6 2 6 5 0 2-1 3-3 4 2 1 3 2 3 5 0 3-2 5-6 5h-9zm5 4v5h3c2 0 3-1 3-3s-1-2-3-2zm0 9v5h4c2 0 3-1 3-3s-1-2-3-2z" fill="white"/></svg>';
-  tray = new Tray(nativeImage.createFromDataURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`));
+  const iconPath = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'build', 'icon.png');
+  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
   tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '显示/隐藏设置', click: toggleSettings },
-      { label: '显示桌宠', click: () => petWindow?.show() },
-      { label: '隐藏桌宠', click: () => petWindow?.hide() },
-      { label: '锁定/解锁桌宠位置', click: togglePetLock },
-      { label: '开启/关闭临时交互模式', click: togglePetInteractionMode },
-      { label: '调整模型（视口编辑）', click: togglePetModelEditMode },
-      { label: '暂停/恢复光标追踪', click: toggleCursorTracking },
+      { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
+      { label: '开启/关闭桌宠交互', click: togglePetInteractionMode },
+      { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : petWindow?.show() },
       { label: '桌宠回中', click: centerPetWindow },
       { type: 'separator' },
       { label: '退出白音', click: () => app.quit() }
@@ -704,13 +708,9 @@ function showPetContextMenu(): void {
   }
   const locked = getStore().readSettings().petLocked;
   Menu.buildFromTemplate([
-    { label: '显示/隐藏设置', click: toggleSettings },
-    { label: locked ? '解锁桌宠位置' : '锁定桌宠位置', click: togglePetLock },
-    { label: '开启/关闭临时交互模式', click: togglePetInteractionMode },
-    { label: '调整模型（视口编辑）', click: togglePetModelEditMode },
-    { label: getStore().readSettings().cursorTrackingEnabled ? '暂停光标追踪' : '恢复光标追踪', click: toggleCursorTracking },
+    { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
+    { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
     { label: '桌宠回中', click: centerPetWindow },
-    { label: '隐藏桌宠', click: () => petWindow?.hide() },
     { type: 'separator' },
     { label: '退出白音', click: () => app.quit() }
   ]).popup({ window: petWindow });
@@ -1014,7 +1014,7 @@ function registerIpc(): void {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
     if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
       petWindow?.show();
-      petWindow?.focus();
+      petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
   });
   ipcMain.on('pet:center', (event) => {
@@ -1089,6 +1089,21 @@ function registerIpc(): void {
       syncPetWindowResizable();
       persistPetBounds(true);
     }
+  });
+  ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || getStore().readSettings().petLocked) return;
+    if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
+    petResizeStart = { request, bounds: petWindow.getBounds() };
+  });
+  ipcMain.on('pet:resize-move', (event, point: PetDragPoint) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petResizeStart) return;
+    const next = nextPetResizeBounds(petResizeStart.bounds, petResizeStart.request, point, petResizeStart.request.edge);
+    petWindow.setBounds(safePetBounds(next, selectedDisplay()));
+  });
+  ipcMain.on('pet:resize-end', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    petResizeStart = null;
+    persistPetBounds(true);
   });
   ipcMain.on('presentation:emit', (event, payload: PresentationEvent) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);

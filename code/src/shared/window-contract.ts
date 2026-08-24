@@ -9,12 +9,32 @@ export interface ModelFeaturePoint { x: number; y: number; }
 export interface FocusGeometry { canvasScreenRect: { left: number; top: number; width: number; height: number }; eyeAnchor: ModelFeaturePoint; visibleHalfExtent: ModelFeaturePoint; }
 export interface StableViewportProjection extends CanvasCssSize { referenceHeight: number; viewScale: number; cssPixelsPerWorldUnit: number; }
 export interface ModelBounds { left: number; right: number; top: number; bottom: number; }
-export type PetPointerOperation = 'model-transform' | 'window-drag';
+export type PetPointerOperation = 'model-transform' | 'window-drag' | 'window-resize';
+export type PetResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 export const PET_RESIZE_EDGE_PX = 8;
 
 export function isPetResizeEdge(localX: number, localY: number, width: number, height: number, edge = PET_RESIZE_EDGE_PX): boolean {
   if (![localX, localY, width, height, edge].every(Number.isFinite) || width <= 0 || height <= 0) return false;
   return localX <= edge || localY <= edge || localX >= width - edge || localY >= height - edge;
+}
+
+export function petResizeEdge(localX: number, localY: number, width: number, height: number, edge = PET_RESIZE_EDGE_PX): PetResizeEdge | null {
+  if (!isPetResizeEdge(localX, localY, width, height, edge)) return null;
+  const north = localY <= edge; const south = localY >= height - edge;
+  const west = localX <= edge; const east = localX >= width - edge;
+  if (north && west) return 'nw'; if (north && east) return 'ne';
+  if (south && west) return 'sw'; if (south && east) return 'se';
+  if (north) return 'n'; if (south) return 's';
+  return west ? 'w' : 'e';
+}
+
+export function nextPetResizeBounds(start: WindowBounds, startPoint: { screenX: number; screenY: number }, point: { screenX: number; screenY: number }, edge: PetResizeEdge): WindowBounds {
+  const dx = point.screenX - startPoint.screenX; const dy = point.screenY - startPoint.screenY;
+  const east = edge.includes('e'); const west = edge.includes('w');
+  const north = edge.includes('n'); const south = edge.includes('s');
+  const width = Math.max(PET_WINDOW_BOUNDS.minWidth, start.width + (east ? dx : west ? -dx : 0));
+  const height = Math.max(PET_WINDOW_BOUNDS.minHeight, start.height + (south ? dy : north ? -dy : 0));
+  return { x: west ? start.x + start.width - width : start.x, y: north ? start.y + start.height - height : start.y, width, height };
 }
 export const PET_WINDOW_BOUNDS = { minWidth: 240, minHeight: 240, maxWidth: 1200, maxHeight: 1200 } as const;
 const finite = (value: number, fallback: number): number => Number.isFinite(value) ? value : fallback;

@@ -54,11 +54,14 @@
       "out/**/*",
       "package.json"
     ],
+    "extraResources": [
+      { "from": "build/icon.png", "to": "icon.png" }
+    ],
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "portable"
-      ],
-      "signAndEditExecutable": false
+      ]
     }
   }
 }

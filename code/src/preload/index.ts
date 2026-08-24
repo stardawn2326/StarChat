@@ -7,6 +7,7 @@ import type {
   DisplaySummary,
   PublicAppState,
   PetDragPoint,
+  PetResizeStart,
   PetInputMode,
   PresentationBridgeEvent,
   RoleIdRequest,
@@ -124,7 +125,10 @@ const bridge = {
     },
     dragStart: (point: PetDragPoint): void => ipcRenderer.send('pet:drag-start', point),
     dragMove: (point: PetDragPoint): void => ipcRenderer.send('pet:drag-move', point),
-    dragEnd: (): void => ipcRenderer.send('pet:drag-end')
+    dragEnd: (): void => ipcRenderer.send('pet:drag-end'),
+    resizeStart: (request: PetResizeStart): void => ipcRenderer.send('pet:resize-start', request),
+    resizeMove: (point: PetDragPoint): void => ipcRenderer.send('pet:resize-move', point),
+    resizeEnd: (): void => ipcRenderer.send('pet:resize-end')
   },
   chat: {
     start: (request: StartChatRequest): Promise<string> => ipcRenderer.invoke('chat:start', request),

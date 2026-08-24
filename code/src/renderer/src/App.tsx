@@ -137,7 +137,10 @@ function App(): JSX.Element {
   };
 
   const onSettingsChange = (patch: Partial<AppSettings>, persist = true): void => {
-    const next = { ...settings, ...patch };
+    const normalizedPatch = typeof patch.petInteractionMode === 'boolean'
+      ? { ...patch, petLocked: !patch.petInteractionMode }
+      : patch;
+    const next = { ...settings, ...normalizedPatch };
     settingsDirty.current = true;
     settingsRef.current = next;
     setSettingsDraft(next);
