@@ -15,7 +15,6 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
-import { DEFAULT_APP_SETTINGS } from '../shared/settings';
 import type {
   ChatEvent,
   ChatMessage,
@@ -373,11 +372,7 @@ function applyPetWindowSettings(): void {
     return;
   }
   const settings = getStore().readSettings();
-  if (settings.alwaysOnTop && !petWindow.isAlwaysOnTop()) {
-    petWindow.setAlwaysOnTop(true, 'floating', 1);
-  } else if (!settings.alwaysOnTop && petWindow.isAlwaysOnTop()) {
-    petWindow.setAlwaysOnTop(false);
-  }
+  petWindow.setAlwaysOnTop(true, 'floating', 1);
   petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   petWindow.setOpacity(settings.petWindowOpacity);
   syncPetWindowResizable();
@@ -622,46 +617,6 @@ function centerPetWindow(): void {
   arrangeInteractionTestWindow();
 }
 
-function resetPetDefaults(): void {
-  const next = getStore().save({
-    alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop,
-    petLocked: DEFAULT_APP_SETTINGS.petLocked,
-    petScale: DEFAULT_APP_SETTINGS.petScale,
-    petOffsetX: DEFAULT_APP_SETTINGS.petOffsetX,
-    petOffsetY: DEFAULT_APP_SETTINGS.petOffsetY,
-    petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId,
-    settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut,
-    petBounds: DEFAULT_APP_SETTINGS.petBounds,
-    cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled,
-    cursorEyeWeight: DEFAULT_APP_SETTINGS.cursorEyeWeight,
-    cursorHeadWeight: DEFAULT_APP_SETTINGS.cursorHeadWeight,
-    cursorBodyWeight: DEFAULT_APP_SETTINGS.cursorBodyWeight,
-    petInteractionMode: DEFAULT_APP_SETTINGS.petInteractionMode,
-    live2dShowWatermark: DEFAULT_APP_SETTINGS.live2dShowWatermark,
-    modelViewportByModel: DEFAULT_APP_SETTINGS.modelViewportByModel,
-    petWindowOpacity: DEFAULT_APP_SETTINGS.petWindowOpacity,
-    petHoverBorderOpacity: DEFAULT_APP_SETTINGS.petHoverBorderOpacity,
-    petHoverShowDelayMs: DEFAULT_APP_SETTINGS.petHoverShowDelayMs,
-    petHoverFadeMs: DEFAULT_APP_SETTINGS.petHoverFadeMs,
-    cursorSmoothing: DEFAULT_APP_SETTINGS.cursorSmoothing,
-    cursorMaxStep: DEFAULT_APP_SETTINGS.cursorMaxStep,
-    cursorRangeX: DEFAULT_APP_SETTINGS.cursorRangeX,
-    cursorRangeY: DEFAULT_APP_SETTINGS.cursorRangeY,
-    cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion,
-    presentation: DEFAULT_APP_SETTINGS.presentation
-  });
-  petModelEditMode = false;
-  syncPetWindowResizable();
-  applyPetInputMode(petInteractionEnabled(next) ? 'interactive' : 'passthrough');
-  restorePetBounds();
-  persistPetBounds(true);
-  applyPetWindowSettings();
-  registerSettingsShortcut();
-  sendPetBoundsChanged();
-  sendStateChanged();
-  arrangeInteractionTestWindow();
-}
-
 function togglePetLock(): void {
   const enabled = petInteractionEnabled(getStore().readSettings());
   const next = getStore().save(petInteractionSettingsForEnabled(!enabled));
@@ -762,7 +717,7 @@ function createTray(): void {
       { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
       { label: '开启/关闭桌宠交互', click: togglePetInteractionMode },
       { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
-      { label: '全部回到默认', click: resetPetDefaults },
+      { label: '桌宠回中', click: centerPetWindow },
       { type: 'separator' },
       { label: '退出白音', click: () => app.quit() }
     ])
@@ -796,7 +751,7 @@ function showPetContextMenu(): void {
   Menu.buildFromTemplate([
     { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
     { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
-    { label: '全部回到默认', click: resetPetDefaults },
+    { label: '桌宠回中', click: centerPetWindow },
     { type: 'separator' },
     { label: '退出白音', click: () => app.quit() }
   ]).popup({ window: petWindow });
@@ -1107,6 +1062,7 @@ function registerIpc(): void {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
     if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
       showPetWindowInactive();
+      petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
   });
   ipcMain.on('pet:center', (event) => {

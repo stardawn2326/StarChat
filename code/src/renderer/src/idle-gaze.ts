@@ -20,7 +20,7 @@ export class IdleGazeController {
       this.from = { ...this.current };
       this.target = {
         x: (-0.75 + this.random() * 1.5) * strength,
-        y: (-0.65 + this.random() * 1.3) * strength
+        y: (-0.45 + this.random() * 0.85) * strength
       };
       this.transitionStartedAt = now;
       this.transitionDurationMs = 800 + this.random() * 1000;
