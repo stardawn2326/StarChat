@@ -94,6 +94,7 @@ export interface CubismRuntimeController {
   setViewport(width: number, height: number, renderScale: number): void;
   configureGaze(config: CubismGazeConfig): void;
   setFocusFromScreenCursor(point: { screenX: number; screenY: number; canvasScreenRect: { left: number; top: number } }, moving?: boolean): void;
+  releaseFocus(): void;
   setAutoBlink(enabled: boolean): void;
   tap(x: number, y: number): boolean;
   setLipSync(value: number): void;

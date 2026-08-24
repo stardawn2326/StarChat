@@ -6,6 +6,7 @@ import type { CubismGazeConfig, CubismRuntimeController, CubismRuntimeMetrics } 
 import { DEFAULT_MODEL_VIEWPORT, type ModelViewportSettings } from '../../shared/settings';
 import { CharacterStateResolver } from '../../shared/character-state';
 import { canvasViewport, composeAbsoluteModelTransform } from '../../shared/window-contract';
+import { CursorFollowGate } from './cursor-follow-gate';
 
 interface RuntimeModule {
   controller: CubismRuntimeController;
@@ -45,6 +46,21 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
   const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number } | null>(null);
+  const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
+
+  const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
+    const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);
+    if (decision.release) {
+      runtime.controller.releaseFocus();
+      return;
+    }
+    if (decision.mode !== 'following') return;
+    runtime.controller.setFocusFromScreenCursor({
+      screenX: update.screenX,
+      screenY: update.screenY,
+      canvasScreenRect: { left: window.screenX + canvasRect.left, top: window.screenY + canvasRect.top },
+    }, update.moving);
+  };
 
   const applyTransform = (runtime: RuntimeModule): void => {
     runtime.controller.setTransform(composeAbsoluteModelTransform({
@@ -76,6 +92,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     }
 
     let active = true;
+    cursorFollowGateRef.current.reset();
     setRuntimeStatus('正在加载 Cubism Core、AIRI Pixi 链与外部模型…');
 
     void import('./live2d-runtime.js')
@@ -103,11 +120,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
         if (cursor) {
           const canvasRect = canvas?.getBoundingClientRect();
           if (canvasRect) {
-            module.controller.setFocusFromScreenCursor({
-              screenX: cursor.screenX,
-              screenY: cursor.screenY,
-              canvasScreenRect: { left: window.screenX + canvasRect.left, top: window.screenY + canvasRect.top },
-            }, cursor.moving);
+            applyCursorFollow(module, cursor, canvasRect);
           }
         }
         characterStateRef.apply(event);
@@ -184,11 +197,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     if (!runtime || !cursor) return;
     const rect = canvasRef.current?.getBoundingClientRect();
     if (!rect) return;
-    runtime.controller.setFocusFromScreenCursor({
-      screenX: cursor.screenX,
-      screenY: cursor.screenY,
-      canvasScreenRect: { left: window.screenX + rect.left, top: window.screenY + rect.top },
-    }, cursor.moving);
+    applyCursorFollow(runtime, cursor, rect);
   }, [cursor, modelViewport.modelOffsetX, modelViewport.modelOffsetY, modelViewport.modelScale, runtimeRef]);
 
   useEffect(() => {

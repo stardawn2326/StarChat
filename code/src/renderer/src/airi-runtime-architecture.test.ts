@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { describe, expect, it } from 'vitest';
 import { pixiWorldPointFromCursor } from './airi-world-coordinate';
 
@@ -11,6 +12,8 @@ const packageJson = JSON.parse(readFileSync(resolve(testDirectory, '../../../pac
   dependencies?: Record<string, string>;
 };
 const workspaceYaml = readFileSync(resolve(testDirectory, '../../../pnpm-workspace.yaml'), 'utf8');
+const require = createRequire(import.meta.url);
+const packageRuntimeSource = readFileSync(require.resolve('pixi-live2d-display/cubism4'), 'utf8');
 
 describe('AIRI production Live2D architecture gates', () => {
   it('maps screen cursor to Pixi world pixels without a second model-space transform', () => {
@@ -96,5 +99,17 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(runtimeSource).toContain('persistentWatermarkHandler');
     expect(canvasSource).toContain('controller.setWatermarkVisible(showWatermark)');
     expect(canvasSource).not.toContain("playExpression(showWatermark ? 'watermark_on' : 'watermark_off')");
+  });
+
+  it('keeps weighted full-body inertia inside the package-owned focus update', () => {
+    expect(runtimeSource).toContain('internalModel?.configureFocus');
+    expect(canvasSource).toContain('runtime.controller.releaseFocus()');
+    expect(packageRuntimeSource).toContain('configureFocus(settings');
+    expect(packageRuntimeSource).toContain('idParamBodyAngleY');
+    expect(packageRuntimeSource).toContain('idParamBodyAngleZ');
+    expect(packageRuntimeSource).toContain('idleSwayStrength');
+    expect(packageRuntimeSource).toContain('setFocusActive(active)');
+    expect(packageRuntimeSource).toContain('bodyVelocityX');
+    expect(packageRuntimeSource).toContain('spring * (targetX - this.bodyFocusX)');
   });
 });

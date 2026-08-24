@@ -189,7 +189,7 @@ function App(): JSX.Element {
       return;
     }
     if (page === 'presentation') {
-      onSettingsChange({ cursorTrackingEnabled: true, cursorEyeWeight: 1, cursorHeadWeight: 0.35, cursorBodyWeight: 0.08, cursorSmoothing: 0.22, cursorMaxStep: 0.08, cursorRangeX: 1, cursorRangeY: 1, cursorIdleMotion: 0.035 });
+      onSettingsChange({ cursorTrackingEnabled: true, cursorEyeWeight: 1, cursorHeadWeight: 0.35, cursorBodyWeight: DEFAULT_APP_SETTINGS.cursorBodyWeight, cursorSmoothing: 0.22, cursorMaxStep: 0.08, cursorRangeX: 1, cursorRangeY: 1, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion });
       onPresentationChange(DEFAULT_PRESENTATION_SETTINGS);
       return;
     }

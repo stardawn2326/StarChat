@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import {
   DEFAULT_APP_SETTINGS,
   DEFAULT_CURSOR_BODY_WEIGHT,
+  INTERMEDIATE_CURSOR_BODY_WEIGHT,
   LEGACY_DEFAULT_CURSOR_BODY_WEIGHT,
   sanitizeAppSettings,
   type AppSettings,
@@ -47,11 +48,19 @@ export class SettingsStore {
   readSettings(): AppSettings {
     const stored = readJson<Partial<AppSettings>>(this.settingsPath, DEFAULT_APP_SETTINGS);
     const legacyBodyDefault = existsSync(this.settingsPath)
-      && Number(stored.cursorBodyWeight) === LEGACY_DEFAULT_CURSOR_BODY_WEIGHT;
-    const sanitized = sanitizeAppSettings(legacyBodyDefault
-      ? { ...stored, cursorBodyWeight: DEFAULT_CURSOR_BODY_WEIGHT }
-      : stored);
-    if (legacyBodyDefault) {
+      && [LEGACY_DEFAULT_CURSOR_BODY_WEIGHT, INTERMEDIATE_CURSOR_BODY_WEIGHT].includes(Number(stored.cursorBodyWeight));
+    const storedPresentation = stored.presentation;
+    const legacyPresentationDefault = existsSync(this.settingsPath)
+      && Number(storedPresentation?.bodyFollowStrength) === 0.45
+      && Number(storedPresentation?.bodyLag) === 0.22
+      && Number(storedPresentation?.inertiaStrength) === 0.18
+      && Number(storedPresentation?.idleSwayStrength) === 0.035;
+    const sanitized = sanitizeAppSettings({
+      ...stored,
+      ...(legacyBodyDefault ? { cursorBodyWeight: DEFAULT_CURSOR_BODY_WEIGHT } : {}),
+      ...(legacyPresentationDefault ? { presentation: DEFAULT_APP_SETTINGS.presentation } : {})
+    });
+    if (legacyBodyDefault || legacyPresentationDefault) {
       mkdirSync(this.baseDir, { recursive: true });
       writeFileSync(this.settingsPath, JSON.stringify(sanitized, null, 2), 'utf8');
     }

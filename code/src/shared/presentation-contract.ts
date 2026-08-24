@@ -20,18 +20,18 @@ export interface PresentationSliderDefinition {
 }
 
 export const DEFAULT_PRESENTATION_SETTINGS: PresentationSettings = {
-  bodyFollowStrength: 0.45,
-  bodyLag: 0.22,
-  inertiaStrength: 0.18,
-  idleSwayStrength: 0.035,
+  bodyFollowStrength: 0.82,
+  bodyLag: 0.32,
+  inertiaStrength: 0.72,
+  idleSwayStrength: 0.06,
   physicsEnabled: true
 };
 
 export const PRESENTATION_SLIDERS: readonly PresentationSliderDefinition[] = [
-  { key: 'bodyFollowStrength', label: '全身跟随强度', description: '身体跟随视线/动作意图的幅度；不直接写入 Cubism 参数。', min: 0, max: 1, step: 0.01, defaultValue: 0.45 },
-  { key: 'bodyLag', label: '身体跟随延迟', description: '身体跟随目标时的缓动延迟；数值越高越慢。', min: 0.05, max: 1.5, step: 0.01, defaultValue: 0.22 },
-  { key: 'inertiaStrength', label: '惯性强度', description: '传入 Focus/Physics 链路的惯性意图；不直接写入 Physics 输出。', min: 0, max: 5, step: 0.01, defaultValue: 0.18 },
-  { key: 'idleSwayStrength', label: '空闲摇摆强度', description: '无输入时的轻微身体摇摆；不会改变窗口位置。', min: 0, max: 0.15, step: 0.005, defaultValue: 0.035 }
+  { key: 'bodyFollowStrength', label: '全身跟随强度', description: '身体跟随视线/动作意图的幅度；由包级 Focus 链统一写入。', min: 0, max: 1, step: 0.01, defaultValue: 0.82 },
+  { key: 'bodyLag', label: '身体跟随延迟', description: '身体相对眼睛和头部的弹性延迟；数值越高越慢。', min: 0.05, max: 1.5, step: 0.01, defaultValue: 0.32 },
+  { key: 'inertiaStrength', label: '惯性强度', description: '控制身体弹簧的回弹和超调，继续由包级 Focus/Physics 链处理。', min: 0, max: 5, step: 0.01, defaultValue: 0.72 },
+  { key: 'idleSwayStrength', label: '空闲摇摆强度', description: '光标静止释放后仍保留的身体自由摇摆；不会改变窗口位置。', min: 0, max: 0.15, step: 0.005, defaultValue: 0.06 }
 ];
 
 export function sanitizePresentationSettings(input: Partial<PresentationSettings> | null | undefined): PresentationSettings {

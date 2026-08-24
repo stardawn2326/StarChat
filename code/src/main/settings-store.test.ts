@@ -45,6 +45,15 @@ describe('SettingsStore role persistence', () => {
     const migrated = new SettingsStore(testRoot).readSettings();
     expect(migrated.cursorBodyWeight).toBeGreaterThan(0.08);
 
+    writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({
+      ...DEFAULT_APP_SETTINGS,
+      cursorBodyWeight: 0.32,
+      presentation: { bodyFollowStrength: 0.45, bodyLag: 0.22, inertiaStrength: 0.18, idleSwayStrength: 0.035, physicsEnabled: true }
+    }), 'utf8');
+    const upgraded = new SettingsStore(testRoot).readSettings();
+    expect(upgraded.cursorBodyWeight).toBe(DEFAULT_APP_SETTINGS.cursorBodyWeight);
+    expect(upgraded.presentation.bodyFollowStrength).toBe(DEFAULT_APP_SETTINGS.presentation.bodyFollowStrength);
+
     writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({ ...DEFAULT_APP_SETTINGS, cursorBodyWeight: 0.17 }), 'utf8');
     const preserved = new SettingsStore(testRoot).readSettings();
     expect(preserved.cursorBodyWeight).toBe(0.17);

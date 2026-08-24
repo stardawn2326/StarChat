@@ -13,7 +13,9 @@ describe('presentation settings contract', () => {
       'bodyFollowStrength', 'bodyLag', 'inertiaStrength', 'idleSwayStrength'
     ]);
     expect(DEFAULT_PRESENTATION_SETTINGS.physicsEnabled).toBe(true);
-    expect(DEFAULT_PRESENTATION_SETTINGS.idleSwayStrength).toBe(0.035);
+    expect(DEFAULT_PRESENTATION_SETTINGS.bodyFollowStrength).toBeGreaterThan(0.7);
+    expect(DEFAULT_PRESENTATION_SETTINGS.inertiaStrength).toBeGreaterThan(0.5);
+    expect(DEFAULT_PRESENTATION_SETTINGS.idleSwayStrength).toBeGreaterThanOrEqual(0.05);
   });
 
   it('clamps unsafe values and supports single-field reset', () => {
@@ -22,7 +24,7 @@ describe('presentation settings contract', () => {
     expect(sanitized.bodyLag).toBe(0.05);
     expect(sanitized.idleSwayStrength).toBe(0.15);
     expect(sanitized.physicsEnabled).toBe(false);
-    expect(resetPresentationSetting('bodyLag')).toEqual({ bodyLag: 0.22 });
+    expect(resetPresentationSetting('bodyLag')).toEqual({ bodyLag: 0.32 });
     expect(resetPresentationSetting('physicsEnabled')).toEqual({ physicsEnabled: true });
   });
 

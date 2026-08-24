@@ -67,7 +67,8 @@ export interface SensitiveSettings {
 }
 
 export const LEGACY_DEFAULT_CURSOR_BODY_WEIGHT = 0.08;
-export const DEFAULT_CURSOR_BODY_WEIGHT = 0.32;
+export const INTERMEDIATE_CURSOR_BODY_WEIGHT = 0.32;
+export const DEFAULT_CURSOR_BODY_WEIGHT = 0.72;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
   apiBaseUrl: 'https://api.openai.com/v1',
