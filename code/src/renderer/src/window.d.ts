@@ -28,6 +28,7 @@ declare global {
         hideSettings(): void;
         toggleSettings(): void;
         showContextMenu(): void;
+        runtimeReady(): void;
         showPet(): void;
         toggleModelEdit(): void;
         onModelEditMode(callback: (enabled: boolean) => void): () => void;

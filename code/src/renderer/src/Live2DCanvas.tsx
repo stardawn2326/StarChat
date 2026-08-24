@@ -27,6 +27,16 @@ interface Live2DCanvasProps {
   debugCommand?: CubismDebugCommand | null;
   onFitFrame?: (bounds: { x: number; y: number; width: number; height: number }) => void;
   onModelHitChange?: (hit: boolean) => void;
+  onRuntimeReady?: () => void;
+}
+
+function waitForStableFrames(frameCount = 2): Promise<void> {
+  if (frameCount <= 0) return Promise.resolve();
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => {
+      void waitForStableFrames(frameCount - 1).then(resolve);
+    });
+  });
 }
 
 function entryFileName(entryPath: string | null): string | null {
@@ -37,7 +47,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame, onModelHitChange }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame, onModelHitChange, onRuntimeReady }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -51,6 +61,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number } | null>(null);
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
   const idleGazeRef = useRef(new IdleGazeController());
+  const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
 
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);
@@ -85,7 +96,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
       return;
     }
     onModelHitChange?.(runtime.controller.hitTest((cursor.localX - 0.5) * 2, (0.5 - cursor.localY) * 2));
-  }, [cursor, onModelHitChange, runtimeRef]);
+  }, [cursor, onModelHitChange, runtimeReadyEpoch, runtimeRef]);
 
   const applyTransform = (runtime: RuntimeModule): void => {
     runtime.controller.setTransform(composeAbsoluteModelTransform({
@@ -156,10 +167,18 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
         // loading; this never edits, crops, or masks the external model asset.
         module.controller.setWatermarkVisible(showWatermark);
         setRuntimeStatus('真实 Cubism WebGL 已启动 · 外部资源只读引用');
+        await waitForStableFrames(2);
+        if (active) {
+          setRuntimeReadyEpoch((value) => value + 1);
+          onRuntimeReady?.();
+        }
       })
       .catch((error: unknown) => {
         if (active) {
           setRuntimeStatus(error instanceof Error ? error.message : 'Cubism runtime 启动失败');
+          void waitForStableFrames(2).then(() => {
+            if (active) onRuntimeReady?.();
+          });
         }
       });
 
@@ -171,7 +190,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
         void import('./live2d-runtime.js').then((module) => module.stopExternalLive2D());
       }
     };
-  }, [live2d.entryPath, modelJsonName, ready, runtimeRef]);
+  }, [live2d.entryPath, modelJsonName, onRuntimeReady, ready, runtimeRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

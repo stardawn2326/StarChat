@@ -46,7 +46,7 @@ export class SettingsStore {
   }
 
   readSettings(): AppSettings {
-    const stored = readJson<Partial<AppSettings>>(this.settingsPath, DEFAULT_APP_SETTINGS);
+    const stored = readJson<Partial<AppSettings>>(this.settingsPath, {});
     const legacyBodyDefault = existsSync(this.settingsPath)
       && [LEGACY_DEFAULT_CURSOR_BODY_WEIGHT, INTERMEDIATE_CURSOR_BODY_WEIGHT].includes(Number(stored.cursorBodyWeight));
     const storedPresentation = stored.presentation;
@@ -60,7 +60,8 @@ export class SettingsStore {
       ...(legacyBodyDefault ? { cursorBodyWeight: DEFAULT_CURSOR_BODY_WEIGHT } : {}),
       ...(legacyPresentationDefault ? { presentation: DEFAULT_APP_SETTINGS.presentation } : {})
     });
-    if (legacyBodyDefault || legacyPresentationDefault) {
+    const interactionMigrated = stored.petLocked !== sanitized.petLocked || stored.petInteractionMode !== sanitized.petInteractionMode;
+    if (legacyBodyDefault || legacyPresentationDefault || interactionMigrated) {
       mkdirSync(this.baseDir, { recursive: true });
       writeFileSync(this.settingsPath, JSON.stringify(sanitized, null, 2), 'utf8');
     }

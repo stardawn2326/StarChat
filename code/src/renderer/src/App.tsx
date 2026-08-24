@@ -137,9 +137,11 @@ function App(): JSX.Element {
   };
 
   const onSettingsChange = (patch: Partial<AppSettings>, persist = true): void => {
-    const normalizedPatch = typeof patch.petInteractionMode === 'boolean'
-      ? { ...patch, petLocked: !patch.petInteractionMode }
-      : patch;
+    const normalizedPatch = typeof patch.petLocked === 'boolean'
+      ? { ...patch, petInteractionMode: !patch.petLocked }
+      : typeof patch.petInteractionMode === 'boolean'
+        ? { ...patch, petLocked: !patch.petInteractionMode }
+        : patch;
     const next = { ...settings, ...normalizedPatch };
     settingsDirty.current = true;
     settingsRef.current = next;
@@ -206,7 +208,7 @@ function App(): JSX.Element {
       return;
     }
     if (page === 'window') {
-      onSettingsChange({ alwaysOnTop: true, petLocked: false, petInteractionMode: false, petWindowOpacity: 1, petHoverBorderOpacity: 0.8, petHoverShowDelayMs: 80, petHoverFadeMs: 420 });
+      onSettingsChange({ alwaysOnTop: true, petLocked: false, petInteractionMode: true, petWindowOpacity: 1, petHoverBorderOpacity: 0.8, petHoverShowDelayMs: 80, petHoverFadeMs: 420 });
       return;
     }
     if (page === 'service') {

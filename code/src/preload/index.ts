@@ -28,6 +28,7 @@ const bridge = {
     hideSettings: (): void => ipcRenderer.send('settings:hide'),
     toggleSettings: (): void => ipcRenderer.send('settings:toggle'),
     showContextMenu: (): void => ipcRenderer.send('pet:context-menu'),
+    runtimeReady: (): void => ipcRenderer.send('pet:runtime-ready'),
     showPet: (): void => ipcRenderer.send('pet:show'),
     toggleModelEdit: (): void => ipcRenderer.send('pet:toggle-model-edit'),
     onModelEditMode: (callback: (enabled: boolean) => void): (() => void) => {

@@ -1,4 +1,5 @@
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from './presentation-contract';
+import { normalizePetInteractionSettings } from './pet-interaction';
 
 export interface AppSettings {
   apiBaseUrl: string;
@@ -89,7 +90,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   cursorEyeWeight: 1,
   cursorHeadWeight: 0.35,
   cursorBodyWeight: DEFAULT_CURSOR_BODY_WEIGHT,
-  petInteractionMode: false,
+  petInteractionMode: true,
   live2dShowWatermark: true,
   modelViewportByModel: {},
   activeRoleId: 'baoyin.default',
@@ -182,6 +183,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
   const ttsRate = Number(input.ttsRate);
   const ttsVolume = Number(input.ttsVolume);
   const defaultShowWatermark = isKnownPrivateMikuPath(input.live2dModelPath) ? false : DEFAULT_APP_SETTINGS.live2dShowWatermark;
+  const interaction = normalizePetInteractionSettings(input);
   const modelViewportByModel = sanitizeModelViewportMap(input.modelViewportByModel);
   const bounds = input.petBounds;
   const petBounds =
@@ -221,7 +223,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
       typeof input.live2dModelPath === 'string' && input.live2dModelPath.trim()
         ? input.live2dModelPath.trim()
         : null,
-    petLocked: input.petLocked === true,
+    petLocked: interaction.petLocked,
     petScale: Number.isFinite(petScale) ? Math.min(1.8, Math.max(0.6, petScale)) : DEFAULT_APP_SETTINGS.petScale,
     petOffsetX: Number.isFinite(petOffsetX) ? Math.min(240, Math.max(-240, Math.round(petOffsetX))) : DEFAULT_APP_SETTINGS.petOffsetX,
     petOffsetY: Number.isFinite(petOffsetY) ? Math.min(240, Math.max(-240, Math.round(petOffsetY))) : DEFAULT_APP_SETTINGS.petOffsetY,
@@ -235,7 +237,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
     cursorEyeWeight: Number.isFinite(cursorEyeWeight) ? Math.min(1, Math.max(0, cursorEyeWeight)) : DEFAULT_APP_SETTINGS.cursorEyeWeight,
     cursorHeadWeight: Number.isFinite(cursorHeadWeight) ? Math.min(1, Math.max(0, cursorHeadWeight)) : DEFAULT_APP_SETTINGS.cursorHeadWeight,
     cursorBodyWeight: Number.isFinite(cursorBodyWeight) ? Math.min(1, Math.max(0, cursorBodyWeight)) : DEFAULT_APP_SETTINGS.cursorBodyWeight,
-    petInteractionMode: input.petInteractionMode === true,
+    petInteractionMode: interaction.petInteractionMode,
     live2dShowWatermark:
       typeof input.live2dShowWatermark === 'boolean' ? input.live2dShowWatermark : defaultShowWatermark,
     modelViewportByModel,

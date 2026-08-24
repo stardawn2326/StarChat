@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
@@ -57,6 +57,19 @@ describe('SettingsStore role persistence', () => {
     writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({ ...DEFAULT_APP_SETTINGS, cursorBodyWeight: 0.17 }), 'utf8');
     const preserved = new SettingsStore(testRoot).readSettings();
     expect(preserved.cursorBodyWeight).toBe(0.17);
+  });
+
+  it('migrates legacy interaction flags to one canonical persisted policy', () => {
+    writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({
+      ...DEFAULT_APP_SETTINGS,
+      petLocked: false,
+      petInteractionMode: false
+    }), 'utf8');
+
+    const restored = new SettingsStore(testRoot).readSettings();
+    expect(restored).toMatchObject({ petLocked: false, petInteractionMode: true });
+    const persisted = JSON.parse(readFileSync(join(testRoot, 'settings.json'), 'utf8')) as typeof restored;
+    expect(persisted).toMatchObject({ petLocked: false, petInteractionMode: true });
   });
 
   it('persists relationship and memory state separately for each role', () => {

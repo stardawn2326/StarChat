@@ -436,7 +436,27 @@ function hitTestNormalized(x, y) {
   if (!model) return false;
   const worldX = (clamp(finite(Number(x), 0), -1, 1) + 1) * 0.5 * viewport.width;
   const worldY = (1 - clamp(finite(Number(y), 0), -1, 1)) * 0.5 * viewport.height;
-  return model.hitTest(worldX, worldY).length > 0;
+  if (model.hitTest(worldX, worldY).length > 0) {
+    return true;
+  }
+
+  const hitAreas = model.internalModel?.hitAreas ?? model.internalModel?.settings?.hitAreas;
+  const hasHitAreas = Array.isArray(hitAreas) ? hitAreas.length > 0 : Boolean(hitAreas && Object.keys(hitAreas).length > 0);
+  if (hasHitAreas) {
+    return false;
+  }
+
+  // External models are allowed to omit HitAreas. In that case use the
+  // current Pixi-rendered bounds, which include the model's actual transform
+  // and scale, instead of inventing a fixed ellipse in window coordinates.
+  const renderedBounds = model.getBounds?.();
+  if (!renderedBounds || ![renderedBounds.x, renderedBounds.y, renderedBounds.width, renderedBounds.height].every(Number.isFinite)) {
+    return false;
+  }
+  return worldX >= renderedBounds.x
+    && worldX <= renderedBounds.x + renderedBounds.width
+    && worldY >= renderedBounds.y
+    && worldY <= renderedBounds.y + renderedBounds.height;
 }
 
 export const controller = {

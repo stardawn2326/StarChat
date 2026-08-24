@@ -7,6 +7,7 @@ import { canvasViewport, sameModelTransform } from '../../shared/window-contract
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const canvasSource = readFileSync(resolve(testDirectory, 'Live2DCanvas.tsx'), 'utf8');
+const petSource = readFileSync(resolve(testDirectory, 'PetApp.tsx'), 'utf8');
 const runtimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
 
 interface DragViewportSnapshot {
@@ -116,5 +117,10 @@ describe('PetWindow drag and DPI viewport invariants', () => {
     expect(runtimeSource).not.toMatch(/nextViewport\.height\s*\*\s*nextViewport\.renderScale/);
     expect(runtimeSource).not.toMatch(/model\.position\.[xy]\s*\*\s*viewport\.renderScale/);
     expect(runtimeSource).not.toMatch(/viewport\.(width|height)\s*\*\s*viewport\.renderScale/);
+  });
+
+  it('keeps the model screen anchor fixed through north/west resize origin changes', () => {
+    expect(petSource).toContain('compensateModelViewportForWindowOrigin');
+    expect(petSource).toContain('persistModelViewport');
   });
 });

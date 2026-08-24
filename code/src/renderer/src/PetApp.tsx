@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { CubismDebugCommand, CursorUpdate, PublicAppState } from '../../shared/ipc';
 import type { PresentationEvent } from '../../shared/presentation';
+import { petInteractionEnabled } from '../../shared/pet-interaction';
+import { classifyPetHit, type PetHitRegion } from '../../shared/pet-hit-testing';
 import {
   DEFAULT_MODEL_VIEWPORT,
   modelViewportForPath,
@@ -8,7 +10,7 @@ import {
   sanitizeModelViewport,
   type ModelViewportSettings
 } from '../../shared/settings';
-import { isPetResizeEdge, petResizeEdge, type PetPointerOperation, type PetResizeEdge } from '../../shared/window-contract';
+import { compensateModelViewportForWindowOrigin, petResizeEdge, type PetPointerOperation, type PetResizeEdge } from '../../shared/window-contract';
 import { sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
 import { Live2DCanvas } from './Live2DCanvas';
 import { createPetDragScheduler, latestPointerScreenPoint, type PetDragScheduler } from './drag-scheduler';
@@ -38,6 +40,7 @@ function PetApp(): JSX.Element {
   const [modelViewport, setModelViewport] = useState<ModelViewportSettings>(DEFAULT_MODEL_VIEWPORT);
   const [presentationSettings, setPresentationSettings] = useState<PresentationSettings | null>(null);
   const [modelHit, setModelHit] = useState(false);
+  const [runtimeReady, setRuntimeReady] = useState(false);
   const inputMode = useRef<'interactive' | 'passthrough'>('interactive');
   const activePointer = useRef<ActivePointer | null>(null);
   const hoverShowTimer = useRef<number | null>(null);
@@ -46,18 +49,29 @@ function PetApp(): JSX.Element {
   const appStateRef = useRef<PublicAppState | null>(null);
   const dragSchedulerRef = useRef<PetDragScheduler | null>(null);
   const locked = useRef(false);
-  const hovered = modelHit && Boolean(cursor?.insideWindow);
-  const resizeHovered = Boolean(cursor?.insideWindow && isPetResizeEdge(
-    cursor.localX * cursor.windowWidth,
-    cursor.localY * cursor.windowHeight,
-    cursor.windowWidth,
-    cursor.windowHeight
-  ));
+  const hitRegion: PetHitRegion = cursor?.insideWindow
+    ? classifyPetHit(
+      cursor.localX * cursor.windowWidth,
+      cursor.localY * cursor.windowHeight,
+      cursor.windowWidth,
+      cursor.windowHeight,
+      modelHit
+    ).region
+    : 'transparent';
+  const hitRegionRef = useRef<PetHitRegion>('transparent');
+  hitRegionRef.current = hitRegion;
+  const hovered = hitRegion === 'model';
+  const resizeHovered = hitRegion === 'frame';
+  const transparentHit = hitRegion === 'transparent';
   const hoveredRef = useRef(false);
-  const isLocked = appState?.settings.petLocked === true;
+  const interactionMode = petInteractionEnabled(appState?.settings);
+  const interactionModeRef = useRef(false);
+  interactionModeRef.current = interactionMode;
+  const isLocked = appState ? !interactionMode : false;
   // Hit regions decide the gesture automatically: model = model offset,
   // frame = native resize, transparent remainder = click-through.
-  const interactionMode = !isLocked;
+  const runtimeReadySent = useRef(false);
+  const modelReady = appState?.live2d.status === 'ready' || appState?.live2d.status === 'ready_with_warnings';
   appStateRef.current = appState;
   if (!dragSchedulerRef.current) {
     dragSchedulerRef.current = createPetDragScheduler(
@@ -124,6 +138,10 @@ function PetApp(): JSX.Element {
     } });
   }, []);
 
+  const handleRuntimeReady = useCallback((): void => {
+    setRuntimeReady(true);
+  }, []);
+
   useEffect(() => {
     document.body.dataset.window = 'pet';
     const applyPetState = (next: PublicAppState): void => {
@@ -156,6 +174,29 @@ function PetApp(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    runtimeReadySent.current = false;
+    setRuntimeReady(false);
+  }, [appState?.live2d.entryPath]);
+
+  useEffect(() => {
+    if (!appState || (modelReady && !runtimeReady) || runtimeReadySent.current) {
+      return;
+    }
+    let firstFrame = 0;
+    let stableFrame = 0;
+    firstFrame = window.requestAnimationFrame(() => {
+      stableFrame = window.requestAnimationFrame(() => {
+        runtimeReadySent.current = true;
+        window.baoyin.app.runtimeReady();
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(stableFrame);
+    };
+  }, [appState, modelReady, runtimeReady]);
+
+  useEffect(() => {
     if (appState?.settings.presentation) setPresentationSettings(appState.settings.presentation);
   }, [appState?.settings.presentation]);
 
@@ -169,13 +210,13 @@ function PetApp(): JSX.Element {
   }, [appState?.live2d.entryPath, appState?.settings.modelViewportByModel]);
 
   useEffect(() => {
-    locked.current = appState?.settings.petLocked === true;
+    locked.current = !interactionMode;
     if (locked.current) {
       setModelEditMode(false);
       inputMode.current = 'passthrough';
       window.baoyin.app.setInputMode('passthrough');
     }
-  }, [appState?.settings.petLocked]);
+  }, [interactionMode]);
 
   useEffect(() => {
     hoveredRef.current = hovered;
@@ -193,12 +234,12 @@ function PetApp(): JSX.Element {
   }, [hovered, appState?.settings.petHoverFadeMs, appState?.settings.petHoverShowDelayMs]);
 
   useEffect(() => {
-    const nextMode = interactionMode && (hovered || resizeHovered) && !locked.current ? 'interactive' : 'passthrough';
+    const nextMode = interactionMode && !transparentHit && (hitRegion === 'model' || hitRegion === 'frame') && !locked.current ? 'interactive' : 'passthrough';
     if (nextMode !== inputMode.current && !activePointer.current) {
       inputMode.current = nextMode;
       window.baoyin.app.setInputMode(nextMode);
     }
-  }, [hovered, resizeHovered, interactionMode, appState?.settings.petLocked]);
+  }, [hitRegion, interactionMode]);
 
   useEffect(() => {
     const handleContextMenu = (event: MouseEvent): void => {
@@ -254,6 +295,14 @@ function PetApp(): JSX.Element {
         return;
       }
     };
+    const compensateResizeViewport = (gesture: ActivePointer): Partial<ModelViewportSettings> | null => {
+      if (!gesture.viewport) return null;
+      return compensateModelViewportForWindowOrigin(
+        gesture.viewport,
+        { x: gesture.windowX ?? window.screenX, y: gesture.windowY ?? window.screenY, width: window.innerWidth, height: window.innerHeight },
+        { x: window.screenX, y: window.screenY, width: window.innerWidth, height: window.innerHeight }
+      );
+    };
     const handlePointerMove = (event: PointerEvent): void => {
       const gesture = activePointer.current;
       if (!gesture || gesture.pointerId !== event.pointerId) {
@@ -275,41 +324,42 @@ function PetApp(): JSX.Element {
         window.baoyin.pet.resizeMove(latestPointerScreenPoint(event));
         window.requestAnimationFrame(() => {
           if (activePointer.current !== gesture || !gesture.viewport) return;
-          updateModelViewport({
-            modelOffsetX: gesture.viewport.modelOffsetX + (gesture.windowX ?? window.screenX) - window.screenX,
-            modelOffsetY: gesture.viewport.modelOffsetY + (gesture.windowY ?? window.screenY) - window.screenY
-          });
+          const compensated = compensateResizeViewport(gesture);
+          if (compensated) updateModelViewport(compensated);
         });
         event.preventDefault();
       }
     };
-    const handlePointerEnd = (event: PointerEvent): void => {
+
+    const finalizeActivePointer = (event: PointerEvent | null, cancelled = false): void => {
       const gesture = activePointer.current;
-      if (!gesture || gesture.pointerId !== event.pointerId) {
+      if (!gesture || (event && gesture.pointerId !== event.pointerId)) {
         return;
       }
       try {
-        if (gesture.captureTarget?.hasPointerCapture(event.pointerId)) {
-          gesture.captureTarget.releasePointerCapture(event.pointerId);
+        const pointerId = event?.pointerId ?? gesture.pointerId;
+        if (gesture.captureTarget?.hasPointerCapture(pointerId)) {
+          gesture.captureTarget.releasePointerCapture(pointerId);
         }
       } catch {
         // Capture can already be released by Chromium on cancellation.
       }
       activePointer.current = null;
       if (gesture.operation === 'model-transform') {
-        const next = viewportRef.current;
-        persistModelViewport(next);
-        event.preventDefault();
+        persistModelViewport(viewportRef.current);
+        event?.preventDefault();
         return;
       }
       if (gesture.operation === 'window-drag') {
-        dragSchedulerRef.current?.flush();
+        if (cancelled) dragSchedulerRef.current?.cancel();
+        else dragSchedulerRef.current?.flush();
         window.baoyin.pet.dragEnd();
-        event.preventDefault();
-        const nextMode = interactionMode && hoveredRef.current ? 'interactive' : 'passthrough';
+        event?.preventDefault();
+        const transparentHit = hitRegionRef.current === 'transparent';
+        const nextMode = interactionModeRef.current && !transparentHit ? 'interactive' : 'passthrough';
         inputMode.current = nextMode;
         window.baoyin.app.setInputMode(nextMode);
-        if (Math.hypot(event.screenX - gesture.screenX, event.screenY - gesture.screenY) < 5 && !locked.current) {
+        if (event && !cancelled && Math.hypot(event.screenX - gesture.screenX, event.screenY - gesture.screenY) < 5 && !locked.current) {
           const width = Math.max(1, window.innerWidth);
           const height = Math.max(1, window.innerHeight);
           setTapPoint({ x: (event.clientX / width - 0.5) * 2, y: (0.5 - event.clientY / height) * 2 });
@@ -317,16 +367,24 @@ function PetApp(): JSX.Element {
         }
       }
       if (gesture.operation === 'window-resize') {
-        if (gesture.viewport) {
-          updateModelViewport({
-            modelOffsetX: gesture.viewport.modelOffsetX + (gesture.windowX ?? window.screenX) - window.screenX,
-            modelOffsetY: gesture.viewport.modelOffsetY + (gesture.windowY ?? window.screenY) - window.screenY
-          });
+        const compensated = compensateResizeViewport(gesture);
+        if (compensated) {
+          updateModelViewport(compensated);
           persistModelViewport(viewportRef.current);
         }
         window.baoyin.pet.resizeEnd();
-        event.preventDefault();
+        event?.preventDefault();
       }
+      if (cancelled) {
+        inputMode.current = 'passthrough';
+        window.baoyin.app.setInputMode('passthrough');
+      }
+    };
+    const cancelActivePointer = (): void => {
+      finalizeActivePointer(null, true);
+    };
+    const handlePointerEnd = (event: PointerEvent): void => {
+      finalizeActivePointer(event, event.type === 'pointercancel');
     };
     const handleWheel = (event: WheelEvent): void => {
       if (!modelEditMode || locked.current) {
@@ -338,47 +396,32 @@ function PetApp(): JSX.Element {
       persistModelViewport(next);
     };
     document.addEventListener('contextmenu', handleContextMenu, true);
-    document.addEventListener('pointerdown', handlePointerDown, true);
-    document.addEventListener('pointermove', handlePointerMove, true);
-    document.addEventListener('pointerup', handlePointerEnd, true);
-    document.addEventListener('pointercancel', handlePointerEnd, true);
-    document.addEventListener('wheel', handleWheel, { capture: true, passive: false });
+    window.addEventListener('pointerdown', handlePointerDown, true);
+    window.addEventListener('pointermove', handlePointerMove, true);
+    window.addEventListener('pointerup', handlePointerEnd, true);
+    window.addEventListener('pointercancel', handlePointerEnd, true);
+    window.addEventListener('blur', cancelActivePointer, true);
+    window.addEventListener('wheel', handleWheel, { capture: true, passive: false });
     const initialMode = 'passthrough';
     inputMode.current = initialMode;
     window.baoyin.app.setInputMode(initialMode);
     return () => {
       document.removeEventListener('contextmenu', handleContextMenu, true);
-      document.removeEventListener('pointerdown', handlePointerDown, true);
-      document.removeEventListener('pointermove', handlePointerMove, true);
-      document.removeEventListener('pointerup', handlePointerEnd, true);
-      document.removeEventListener('pointercancel', handlePointerEnd, true);
-      document.removeEventListener('wheel', handleWheel, true);
-       const gesture = activePointer.current;
-       if (gesture) {
-         if (gesture.operation === 'window-drag') {
-           dragSchedulerRef.current?.flush();
-           window.baoyin.pet.dragEnd();
-         }
-        if (gesture.operation === 'window-resize') window.baoyin.pet.resizeEnd();
-        if (gesture.operation === 'model-transform') persistModelViewport(viewportRef.current);
-        try {
-          if (gesture.captureTarget?.hasPointerCapture(gesture.pointerId)) {
-            gesture.captureTarget.releasePointerCapture(gesture.pointerId);
-          }
-        } catch {
-          // no-op
-        }
-         activePointer.current = null;
-       }
-       dragSchedulerRef.current?.cancel();
-     };
+      window.removeEventListener('pointerdown', handlePointerDown, true);
+      window.removeEventListener('pointermove', handlePointerMove, true);
+      window.removeEventListener('pointerup', handlePointerEnd, true);
+      window.removeEventListener('pointercancel', handlePointerEnd, true);
+      window.removeEventListener('blur', cancelActivePointer, true);
+      window.removeEventListener('wheel', handleWheel, true);
+      cancelActivePointer();
+      dragSchedulerRef.current?.cancel();
+    };
   }, [interactionMode, modelEditMode]);
 
   if (!appState) {
     return <main className="pet-shell pet-loading" aria-label="白音桌宠窗口" data-pet-role="pet" />;
   }
 
-  const modelReady = appState.live2d.status === 'ready' || appState.live2d.status === 'ready_with_warnings';
   return (
     <main
       className={`pet-shell${hintVisible || resizeHovered ? ' pet-hovered' : ''}${modelEditMode ? ' pet-model-editing' : ''}`}
@@ -423,6 +466,7 @@ function PetApp(): JSX.Element {
           debugCommand={debugCommand}
           onFitFrame={fitFrameToRenderedModel}
           onModelHitChange={setModelHit}
+          onRuntimeReady={handleRuntimeReady}
         />
       ) : (
         <section className="pet-safe-state" aria-label="外部模型状态">

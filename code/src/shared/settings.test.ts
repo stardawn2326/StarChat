@@ -28,9 +28,11 @@ describe('settings sanitization', () => {
     expect(settings.cursorBodyWeight).toBe(0.25);
   });
 
-  it('keeps explicit pet interaction opt-in by default', () => {
-    expect(sanitizeAppSettings({}).petInteractionMode).toBe(false);
-    expect(sanitizeAppSettings({ petInteractionMode: true }).petInteractionMode).toBe(true);
+  it('migrates legacy interaction flags to one canonical unlocked state', () => {
+    expect(sanitizeAppSettings({})).toMatchObject({ petLocked: false, petInteractionMode: true });
+    expect(sanitizeAppSettings({ petLocked: false, petInteractionMode: false })).toMatchObject({ petLocked: false, petInteractionMode: true });
+    expect(sanitizeAppSettings({ petLocked: true, petInteractionMode: true })).toMatchObject({ petLocked: true, petInteractionMode: false });
+    expect(sanitizeAppSettings({ petInteractionMode: false })).toMatchObject({ petLocked: true, petInteractionMode: false });
   });
 
   it('uses CosyVoice as the only speech provider', () => {

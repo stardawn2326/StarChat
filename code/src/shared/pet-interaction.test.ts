@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { classifyPetHit } from './pet-hit-testing';
 import { clampPetWindowBounds, isPetResizeEdge, nextPetResizeBounds, petResizeEdge } from './window-contract';
 
 describe('pet interaction hit regions', () => {
+  it('prioritizes the resize frame, then the runtime model hit, then transparency', () => {
+    expect(classifyPetHit(4, 300, 430, 600, true)).toEqual({ region: 'frame', resizeEdge: 'w' });
+    expect(classifyPetHit(215, 300, 430, 600, true)).toEqual({ region: 'model', resizeEdge: null });
+    expect(classifyPetHit(215, 300, 430, 600, false)).toEqual({ region: 'transparent', resizeEdge: null });
+  });
+
   it('reserves only the eight-pixel frame for native resize', () => {
     expect(isPetResizeEdge(4, 300, 430, 600)).toBe(true);
     expect(isPetResizeEdge(215, 596, 430, 600)).toBe(true);

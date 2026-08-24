@@ -36,6 +36,7 @@ import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, validateRolePackage } from '../
 import type { CubismRuntimeMetrics } from '../shared/cubism';
 import type { PresentationEvent, PresentationLayer } from '../shared/presentation';
 import { clampPetWindowBounds, nextPetResizeBounds, type WindowBounds } from '../shared/window-contract';
+import { petInteractionEnabled, petInteractionSettingsForEnabled } from '../shared/pet-interaction';
 import { streamChatCompletion } from './api/openai-compatible';
 import { SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
@@ -60,6 +61,9 @@ const INTERACTION_SHORTCUT = 'CommandOrControl+Alt+I';
 let petDragStart: { point: PetDragPoint; bounds: Electron.Rectangle } | null = null;
 let petResizeStart: { request: PetResizeStart; bounds: Electron.Rectangle; display: Electron.Display } | null = null;
 let petModelEditMode = false;
+let petBoundsRestored = false;
+let petRendererReady = false;
+let petStartupShowPending = true;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
 let latestCubismMetrics: CubismRuntimeMetrics | null = null;
@@ -88,7 +92,7 @@ if (!singleInstanceLock) {
   app.on('second-instance', () => {
     settingsWindow?.show();
     settingsWindow?.focus();
-    petWindow?.showInactive();
+    showPetWindowInactive();
   });
 }
 
@@ -374,6 +378,35 @@ function applyPetWindowSettings(): void {
   syncPetWindowResizable();
 }
 
+function showPetWindowInactive(): void {
+  if (!petWindow || petWindow.isDestroyed() || isQuitting) {
+    return;
+  }
+  if (!petBoundsRestored || !petRendererReady) {
+    petStartupShowPending = true;
+    return;
+  }
+  petStartupShowPending = false;
+  petWindow?.showInactive();
+}
+
+function maybeShowPetWindow(): void {
+  if (petStartupShowPending) {
+    showPetWindowInactive();
+  }
+}
+
+function cancelPetPointerTransactions(): void {
+  const hadTransaction = Boolean(petDragStart || petResizeStart);
+  petDragStart = null;
+  petResizeStart = null;
+  syncPetWindowResizable();
+  if (hadTransaction) {
+    persistPetBounds(true);
+    sendPetBoundsChanged();
+  }
+}
+
 function createPetWindow(): void {
   petWindow = new BrowserWindow({
     width: 430,
@@ -416,12 +449,13 @@ function createPetWindow(): void {
   petWindow.webContents.on('render-process-gone', (_event, details) => {
     console.error(`[pet-renderer] render-process-gone ${details.reason}`);
   });
+  restorePetBounds();
+  petBoundsRestored = true;
   loadRenderer(petWindow, 'pet');
   petWindow.once('ready-to-show', () => {
     restorePetBounds();
-    if (!isQuitting) {
-      petWindow?.show();
-    }
+    petBoundsRestored = true;
+    maybeShowPetWindow();
   });
   petWindow.on('move', () => {
     persistPetBounds();
@@ -434,12 +468,7 @@ function createPetWindow(): void {
     arrangeInteractionTestWindow();
   });
   petWindow.on('blur', () => {
-    const window = petWindow;
-    if (window && !window.isDestroyed()) window.setAlwaysOnTop(true, 'floating', 1);
-    if (petResizeStart) {
-      petResizeStart = null;
-      persistPetBounds(true);
-    }
+    cancelPetPointerTransactions();
   });
   petWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -449,6 +478,9 @@ function createPetWindow(): void {
   });
   petWindow.on('closed', () => {
     petWindow = null;
+    petBoundsRestored = false;
+    petRendererReady = false;
+    petStartupShowPending = true;
   });
 }
 
@@ -547,7 +579,7 @@ function createInteractionTestWindow(): void {
     clickTargetWindow?.focus();
     // Showing inactive keeps the lower target as the foreground input window;
     // the Pet is still rendered above it through the floating Z-order level.
-    petWindow?.showInactive();
+    showPetWindowInactive();
   });
 }
 
@@ -581,11 +613,12 @@ function centerPetWindow(): void {
 }
 
 function togglePetLock(): void {
-  const next = getStore().save({ petLocked: !getStore().readSettings().petLocked });
+  const enabled = petInteractionEnabled(getStore().readSettings());
+  const next = getStore().save(petInteractionSettingsForEnabled(!enabled));
   if (next.petLocked && petModelEditMode) {
     setPetModelEditMode(false);
   }
-  applyPetInputMode(next.petLocked ? 'passthrough' : next.petInteractionMode ? 'interactive' : 'passthrough');
+  applyPetInputMode(petInteractionEnabled(next) ? 'interactive' : 'passthrough');
   sendStateChanged();
 }
 
@@ -599,12 +632,12 @@ function applyPetInputMode(mode: PetInputMode, force = false): void {
     return;
   }
   const settings = getStore().readSettings();
-  const interactive = mode === 'interactive' && (force || petModelEditMode || settings.petInteractionMode) && !settings.petLocked;
+  const interactive = mode === 'interactive' && (force || petModelEditMode || petInteractionEnabled(settings));
   petWindow.setIgnoreMouseEvents(!interactive, { forward: true });
 }
 
 function setPetModelEditMode(enabled: boolean): void {
-  petModelEditMode = enabled && !getStore().readSettings().petLocked;
+  petModelEditMode = enabled && petInteractionEnabled(getStore().readSettings());
   syncPetWindowResizable();
   applyPetInputMode(petModelEditMode ? 'interactive' : 'passthrough', petModelEditMode);
   if (petWindow && !petWindow.isDestroyed()) {
@@ -617,10 +650,7 @@ function togglePetModelEditMode(): void {
 }
 
 function togglePetInteractionMode(): void {
-  const enabled = !getStore().readSettings().petInteractionMode;
-  const next = getStore().save({ petInteractionMode: enabled, petLocked: !enabled });
-  applyPetInputMode(next.petInteractionMode ? 'interactive' : 'passthrough');
-  sendStateChanged();
+  togglePetLock();
 }
 
 function startCursorPolling(): void {
@@ -681,7 +711,7 @@ function createTray(): void {
     Menu.buildFromTemplate([
       { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
       { label: '开启/关闭桌宠交互', click: togglePetInteractionMode },
-      { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : petWindow?.show() },
+      { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
       { label: '桌宠回中', click: centerPetWindow },
       { type: 'separator' },
       { label: '退出白音', click: () => app.quit() }
@@ -712,7 +742,7 @@ function showPetContextMenu(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-  const locked = getStore().readSettings().petLocked;
+  const locked = !petInteractionEnabled(getStore().readSettings());
   Menu.buildFromTemplate([
     { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
     { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
@@ -1016,10 +1046,17 @@ function registerIpc(): void {
   });
   ipcMain.on('settings:hide', () => settingsWindow?.hide());
   ipcMain.on('settings:toggle', toggleSettings);
+  ipcMain.on('pet:runtime-ready', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) {
+      return;
+    }
+    petRendererReady = true;
+    maybeShowPetWindow();
+  });
   ipcMain.on('pet:show', (event) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
     if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
-      petWindow?.show();
+      showPetWindowInactive();
       petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
   });
@@ -1070,7 +1107,7 @@ function registerIpc(): void {
   ipcMain.on('pet:drag-start', (event, point: PetDragPoint) => {
     if (
       BrowserWindow.fromWebContents(event.sender) === petWindow &&
-      !getStore().readSettings().petLocked &&
+      petInteractionEnabled(getStore().readSettings()) &&
       Number.isFinite(point?.screenX) &&
       Number.isFinite(point?.screenY) &&
       petWindow
@@ -1097,7 +1134,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || getStore().readSettings().petLocked) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petInteractionEnabled(getStore().readSettings())) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
     petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });
@@ -1168,7 +1205,7 @@ if (singleInstanceLock) {
     registerInteractionShortcut();
     startCursorPolling();
     app.on('activate', () => {
-      petWindow?.show();
+      showPetWindowInactive();
     });
   });
 }
