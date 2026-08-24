@@ -12,7 +12,7 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: false');
     expect(creation).toContain("backgroundMaterial: 'none'");
-    expect(creation).toContain("titleBarStyle: 'hidden'");
+    expect(creation).not.toContain("titleBarStyle: 'hidden'");
     expect(creation).toContain('accentColor: false');
     expect(creation).toContain('titleBarOverlay: false');
     expect(creation).toContain("petWindow.setBackgroundMaterial('none')");
@@ -23,6 +23,11 @@ describe('Windows transparent pet shell', () => {
     expect(source).toContain('function syncPetWindowShape');
     expect(source).toContain('petWindow.setShape([{ x: 0, y: 0, width: bounds.width, height: bounds.height }])');
     expect(creation).toContain('syncPetWindowShape();');
+  });
+
+  it('does not opt the transparent pet into the Windows hidden-title-bar path', () => {
+    const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
+    expect(creation).not.toContain('titleBarStyle:');
   });
 
   it('neutralizes non-client chrome on the settings window as well', () => {

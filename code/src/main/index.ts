@@ -428,7 +428,6 @@ function createPetWindow(): void {
     thickFrame: false,
     roundedCorners: false,
     autoHideMenuBar: false,
-    titleBarStyle: 'hidden',
     titleBarOverlay: false,
     backgroundMaterial: 'none',
     accentColor: false,
