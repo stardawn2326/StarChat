@@ -69,6 +69,7 @@ function PetApp(): JSX.Element {
   interactionModeRef.current = interactionMode;
   const isLocked = appState ? !interactionMode : false;
   const frameHover = Boolean(cursor?.insideWindow && interactionMode && !isLocked);
+  const displayedModelOpacity = hintVisible && hovered ? Math.min(modelViewport.modelOpacity, 0.3) : modelViewport.modelOpacity;
   // Hit regions decide the gesture automatically: model = model offset,
   // frame = native resize, transparent remainder = click-through.
   const runtimeReadySent = useRef(false);
@@ -258,6 +259,15 @@ function PetApp(): JSX.Element {
         return;
       }
       const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
+      if (event.altKey) {
+        if (!resizeEdge && !hoveredRef.current) return;
+        const captureTarget = event.target instanceof Element ? event.target : null;
+        try { captureTarget?.setPointerCapture(event.pointerId); } catch { /* document fallback */ }
+        activePointer.current = { operation: 'window-drag', pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY, captureTarget };
+        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        event.preventDefault();
+        return;
+      }
       if (resizeEdge) {
         const captureTarget = event.target instanceof Element ? event.target : null;
         try { captureTarget?.setPointerCapture(event.pointerId); } catch { /* document fallback */ }
@@ -278,23 +288,16 @@ function PetApp(): JSX.Element {
         // Some Chromium targets reject capture after a forwarded click. The
         // document-level listener remains the safe fallback.
       }
-      if (event.altKey) {
-        activePointer.current = { operation: 'window-drag', pointerId: event.pointerId, screenX: event.screenX, screenY: event.screenY, captureTarget };
-        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
-        event.preventDefault();
-        return;
-      } else {
-        activePointer.current = {
-          operation: 'model-transform',
-          pointerId: event.pointerId,
-          screenX: event.screenX,
-          screenY: event.screenY,
-          viewport: viewportRef.current,
-          captureTarget
-        };
-        event.preventDefault();
-        return;
-      }
+      activePointer.current = {
+        operation: 'model-transform',
+        pointerId: event.pointerId,
+        screenX: event.screenX,
+        screenY: event.screenY,
+        viewport: viewportRef.current,
+        captureTarget
+      };
+      event.preventDefault();
+      return;
     };
     const compensateResizeViewport = (gesture: ActivePointer): Partial<ModelViewportSettings> | null => {
       if (!gesture.viewport) return null;
@@ -388,7 +391,7 @@ function PetApp(): JSX.Element {
       finalizeActivePointer(event, event.type === 'pointercancel');
     };
     const handleWheel = (event: WheelEvent): void => {
-      if (!modelEditMode || locked.current) {
+      if (locked.current || !interactionModeRef.current || hitRegionRef.current !== 'model') {
         return;
       }
       event.preventDefault();
@@ -417,7 +420,7 @@ function PetApp(): JSX.Element {
       cancelActivePointer();
       dragSchedulerRef.current?.cancel();
     };
-  }, [interactionMode, modelEditMode]);
+  }, [interactionMode]);
 
   if (!appState) {
     return <main className="pet-shell pet-loading" aria-label="白音桌宠窗口" data-pet-role="pet" />;
@@ -445,7 +448,7 @@ function PetApp(): JSX.Element {
         <Live2DCanvas
           event={presentation}
           live2d={appState.live2d}
-          modelViewport={{ ...modelViewport, modelOpacity: modelViewport.modelOpacity * (isLocked && hovered ? 0.5 : 1) }}
+          modelViewport={{ ...modelViewport, modelOpacity: displayedModelOpacity }}
           cursor={cursor}
           gazeConfig={{
             enabled: appState.settings.cursorTrackingEnabled,

@@ -25,4 +25,16 @@ describe('PetWindow pointer transaction contracts', () => {
   it('uses the shared north/west origin compensation helper during resize', () => {
     expect(rendererSource).toContain('compensateModelViewportForWindowOrigin');
   });
+
+  it('lets Alt-drag win over edge resize so Alt+bottom-right cannot enlarge the window', () => {
+    const pointerDown = rendererSource.slice(rendererSource.indexOf('const handlePointerDown'), rendererSource.indexOf('const compensateResizeViewport'));
+    expect(pointerDown.indexOf('if (event.altKey)')).toBeGreaterThanOrEqual(0);
+    expect(pointerDown.indexOf('if (event.altKey)')).toBeLessThan(pointerDown.indexOf('if (resizeEdge)'));
+  });
+
+  it('allows the wheel to zoom the model when the cursor is on the model', () => {
+    expect(rendererSource).toContain("hitRegionRef.current !== 'model'");
+    expect(rendererSource).not.toContain('if (!modelEditMode || locked.current)');
+    expect(rendererSource).toContain('persistModelViewport(next)');
+  });
 });

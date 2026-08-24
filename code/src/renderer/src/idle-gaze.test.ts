@@ -13,4 +13,12 @@ describe('AIRI-style idle gaze', () => {
     expect(middle.x).toBeLessThan(0.75);
     expect(end.x).toBeGreaterThan(middle.x);
   });
+
+  it('does not bias the idle vertical target upward or downward', () => {
+    const gaze = new IdleGazeController(() => 0.5);
+    gaze.update(0, 1);
+    const target = gaze.update(3000, 1);
+    expect(target.x).toBeCloseTo(0, 5);
+    expect(target.y).toBeCloseTo(0, 5);
+  });
 });

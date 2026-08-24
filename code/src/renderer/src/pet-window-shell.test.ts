@@ -42,4 +42,9 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(stylesSource).toContain('.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame');
     expect(stylesSource).not.toContain('.pet-shell.pet-hovered:not([data-pet-locked="true"]) .pet-resize-frame');
   });
+
+  it('reduces model opacity to 30 percent after the cursor stays on the model', () => {
+    expect(petSource).toContain('const displayedModelOpacity = hintVisible && hovered ? Math.min(modelViewport.modelOpacity, 0.3) : modelViewport.modelOpacity');
+    expect(petSource).toContain('modelOpacity: displayedModelOpacity');
+  });
 });
