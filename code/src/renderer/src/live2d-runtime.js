@@ -73,6 +73,7 @@ let lipSyncHandler = null;
 let persistentWatermarkHandler = null;
 let persistentWatermarkEffect = null;
 let gazeEnabled = true;
+let gazeConfig = null;
 
 function finite(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
@@ -80,6 +81,18 @@ function finite(value, fallback) {
 
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
+}
+
+function sanitizeGazeConfig(config) {
+  return {
+    eyeWeight: clamp(finite(Number(config?.eyeWeight), 1), 0, 1),
+    headWeight: clamp(finite(Number(config?.headWeight), 0.35), 0, 1),
+    bodyWeight: clamp(finite(Number(config?.bodyWeight), 1), 0, 1),
+    bodyFollowStrength: clamp(finite(Number(config?.bodyFollowStrength), 0.82), 0, 1),
+    bodyLag: clamp(finite(Number(config?.bodyLag), 0.32), 0.05, 1.5),
+    inertiaStrength: clamp(finite(Number(config?.inertiaStrength), 0.72), 0, 5),
+    idleSwayStrength: clamp(finite(Number(config?.idleSwayStrength), 0.06), 0, 0.15)
+  };
 }
 
 function basename(fileName) {
@@ -419,6 +432,13 @@ function tapAtNormalizedPoint(x, y) {
   return true;
 }
 
+function hitTestNormalized(x, y) {
+  if (!model) return false;
+  const worldX = (clamp(finite(Number(x), 0), -1, 1) + 1) * 0.5 * viewport.width;
+  const worldY = (1 - clamp(finite(Number(y), 0), -1, 1)) * 0.5 * viewport.height;
+  return model.hitTest(worldX, worldY).length > 0;
+}
+
 export const controller = {
   async load(nextOptions) {
     if (!nextOptions?.modelJsonName) {
@@ -577,6 +597,8 @@ export const controller = {
 
   configureGaze(config) {
     gazeEnabled = config?.enabled !== false;
+    gazeConfig = sanitizeGazeConfig(config);
+    model?.internalModel?.configureFocus?.(gazeConfig);
     state.physicsEnabled = config?.physicsEnabled !== false;
     if (!gazeEnabled) {
       focusAtModelCenter(true);
@@ -611,6 +633,10 @@ export const controller = {
 
   tap(x, y) {
     return tapAtNormalizedPoint(x, y);
+  },
+
+  hitTest(x, y) {
+    return hitTestNormalized(x, y);
   },
 
   setLipSync(value, form = 0) {

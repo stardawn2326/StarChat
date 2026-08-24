@@ -26,6 +26,7 @@ interface Live2DCanvasProps {
   showWatermark?: boolean;
   debugCommand?: CubismDebugCommand | null;
   onFitFrame?: (bounds: { x: number; y: number; width: number; height: number }) => void;
+  onModelHitChange?: (hit: boolean) => void;
 }
 
 function entryFileName(entryPath: string | null): string | null {
@@ -36,7 +37,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame, onModelHitChange }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -57,7 +58,10 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
       idleGazeRef.current.reset();
     }
     if (decision.mode === 'released') {
-      const target = idleGazeRef.current.update(update.timestamp);
+      const idleStrength = Math.min(1.6, Math.max(0.35,
+        (gazeConfig?.idleMotionAmplitude ?? 0.035) / 0.035 * 0.55
+        + (gazeConfig?.idleSwayStrength ?? 0.06) / 0.06 * 0.45));
+      const target = idleGazeRef.current.update(update.timestamp, idleStrength);
       runtime.controller.setFocusFromScreenCursor({
         screenX: window.screenX + canvasRect.left + canvasRect.width * (0.5 + target.x * 0.5),
         screenY: window.screenY + canvasRect.top + canvasRect.height * (0.5 + target.y * 0.5),
@@ -73,6 +77,15 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
       canvasScreenRect: { left: window.screenX + canvasRect.left, top: window.screenY + canvasRect.top },
     }, update.moving);
   };
+
+  useEffect(() => {
+    const runtime = runtimeRef.current;
+    if (!runtime || !cursor?.insideWindow) {
+      onModelHitChange?.(false);
+      return;
+    }
+    onModelHitChange?.(runtime.controller.hitTest((cursor.localX - 0.5) * 2, (0.5 - cursor.localY) * 2));
+  }, [cursor, onModelHitChange, runtimeRef]);
 
   const applyTransform = (runtime: RuntimeModule): void => {
     runtime.controller.setTransform(composeAbsoluteModelTransform({

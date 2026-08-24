@@ -103,12 +103,14 @@ describe('AIRI production Live2D architecture gates', () => {
   });
 
   it('keeps AIRI package focus and model physics as the sole body-motion chain', () => {
-    expect(runtimeSource).not.toContain('configureFocus');
+    expect(runtimeSource).toContain('model?.internalModel?.configureFocus?.(gazeConfig)');
     expect(canvasSource).toContain('new IdleGazeController()');
     expect(canvasSource).toContain("decision.mode === 'released'");
     expect(packageRuntimeSource).toContain('this.idParamBodyAngleX, this.focusController.x * 10');
     expect(packageRuntimeSource).not.toContain('spring * (targetX - this.bodyFocusX)');
     expect(packageRuntimeSource).not.toContain('this.idParamBodyAngleY, this.bodyFocusY');
+    expect(runtimeSource).toContain('gazeConfig = sanitizeGazeConfig(config)');
+    expect(runtimeSource).toContain('hitTestNormalized');
   });
 
   it('drives lip sync from played audio frames instead of a fixed mouth timer', () => {

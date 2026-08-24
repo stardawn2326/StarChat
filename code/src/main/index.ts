@@ -58,7 +58,7 @@ let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let registeredSettingsShortcut = '';
 const INTERACTION_SHORTCUT = 'CommandOrControl+Alt+I';
 let petDragStart: { point: PetDragPoint; bounds: Electron.Rectangle } | null = null;
-let petResizeStart: { request: PetResizeStart; bounds: Electron.Rectangle } | null = null;
+let petResizeStart: { request: PetResizeStart; bounds: Electron.Rectangle; display: Electron.Display } | null = null;
 let petModelEditMode = false;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
@@ -322,7 +322,7 @@ function restorePetBounds(): void {
 }
 
 function persistPetBounds(immediate = false): void {
-  if (!petWindow || petWindow.isDestroyed() || restoringPetBounds || isQuitting) {
+  if (!petWindow || petWindow.isDestroyed() || restoringPetBounds || petResizeStart || isQuitting) {
     return;
   }
   if (petBoundsPersistTimer) {
@@ -382,6 +382,8 @@ function createPetWindow(): void {
     minWidth: 240,
     minHeight: 240,
     frame: false,
+    thickFrame: false,
+    roundedCorners: false,
     autoHideMenuBar: true,
     transparent: true,
     resizable: false,
@@ -434,6 +436,10 @@ function createPetWindow(): void {
   petWindow.on('blur', () => {
     const window = petWindow;
     if (window && !window.isDestroyed()) window.setAlwaysOnTop(true, 'floating', 1);
+    if (petResizeStart) {
+      petResizeStart = null;
+      persistPetBounds(true);
+    }
   });
   petWindow.on('close', (event) => {
     if (!isQuitting) {
@@ -1093,12 +1099,12 @@ function registerIpc(): void {
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || getStore().readSettings().petLocked) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
-    petResizeStart = { request, bounds: petWindow.getBounds() };
+    petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });
   ipcMain.on('pet:resize-move', (event, point: PetDragPoint) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petResizeStart) return;
     const next = nextPetResizeBounds(petResizeStart.bounds, petResizeStart.request, point, petResizeStart.request.edge);
-    petWindow.setBounds(safePetBounds(next, selectedDisplay()));
+    petWindow.setBounds(safePetBounds(next, petResizeStart.display));
   });
   ipcMain.on('pet:resize-end', (event) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;

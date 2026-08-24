@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canvasViewport, composeAbsoluteModelTransform, composeAbsoluteModelMatrix, featureDistance, focusGeometryFromModelBounds, focusPointForScreenCursor, preserveModelTransformOnWindowResize, projectModelFeature, stableViewportProjection } from './window-contract';
+import { canvasViewport, compensateModelViewportForWindowOrigin, composeAbsoluteModelTransform, composeAbsoluteModelMatrix, featureDistance, focusGeometryFromModelBounds, focusPointForScreenCursor, preserveModelTransformOnWindowResize, projectModelFeature, stableViewportProjection } from './window-contract';
 
 describe('absolute window/model coordinate contract', () => {
   it('keeps model transform and pixel size identical across three viewport sizes', () => {
@@ -23,6 +23,13 @@ describe('absolute window/model coordinate contract', () => {
     const distance = featureDistance(projectModelFeature({ x: 0, y: 0 }, base), p0);
     const scaled = featureDistance(projectModelFeature({ x: 0, y: 0 }, { ...base, modelScale: 2.4 }), projectModelFeature(point, { ...base, modelScale: 2.4 }));
     expect(scaled / distance).toBeCloseTo(2);
+  });
+  it('keeps the model screen anchor fixed when north or west resize moves the window origin', () => {
+    const viewport = { modelOffsetX: 24, modelOffsetY: -18, modelScale: 1.2 };
+    expect(compensateModelViewportForWindowOrigin(viewport,
+      { x: 500, y: 300, width: 430, height: 600 },
+      { x: 420, y: 240, width: 510, height: 660 }
+    )).toEqual({ modelOffsetX: 104, modelOffsetY: 42, modelScale: 1.2 });
   });
   it.each([1, 1.5, 2])('separates CSS logic from backing pixels at DPR %s', (dpr) => {
     expect(canvasViewport({ width: 401, height: 603 }, dpr)).toMatchObject({ width: 401, height: 603, backingWidth: Math.round(401 * dpr), backingHeight: Math.round(603 * dpr) });

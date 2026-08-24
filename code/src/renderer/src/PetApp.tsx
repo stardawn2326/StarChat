@@ -21,24 +21,10 @@ interface ActivePointer {
   screenX: number;
   screenY: number;
   viewport?: ModelViewportSettings;
+  windowX?: number;
+  windowY?: number;
   resizeEdge?: PetResizeEdge;
   captureTarget: Element | null;
-}
-
-function isModelApproximation(cursor: CursorUpdate | null): boolean {
-  if (!cursor?.insideWindow) {
-    return false;
-  }
-  const x = cursor.localX;
-  const y = cursor.localY;
-  if (x < 0.12 || x > 0.88 || y < 0.04 || y > 0.98) {
-    return false;
-  }
-  // Conservative silhouette approximation: an elliptical head/torso area with
-  // a wider lower body. The actual ArtMesh hit test remains in the runtime.
-  const head = ((x - 0.5) / 0.34) ** 2 + ((y - 0.3) / 0.32) ** 2 <= 1;
-  const body = ((x - 0.5) / 0.4) ** 2 + ((y - 0.68) / 0.46) ** 2 <= 1;
-  return head || body;
 }
 
 function PetApp(): JSX.Element {
@@ -51,6 +37,7 @@ function PetApp(): JSX.Element {
   const [modelEditMode, setModelEditMode] = useState(false);
   const [modelViewport, setModelViewport] = useState<ModelViewportSettings>(DEFAULT_MODEL_VIEWPORT);
   const [presentationSettings, setPresentationSettings] = useState<PresentationSettings | null>(null);
+  const [modelHit, setModelHit] = useState(false);
   const inputMode = useRef<'interactive' | 'passthrough'>('interactive');
   const activePointer = useRef<ActivePointer | null>(null);
   const hoverShowTimer = useRef<number | null>(null);
@@ -59,7 +46,7 @@ function PetApp(): JSX.Element {
   const appStateRef = useRef<PublicAppState | null>(null);
   const dragSchedulerRef = useRef<PetDragScheduler | null>(null);
   const locked = useRef(false);
-  const hovered = isModelApproximation(cursor);
+  const hovered = modelHit && Boolean(cursor?.insideWindow);
   const resizeHovered = Boolean(cursor?.insideWindow && isPetResizeEdge(
     cursor.localX * cursor.windowWidth,
     cursor.localY * cursor.windowHeight,
@@ -230,9 +217,12 @@ function PetApp(): JSX.Element {
       }
       const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
       if (resizeEdge) {
+        const captureTarget = event.target instanceof Element ? event.target : null;
+        try { captureTarget?.setPointerCapture(event.pointerId); } catch { /* document fallback */ }
         activePointer.current = {
           operation: 'window-resize', pointerId: event.pointerId, resizeEdge,
-          screenX: event.screenX, screenY: event.screenY, captureTarget: event.target instanceof Element ? event.target : null
+          screenX: event.screenX, screenY: event.screenY, viewport: viewportRef.current,
+          windowX: window.screenX, windowY: window.screenY, captureTarget
         };
         window.baoyin.pet.resizeStart({ screenX: event.screenX, screenY: event.screenY, edge: resizeEdge });
         event.preventDefault();
@@ -283,6 +273,13 @@ function PetApp(): JSX.Element {
       }
       if (gesture.operation === 'window-resize') {
         window.baoyin.pet.resizeMove(latestPointerScreenPoint(event));
+        window.requestAnimationFrame(() => {
+          if (activePointer.current !== gesture || !gesture.viewport) return;
+          updateModelViewport({
+            modelOffsetX: gesture.viewport.modelOffsetX + (gesture.windowX ?? window.screenX) - window.screenX,
+            modelOffsetY: gesture.viewport.modelOffsetY + (gesture.windowY ?? window.screenY) - window.screenY
+          });
+        });
         event.preventDefault();
       }
     };
@@ -320,6 +317,13 @@ function PetApp(): JSX.Element {
         }
       }
       if (gesture.operation === 'window-resize') {
+        if (gesture.viewport) {
+          updateModelViewport({
+            modelOffsetX: gesture.viewport.modelOffsetX + (gesture.windowX ?? window.screenX) - window.screenX,
+            modelOffsetY: gesture.viewport.modelOffsetY + (gesture.windowY ?? window.screenY) - window.screenY
+          });
+          persistModelViewport(viewportRef.current);
+        }
         window.baoyin.pet.resizeEnd();
         event.preventDefault();
       }
@@ -418,6 +422,7 @@ function PetApp(): JSX.Element {
           showWatermark={appState.settings.live2dShowWatermark}
           debugCommand={debugCommand}
           onFitFrame={fitFrameToRenderedModel}
+          onModelHitChange={setModelHit}
         />
       ) : (
         <section className="pet-safe-state" aria-label="外部模型状态">

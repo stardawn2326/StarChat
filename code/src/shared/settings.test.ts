@@ -95,8 +95,8 @@ describe('settings sanitization', () => {
       }
     });
     expect(modelViewportForPath(settings, 'd:/baidunetdiskdownload/miku/miku/miku.model3.json')).toEqual({
-        modelOffsetX: 240,
-        modelOffsetY: -300,
+        modelOffsetX: 999,
+        modelOffsetY: -999,
         modelScale: 2.4,
         modelOpacity: 1,
         clipWidth: 1,

@@ -132,8 +132,8 @@ export function sanitizeModelViewport(input: Partial<ModelViewportSettings> | nu
   const modelOffsetY = Number(input?.modelOffsetY);
   const modelScale = Number(input?.modelScale);
   return {
-    modelOffsetX: Number.isFinite(modelOffsetX) ? Math.min(240, Math.max(-240, Math.round(modelOffsetX))) : DEFAULT_MODEL_VIEWPORT.modelOffsetX,
-    modelOffsetY: Number.isFinite(modelOffsetY) ? Math.min(300, Math.max(-300, Math.round(modelOffsetY))) : DEFAULT_MODEL_VIEWPORT.modelOffsetY,
+    modelOffsetX: Number.isFinite(modelOffsetX) ? Math.min(2400, Math.max(-2400, Math.round(modelOffsetX))) : DEFAULT_MODEL_VIEWPORT.modelOffsetX,
+    modelOffsetY: Number.isFinite(modelOffsetY) ? Math.min(2400, Math.max(-2400, Math.round(modelOffsetY))) : DEFAULT_MODEL_VIEWPORT.modelOffsetY,
     modelScale: Number.isFinite(modelScale) ? Math.min(2.4, Math.max(0.55, modelScale)) : DEFAULT_MODEL_VIEWPORT.modelScale,
     modelOpacity: Number.isFinite(Number(input?.modelOpacity)) ? Math.min(1, Math.max(0.1, Number(input?.modelOpacity))) : DEFAULT_MODEL_VIEWPORT.modelOpacity,
     clipWidth: Number.isFinite(Number(input?.clipWidth)) ? Math.min(1, Math.max(0.2, Number(input?.clipWidth))) : DEFAULT_MODEL_VIEWPORT.clipWidth,

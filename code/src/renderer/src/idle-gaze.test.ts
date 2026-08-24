@@ -2,11 +2,15 @@ import { describe, expect, it } from 'vitest';
 import { IdleGazeController } from './idle-gaze';
 
 describe('AIRI-style idle gaze', () => {
-  it('holds a bounded random target then chooses another after a random dwell', () => {
-    const values = [0, 0.5, 0, 1, 1, 1]; let index = 0;
+  it('eases continuously toward each bounded target instead of jumping', () => {
+    const values = [1, 1, 0, 0, 0, 0]; let index = 0;
     const gaze = new IdleGazeController(() => values[index++] ?? 0.5);
-    expect(gaze.update(3000)).toEqual({ x: -0.5, y: -0.04999999999999999 });
-    expect(gaze.update(4499)).toEqual({ x: -0.5, y: -0.04999999999999999 });
-    expect(gaze.update(4500)).toEqual({ x: 0.5, y: 0.25 });
+    const start = gaze.update(3000, 1);
+    const middle = gaze.update(3400, 1);
+    const end = gaze.update(3800, 1);
+    expect(start).toEqual({ x: 0, y: 0 });
+    expect(middle.x).toBeGreaterThan(0);
+    expect(middle.x).toBeLessThan(0.75);
+    expect(end.x).toBeGreaterThan(middle.x);
   });
 });

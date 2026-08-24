@@ -97,6 +97,7 @@ export interface CubismRuntimeController {
   releaseFocus(): void;
   setAutoBlink(enabled: boolean): void;
   tap(x: number, y: number): boolean;
+  hitTest(x: number, y: number): boolean;
   setLipSync(value: number, form?: number): void;
   setWatermarkVisible(visible: boolean): void;
   getRenderedBounds(): { x: number; y: number; width: number; height: number } | null;

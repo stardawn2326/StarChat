@@ -118,4 +118,11 @@ export function clampPetWindowBounds(input: WindowBounds, workArea: WorkArea): W
 export function projectModelFeature(feature: ModelFeaturePoint, viewport: ModelViewportContract): ModelFeaturePoint { return { x: viewport.modelOffsetX + feature.x * viewport.modelScale, y: viewport.modelOffsetY + feature.y * viewport.modelScale }; }
 export function featureDistance(a: ModelFeaturePoint, b: ModelFeaturePoint): number { return Math.hypot(b.x - a.x, b.y - a.y); }
 export function preserveModelTransformOnWindowResize(viewport: ModelViewportContract): ModelViewportContract { return { ...viewport }; }
+export function compensateModelViewportForWindowOrigin(viewport: ModelViewportContract, before: WindowBounds, after: WindowBounds): ModelViewportContract {
+  return {
+    ...viewport,
+    modelOffsetX: viewport.modelOffsetX + before.x - after.x,
+    modelOffsetY: viewport.modelOffsetY + before.y - after.y
+  };
+}
 export function sameModelTransform(a: ModelViewportContract, b: ModelViewportContract): boolean { return a.modelOffsetX === b.modelOffsetX && a.modelOffsetY === b.modelOffsetY && a.modelScale === b.modelScale; }
