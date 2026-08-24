@@ -36,4 +36,10 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(petSource).not.toContain('model-viewport-controls');
     expect(stylesSource).toMatch(/html, body, #root\s*\{[^}]*background:\s*transparent/s);
   });
+
+  it('keeps the resize frame visible from global cursor presence, independent of model hit or hint delay', () => {
+    expect(petSource).toContain("data-pet-frame-hover={frameHover ? 'true' : 'false'}");
+    expect(stylesSource).toContain('.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame');
+    expect(stylesSource).not.toContain('.pet-shell.pet-hovered:not([data-pet-locked="true"]) .pet-resize-frame');
+  });
 });

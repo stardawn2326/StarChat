@@ -12,6 +12,17 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('roundedCorners: false');
   });
 
+  it('neutralizes non-client chrome on the settings window as well', () => {
+    const creation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
+    expect(creation).toContain("title: ''");
+    expect(creation).toContain('thickFrame: false');
+    expect(creation).toContain('roundedCorners: false');
+    expect(creation).toContain("settingsWindow.setTitle('')");
+    expect(creation).toContain('settingsWindow.setMenuBarVisibility(false)');
+    expect(creation).toContain("settingsWindow.setBackgroundColor('#00000000')");
+    expect(creation).not.toContain("titleBarStyle: 'hidden'");
+  });
+
   it('keeps the pet hidden until the renderer reports a stable runtime frame', () => {
     const readyHandler = source.slice(source.indexOf("petWindow.once('ready-to-show'"), source.indexOf("petWindow.on('move'"));
     expect(readyHandler).toContain('maybeShowPetWindow');

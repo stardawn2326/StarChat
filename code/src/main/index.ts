@@ -491,7 +491,9 @@ function createSettingsWindow(): void {
     minWidth: 640,
     minHeight: 640,
     frame: false,
-    titleBarStyle: 'hidden',
+    title: '',
+    thickFrame: false,
+    roundedCorners: false,
     autoHideMenuBar: true,
     resizable: true,
     hasShadow: false,
@@ -505,6 +507,9 @@ function createSettingsWindow(): void {
       preload: join(__dirname, '../preload/index.cjs')
     }
   });
+  settingsWindow.setTitle('');
+  settingsWindow.setMenuBarVisibility(false);
+  settingsWindow.setBackgroundColor('#00000000');
   settingsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   settingsWindow.webContents.on('did-finish-load', () => {
     // Keep wheel, touchpad and keyboard scrolling while removing the native

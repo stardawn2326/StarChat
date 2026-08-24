@@ -68,6 +68,7 @@ function PetApp(): JSX.Element {
   const interactionModeRef = useRef(false);
   interactionModeRef.current = interactionMode;
   const isLocked = appState ? !interactionMode : false;
+  const frameHover = Boolean(cursor?.insideWindow && interactionMode && !isLocked);
   // Hit regions decide the gesture automatically: model = model offset,
   // frame = native resize, transparent remainder = click-through.
   const runtimeReadySent = useRef(false);
@@ -428,6 +429,7 @@ function PetApp(): JSX.Element {
       aria-label="白音透明桌宠窗口"
       data-pet-role="pet"
       data-pet-hovered={hovered ? 'true' : 'false'}
+      data-pet-frame-hover={frameHover ? 'true' : 'false'}
       data-pet-interaction-mode={interactionMode ? 'true' : 'false'}
       data-pet-model-edit-mode={modelEditMode ? 'true' : 'false'}
       data-pet-locked={isLocked ? 'true' : 'false'}
