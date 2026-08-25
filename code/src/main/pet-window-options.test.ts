@@ -114,9 +114,9 @@ describe('Windows transparent pet shell', () => {
     expect(petMenu).toContain('显示/隐藏桌宠');
   });
 
-  it('uses a Windows tool-window class for the transparent pet shell', () => {
+  it('does not opt the transparent pet into Electron toolbar appearance', () => {
     const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
-    expect(creation).toContain("type: 'toolbar'");
+    expect(creation).not.toContain("type: 'toolbar'");
     expect(creation).toContain('autoHideMenuBar: true');
     expect(creation).toContain('skipTaskbar: true');
   });

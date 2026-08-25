@@ -483,9 +483,6 @@ function createPetWindow(): void {
     alwaysOnTop: true,
     focusable: false,
     show: false,
-    // Classify the non-focusable overlay as a Win32 tool window so Shell/menu
-    // activation does not treat it as a normal top-level application window.
-    type: 'toolbar',
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
