@@ -8,6 +8,7 @@ import { CharacterStateResolver } from '../../shared/character-state';
 import { canvasViewport, composeAbsoluteModelTransform, petPointerOperationContract, type PetPointerOperation } from '../../shared/window-contract';
 import { CursorFollowGate } from './cursor-follow-gate';
 import { DialogueFocusGate } from './dialogue-focus';
+import { DialogueIdleArbiter } from './dialogue-idle-arbiter';
 import { IdleGazeController } from './idle-gaze';
 import { dispatchCubismRuntimeCommand } from './cubism-runtime-dispatch';
 import { createViewportSyncCoordinator, type ViewportFrame } from './viewport-sync';
@@ -70,9 +71,24 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
   const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
+  const dialogueIdleArbiterRef = useRef(new DialogueIdleArbiter());
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
 
   windowAndModelDragActiveRef.current = windowAndModelDragActive;
+
+  const pauseIdlePresentation = (runtime: RuntimeModule): void => {
+    idleGazeRef.current.reset();
+    const decision = dialogueIdleArbiterRef.current.pause(runtime.controller.getRuntimeStatus().activeMotion?.priority);
+    if (decision.stopIdleAction) {
+      runtime.controller.stopAction();
+    }
+  };
+
+  const resumeIdlePresentation = (runtime: RuntimeModule): void => {
+    idleGazeRef.current.reset();
+    if (!dialogueIdleArbiterRef.current.resume().restartIdleAction) return;
+    void runtime.controller.playAction('idle', false);
+  };
 
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     if (dialogueFocusGateRef.current.shouldIgnoreCursor()) return;
@@ -307,6 +323,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     const runtime = runtimeRef.current;
     if (!runtime) return;
     if (dialogueEvent.phase !== 'end') {
+      if (decision.release) pauseIdlePresentation(runtime);
       runtime.controller.releaseFocus();
       if (dialogueEvent.phase === 'start' || dialogueEvent.phase === 'listening') {
         void runtime.controller.playSemanticExpression('caring_smile');
@@ -316,6 +333,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     }
     if (!decision.resume) return;
     cursorFollowGateRef.current.reset();
+    resumeIdlePresentation(runtime);
     idleGazeRef.current.reset();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect && cursor) applyCursorFollow(runtime, cursor, rect);
@@ -338,7 +356,10 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
       lastExpressionRef.current = 'neutral';
       runtime.controller.neutral();
       runtime.controller.releaseFocus();
-      if (dialogueFocusGateRef.current.transition('end').resume) cursorFollowGateRef.current.reset();
+      if (dialogueFocusGateRef.current.transition('end').resume) {
+        cursorFollowGateRef.current.reset();
+        resumeIdlePresentation(runtime);
+      }
       return;
     }
     characterStateRef.apply(event);

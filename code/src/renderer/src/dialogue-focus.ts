@@ -19,7 +19,7 @@ export class DialogueFocusGate {
       this.active = false;
       return { active: false, release: false, resume };
     }
-    const release = !this.active && phase === 'start';
+    const release = !this.active;
     this.active = true;
     return { active: true, release, resume: false };
   }
