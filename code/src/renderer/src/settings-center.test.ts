@@ -14,15 +14,18 @@ import { SettingsDetailsV2 } from './SettingsDetailsV2';
 import { isWindowIntent } from './settings-preview';
 import { syncPetBoundsIntoSettings } from './settings-state';
 import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
+import { THEME_TOKEN_KEYS, THEME_TOKENS } from '../../shared/theme';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const settingsCenterCss = readFileSync(resolve(testDirectory, 'settings-center.css'), 'utf8');
 const rendererBootstrapSource = readFileSync(resolve(testDirectory, 'main.tsx'), 'utf8');
 const settingsAppSource = readFileSync(resolve(testDirectory, 'App.tsx'), 'utf8');
 const petAppSource = readFileSync(resolve(testDirectory, 'PetApp.tsx'), 'utf8');
+const petStylesSource = readFileSync(resolve(testDirectory, 'styles.css'), 'utf8');
 const live2dRuntimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
 const mainProcessSource = readFileSync(resolve(testDirectory, '../../main/index.ts'), 'utf8');
 const preloadSource = readFileSync(resolve(testDirectory, '../../preload/index.ts'), 'utf8');
+const themeContractSource = readFileSync(resolve(testDirectory, '../../shared/theme.ts'), 'utf8');
 
 const settingsState = {
   settings: DEFAULT_APP_SETTINGS,
@@ -162,6 +165,42 @@ describe('settings center components', () => {
     expect(markup).toContain('class="glass-select-trigger"');
     expect(markup).toContain('aria-haspopup="listbox"');
     expect(markup).not.toContain('<select');
+  });
+
+  it('exposes follow-system, light and dark appearance choices in the behavior page', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps('behavior')));
+    expect(markup).toContain('主题外观');
+    expect(themeContractSource).toContain("'system'");
+    expect(themeContractSource).toContain("'light'");
+    expect(themeContractSource).toContain("'dark'");
+    expect(settingsAppSource).toContain('applyThemeToDocument');
+    expect(settingsAppSource).toContain('prefers-color-scheme: dark');
+  });
+
+  it('owns complete light/dark surface tokens and gives the dropdown an opaque layer', () => {
+    expect(Object.keys(THEME_TOKENS.light)).toEqual(THEME_TOKEN_KEYS);
+    expect(Object.keys(THEME_TOKENS.dark)).toEqual(THEME_TOKEN_KEYS);
+    expect(settingsCenterCss).toContain('[data-theme="light"]');
+    expect(settingsCenterCss).toContain('[data-theme="dark"]');
+    expect(settingsCenterCss).toContain('background: var(--theme-menu-surface)');
+    expect(settingsCenterCss).toContain('background: var(--theme-surface-selected)');
+    expect(settingsCenterCss).toContain('scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track)');
+    expect(settingsCenterCss).not.toContain('background: transparent;');
+  });
+
+  it('keeps theme application and opaque surfaces strictly inside SettingsWindow', () => {
+    const tokenBlock = settingsCenterCss.slice(settingsCenterCss.indexOf('/* Theme contract:'));
+    expect(tokenBlock).not.toContain('.pet-shell');
+    expect(tokenBlock).not.toContain('.live2d');
+    expect(petAppSource).not.toContain('applyThemeToDocument');
+    expect(petAppSource).not.toContain('data-theme');
+    expect(petStylesSource).toContain('.pet-shell');
+    expect(petStylesSource).toContain('background: transparent;');
+    expect(mainProcessSource).toContain('transparent: true');
+    expect(mainProcessSource).toContain("backgroundColor: '#00000000'");
+    expect(mainProcessSource).toContain("petWindow.setBackgroundColor('#00000000')");
+    expect(mainProcessSource).toContain('petWindow.setIgnoreMouseEvents(true)');
+    expect(mainProcessSource).toContain('applyPetInputMode');
   });
 
   it('drives the continuous root outline from real SettingsWindow focus state', () => {

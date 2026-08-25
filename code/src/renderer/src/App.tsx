@@ -10,10 +10,26 @@ import { SettingsHome } from './SettingsHome';
 import type { SettingsPageId } from './settings-schema';
 import { emitSettingsPreview, isWindowIntent } from './settings-preview';
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
+import { applyThemeToDocument } from '../../shared/theme';
 import { syncPetBoundsIntoSettings } from './settings-state';
 
 function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function useThemePreference(preference: AppSettings['themePreference']): void {
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const apply = (): void => {
+      applyThemeToDocument(document, preference, media.matches);
+    };
+    apply();
+    const onSystemThemeChange = (): void => {
+      if (preference === 'system') apply();
+    };
+    media.addEventListener('change', onSystemThemeChange);
+    return () => media.removeEventListener('change', onSystemThemeChange);
+  }, [preference]);
 }
 
 function App(): JSX.Element {
@@ -124,6 +140,7 @@ function App(): JSX.Element {
 
   const settings = settingsDraft ?? appState?.settings ?? DEFAULT_APP_SETTINGS;
   const role = roleDraft ?? appState?.role ?? null;
+  useThemePreference(settings.themePreference);
   settingsRef.current = settingsDraft;
   roleRef.current = roleDraft;
   const modelViewport = useMemo(() => modelViewportForPath(settings, settings.live2dModelPath), [settings]);
@@ -219,7 +236,7 @@ function App(): JSX.Element {
       return;
     }
     if (page === 'behavior') {
-      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, petLocked: DEFAULT_APP_SETTINGS.petLocked, petInteractionMode: DEFAULT_APP_SETTINGS.petInteractionMode, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut });
+      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, petLocked: DEFAULT_APP_SETTINGS.petLocked, petInteractionMode: DEFAULT_APP_SETTINGS.petInteractionMode, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut, themePreference: DEFAULT_APP_SETTINGS.themePreference });
       return;
     }
     if (page === 'service') {

@@ -5,6 +5,7 @@ import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
 import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, ROLE_SCALE_KEYS, type RolePackage, type RoleScaleKey } from '../../shared/role-package';
 import { DEFAULT_APP_SETTINGS, type AppSettings, type ModelViewportSettings } from '../../shared/settings';
+import { THEME_PREFERENCES, sanitizeThemePreference, type ThemePreference } from '../../shared/theme';
 import { PRESENTATION_SLIDERS, type PresentationSettings } from '../../shared/presentation-contract';
 import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
 import { CompanionChat } from './CompanionChat';
@@ -16,6 +17,12 @@ const live2dStatusLabels: Record<Live2DModelState['status'], string> = {
 
 const scaleLabels: Record<RoleScaleKey, string> = {
   tsundere: '傲娇', warmth: '温柔', patience: '耐心', initiative: '主动', teasing: '吐槽', assertiveness: '反驳', curiosity: '好奇', expressiveness: '情绪外露', intimacy: '亲密表达', replyLength: '回复长度', humor: '幽默', ditziness: '呆萌', relationshipGrowth: '关系成长速度', proactiveFrequency: '主动发话频率'
+};
+
+const themeLabels: Record<ThemePreference, string> = {
+  system: '跟随 Windows 系统',
+  light: '浅色 · 冰蓝玻璃',
+  dark: '深色 · 黑蓝玻璃'
 };
 
 export function formatSemanticMappings(mappings: RolePackage['presentation']['semanticMappings']): string {
@@ -288,7 +295,7 @@ function BehaviorDetails(props: SettingsDetailsV2Props): JSX.Element {
   const selectedDisplay = props.displays.find((display) => display.id === settings.petDisplayId);
   return <>
     <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">DESKTOP BEHAVIOR</span><h2>桌宠状态</h2></div><span className="section-status">{settings.petLocked ? '已锁定' : '可交互'}</span></div><div className="quick-actions"><button className="secondary-button" type="button" onClick={() => window.baoyin.app.togglePet()}>显示 / 隐藏桌宠</button><button className="secondary-button" type="button" onClick={() => window.baoyin.pet.center()}>恢复位置</button></div><ToggleField label="始终置顶" checked={settings.alwaysOnTop} onChange={(value) => props.onSettingsChange({ alwaysOnTop: value })} /><ToggleField label="允许桌宠交互" checked={!settings.petLocked} onChange={(value) => props.onSettingsChange({ petLocked: !value })} description="开启后模型实体可移动；透明区域继续点击穿透。" /><ToggleField label="光标跟随" checked={settings.cursorTrackingEnabled} onChange={(value) => props.onSettingsChange({ cursorTrackingEnabled: value })} description="静止后平滑释放，不影响呼吸和动作。" /><ToggleField label="闲置活动" checked={idleEnabled} onChange={(value) => props.onSettingsChange({ cursorIdleMotion: value ? DEFAULT_APP_SETTINGS.cursorIdleMotion : 0 })} description="关闭后停止光标闲置微动。" /></div>
-    <div className="detail-section"><h2>应用行为</h2><div className="form-grid"><label>显示器<GlassSelect ariaLabel="显示器" value={settings.petDisplayId == null ? '' : String(settings.petDisplayId)} options={[{ value: '', label: '主显示器' }, ...props.displays.map((display) => ({ value: String(display.id), label: display.label }))]} onChange={(value) => props.onSettingsChange({ petDisplayId: value ? Number(value) : null })} /><small className="field-hint">当前：{selectedDisplay?.label ?? '主显示器'}</small></label><label>设置快捷键<input value={settings.settingsShortcut} onChange={(event) => props.onSettingsChange({ settingsShortcut: event.target.value })} /></label></div></div>
+    <div className="detail-section"><h2>应用行为</h2><div className="form-grid"><label>显示器<GlassSelect ariaLabel="显示器" value={settings.petDisplayId == null ? '' : String(settings.petDisplayId)} options={[{ value: '', label: '主显示器' }, ...props.displays.map((display) => ({ value: String(display.id), label: display.label }))]} onChange={(value) => props.onSettingsChange({ petDisplayId: value ? Number(value) : null })} /><small className="field-hint">当前：{selectedDisplay?.label ?? '主显示器'}</small></label><label>设置快捷键<input value={settings.settingsShortcut} onChange={(event) => props.onSettingsChange({ settingsShortcut: event.target.value })} /></label><label>主题外观<GlassSelect ariaLabel="主题外观" value={settings.themePreference} options={THEME_PREFERENCES.map((value) => ({ value, label: themeLabels[value] }))} onChange={(value) => props.onSettingsChange({ themePreference: sanitizeThemePreference(value) })} /><small className="field-hint">设置窗口即时切换；跟随系统会响应 Windows 外观变化。</small></label></div></div>
     <details className="advanced-settings"><summary>高级跟随设置</summary><div className="advanced-settings-body"><div className="range-grid"><RangeField label="眼睛强度" value={settings.cursorEyeWeight} min={0} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ cursorEyeWeight: value })} reset={() => props.onSettingsChange({ cursorEyeWeight: 1 })} /><RangeField label="头部强度" value={settings.cursorHeadWeight} min={0} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ cursorHeadWeight: value })} reset={() => props.onSettingsChange({ cursorHeadWeight: 0.35 })} /><RangeField label="身体强度" value={settings.cursorBodyWeight} min={0} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ cursorBodyWeight: value })} reset={() => props.onSettingsChange({ cursorBodyWeight: DEFAULT_APP_SETTINGS.cursorBodyWeight })} /><RangeField label="跟随平滑度" value={settings.cursorSmoothing} min={0.02} max={1} step={0.01} onChange={(value) => props.onSettingsChange({ cursorSmoothing: value })} reset={() => props.onSettingsChange({ cursorSmoothing: 0.22 })} /></div></div></details>
   </>;
 }

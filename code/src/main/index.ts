@@ -111,6 +111,14 @@ const CLICK_TARGET_TITLE = 'BAOYIN_CLICK_TARGET';
 const interactionTestEnabled = process.env.BAOYIN_INTERACTION_TEST === '1' || process.argv.includes('--baoyin-interaction-test');
 const singleInstanceLock = app.requestSingleInstanceLock();
 
+function appIconPath(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'build', 'icon.png');
+}
+
+function trayIconPath(): string {
+  return app.isPackaged ? join(process.resourcesPath, 'tray-32.png') : join(app.getAppPath(), 'build', 'tray-32.png');
+}
+
 function cosyVoiceProjectRoots(): string[] {
   const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR;
   return [
@@ -492,6 +500,7 @@ function createPetWindow(): void {
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
+    icon: appIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -582,6 +591,7 @@ function createSettingsWindow(): void {
     show: false,
     transparent: true,
     backgroundColor: '#00000000',
+    icon: appIconPath(),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -599,14 +609,6 @@ function createSettingsWindow(): void {
   settingsWindow.on('hide', () => sendSettingsWindowFocusState(false));
   settingsWindow.webContents.on('did-finish-load', () => {
     sendSettingsWindowFocusState(settingsWindow?.isFocused() === true);
-    // Keep wheel, touchpad and keyboard scrolling while removing the native
-    // scrollbar chrome from the custom settings window.
-    void settingsWindow?.webContents.insertCSS(`
-      html, body, * { scrollbar-width: none !important; -ms-overflow-style: none !important; }
-      html::-webkit-scrollbar, body::-webkit-scrollbar, *::-webkit-scrollbar {
-        width: 0 !important; height: 0 !important; display: none !important;
-      }
-    `).catch((error) => console.warn('[settings-window] scrollbar CSS injection failed', error));
   });
   loadRenderer(settingsWindow, 'settings');
   settingsWindow.on('close', (event) => {
@@ -885,8 +887,8 @@ function toggleSettings(): void {
 }
 
 function createTray(): void {
-  const iconPath = app.isPackaged ? join(process.resourcesPath, 'icon.png') : join(app.getAppPath(), 'build', 'icon.png');
-  tray = new Tray(nativeImage.createFromPath(iconPath).resize({ width: 32, height: 32 }));
+  const iconPath = trayIconPath();
+  tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -1581,6 +1583,7 @@ function registerIpc(): void {
 if (singleInstanceLock) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
+    app.setAppUserModelId('com.baoyin.aiassistant');
     settingsStore = new SettingsStore(app.getPath('userData'));
     voiceProfileStore = new VoiceProfileStore(app.getPath('userData'));
     live2dRegistry = new Live2DModelRegistry(app.getPath('userData'));

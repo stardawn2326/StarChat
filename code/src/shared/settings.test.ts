@@ -60,6 +60,13 @@ describe('settings sanitization', () => {
     expect(cosy.cosyVoiceSpeaker).toBe('中文女');
   });
 
+  it('defaults to follow-system and sanitizes the persisted theme preference', () => {
+    expect(sanitizeAppSettings({}).themePreference).toBe('system');
+    expect(sanitizeAppSettings({ themePreference: 'light' }).themePreference).toBe('light');
+    expect(sanitizeAppSettings({ themePreference: 'dark' }).themePreference).toBe('dark');
+    expect(sanitizeAppSettings({ themePreference: 'neon' as never }).themePreference).toBe('system');
+  });
+
   it('keeps CosyVoice2 custom voice selection explicit and persistent', () => {
     const settings = sanitizeAppSettings({
       cosyVoiceMode: 'zero-shot',

@@ -72,6 +72,16 @@ describe('SettingsStore role persistence', () => {
     expect(persisted).toMatchObject({ petLocked: false, petInteractionMode: true });
   });
 
+  it('persists the theme preference and migrates missing or invalid values to follow-system', () => {
+    const store = new SettingsStore(testRoot);
+    expect(store.readSettings().themePreference).toBe('system');
+    expect(store.save({ themePreference: 'light' }).themePreference).toBe('light');
+    expect(new SettingsStore(testRoot).readSettings().themePreference).toBe('light');
+
+    writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({ ...DEFAULT_APP_SETTINGS, themePreference: 'invalid' }), 'utf8');
+    expect(new SettingsStore(testRoot).readSettings().themePreference).toBe('system');
+  });
+
   it('persists relationship and memory state separately for each role', () => {
     const store = new SettingsStore(testRoot);
     const state = createCompanionState(DEFAULT_ROLE_PACKAGE.id, 1);

@@ -61,7 +61,8 @@ export class SettingsStore {
       ...(legacyPresentationDefault ? { presentation: DEFAULT_APP_SETTINGS.presentation } : {})
     });
     const interactionMigrated = stored.petLocked !== sanitized.petLocked || stored.petInteractionMode !== sanitized.petInteractionMode;
-    if (legacyBodyDefault || legacyPresentationDefault || interactionMigrated) {
+    const themeMigrated = existsSync(this.settingsPath) && stored.themePreference !== sanitized.themePreference;
+    if (legacyBodyDefault || legacyPresentationDefault || interactionMigrated || themeMigrated) {
       mkdirSync(this.baseDir, { recursive: true });
       writeFileSync(this.settingsPath, JSON.stringify(sanitized, null, 2), 'utf8');
     }

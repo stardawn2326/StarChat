@@ -1,5 +1,6 @@
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from './presentation-contract';
 import { normalizePetInteractionSettings } from './pet-interaction';
+import { DEFAULT_THEME_PREFERENCE, sanitizeThemePreference, type ThemePreference } from './theme';
 
 export interface AppSettings {
   apiBaseUrl: string;
@@ -8,6 +9,7 @@ export interface AppSettings {
   maxTokens: number;
   systemPrompt: string;
   alwaysOnTop: boolean;
+  themePreference: ThemePreference;
   live2dModelPath: string | null;
   petLocked: boolean;
   petScale: number;
@@ -78,6 +80,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   maxTokens: 800,
   systemPrompt: '',
   alwaysOnTop: true,
+  themePreference: DEFAULT_THEME_PREFERENCE,
   live2dModelPath: null,
   petLocked: false,
   petScale: 1,
@@ -219,6 +222,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
       : DEFAULT_APP_SETTINGS.maxTokens,
     systemPrompt: typeof input.systemPrompt === 'string' ? input.systemPrompt.trim() : '',
     alwaysOnTop: input.alwaysOnTop !== false,
+    themePreference: sanitizeThemePreference(input.themePreference),
     live2dModelPath:
       typeof input.live2dModelPath === 'string' && input.live2dModelPath.trim()
         ? input.live2dModelPath.trim()
