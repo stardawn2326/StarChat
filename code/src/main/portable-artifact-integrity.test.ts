@@ -50,5 +50,24 @@ describe('portable renderer artifact integrity', () => {
     archivePathFor(list, 'out/preload/index.cjs');
     archivePathFor(list, 'out/renderer/assets/live2dcubismcore-ClN_ODYk.js');
     expect(list.some((entry) => entry.replace(/\\/g, '/').includes('out/renderer/live2d-shaders/'))).toBe(true);
+
+    const rendererJs = references
+      .filter((reference) => reference.endsWith('.js'))
+      .map((reference) => reference.replace(/^out\/renderer\//, 'out/renderer/'));
+    const visited = new Set<string>();
+    const pending = [...rendererJs];
+    while (pending.length > 0) {
+      const reference = pending.shift();
+      if (!reference || visited.has(reference)) continue;
+      visited.add(reference);
+      const entry = archivePathFor(list, reference);
+      const source = asar.extractFile(archivePath, entry).toString('utf8');
+      for (const match of source.matchAll(/\.\/([A-Za-z0-9._-]+\.js)/g)) {
+        const dependency = `out/renderer/assets/${match[1]}`;
+        archivePathFor(list, dependency);
+        if (!visited.has(dependency)) pending.push(dependency);
+      }
+    }
+    expect(visited.size).toBeGreaterThanOrEqual(2);
   });
 });

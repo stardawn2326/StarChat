@@ -11,9 +11,10 @@ describe('conversation presentation contracts', () => {
   it('resets expression, motion and gaze before every new dialogue request', () => {
     const send = chatSource.slice(chatSource.indexOf('const send ='), chatSource.indexOf('const stop ='));
 
-    expect(send).toContain("type: 'control'");
-    expect(send).toContain("name: 'neutral'");
-    expect(send).toContain("source: 'system'");
+    expect(send).toContain('cancelSpeech()');
+    expect(chatSource).toContain("type: 'control'");
+    expect(chatSource).toContain("name: 'neutral'");
+    expect(chatSource).toContain("source: 'system'");
     expect(canvasSource).toContain("event.type === 'control'");
     expect(canvasSource).toContain('runtime.controller.neutral()');
     expect(canvasSource).toContain('runtime.controller.releaseFocus()');
@@ -31,6 +32,7 @@ describe('conversation presentation contracts', () => {
     const enqueue = chatSource.slice(chatSource.indexOf('const enqueueSpeech'), chatSource.indexOf('useEffect(() =>'));
     expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeGreaterThanOrEqual(0);
     expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeLessThan(enqueue.indexOf('window.baoyin.tts.synthesize'));
-    expect(enqueue.indexOf('emitPresentationEvents(presentation.playback')).toBeGreaterThan(enqueue.indexOf('await playAnalyzedSpeech'));
+    expect(enqueue.indexOf('emitPresentationEvents(presentation.playback')).toBeLessThan(enqueue.indexOf('await playAnalyzedSpeech'));
+    expect(chatSource).toContain('const actionGateRef = useRef(new EmotionCueGate(0));');
   });
 });

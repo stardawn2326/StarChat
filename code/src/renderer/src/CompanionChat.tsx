@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { ChatMessage, PublicAppState } from '../../shared/ipc';
-import type { RoleSemanticMapping } from '../../shared/role-package';
+import type { ExpressionName, RoleSemanticMapping } from '../../shared/role-package';
 import type { AppSettings } from '../../shared/settings';
 import { presentationForAssistantText } from '../../shared/companion';
 import {
@@ -25,6 +25,20 @@ function emitSpeech(speaking: boolean, mouthOpen = 0, mouthForm = 0): void {
     mouthForm: Math.min(1, Math.max(-1, mouthForm)),
     timestamp: Date.now()
   });
+}
+
+function emitNeutralPresentation(): void {
+  window.baoyin.presentation.emit({
+    type: 'control',
+    name: 'neutral',
+    source: 'system',
+    layer: 'safety'
+  });
+}
+
+function finishDialoguePresentation(): void {
+  emitSpeech(false);
+  emitNeutralPresentation();
 }
 
 async function playAnalyzedSpeech(
@@ -127,21 +141,52 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
   const playbackTailRef = useRef<Promise<void>>(Promise.resolve());
   const speechGenerationRef = useRef(0);
   const cancelPlaybackRef = useRef<CancelPlayback>(null);
+  const emotionFlushTimerRef = useRef<number | null>(null);
   const expressionGateRef = useRef(new EmotionCueGate(1600));
-  const actionGateRef = useRef(new EmotionCueGate(2200));
+  // Motions are emitted at the audio boundary. De-duplicate identical motion
+  // names, but never hold a later sentence's motion behind an emotion hold.
+  const actionGateRef = useRef(new EmotionCueGate(0));
   settingsRef.current = state.settings;
   mappingsRef.current = state.role.presentation.semanticMappings;
+
+  const clearEmotionFlushTimer = (): void => {
+    if (emotionFlushTimerRef.current === null) return;
+    window.clearTimeout(emotionFlushTimerRef.current);
+    emotionFlushTimerRef.current = null;
+  };
+
+  const flushPendingEmotion = (): void => {
+    emotionFlushTimerRef.current = null;
+    const expression = expressionGateRef.current.flush(Date.now());
+    if (!expression) return;
+    window.baoyin.presentation.emit({
+      type: 'expression',
+      name: expression as ExpressionName,
+      source: 'assistant',
+      layer: 'dialogue_emotion'
+    });
+    if (expressionGateRef.current.hasPending()) {
+      emotionFlushTimerRef.current = window.setTimeout(flushPendingEmotion, 120);
+    }
+  };
+
+  const schedulePendingEmotion = (): void => {
+    if (!expressionGateRef.current.hasPending()) return;
+    clearEmotionFlushTimer();
+    emotionFlushTimerRef.current = window.setTimeout(flushPendingEmotion, 1700);
+  };
 
   const cancelSpeech = (): void => {
     speechGenerationRef.current += 1;
     sentenceBufferRef.current.reset();
+    clearEmotionFlushTimer();
     cancelPlaybackRef.current?.();
     cancelPlaybackRef.current = null;
     synthesisTailRef.current = Promise.resolve();
     playbackTailRef.current = Promise.resolve();
     expressionGateRef.current.reset();
     actionGateRef.current.reset();
-    emitSpeech(false);
+    finishDialoguePresentation();
   };
 
   const enqueueSpeech = (text: string): void => {
@@ -152,6 +197,7 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     // A completed streamed sentence already contains enough meaning to update
     // the face. Do not wait for online TTS synthesis or the playback queue.
     emitPresentationEvents(presentation.realtime, expressionGateRef.current);
+    schedulePendingEmotion();
     const sourcePromise = synthesisTailRef.current.then(() => {
       if (generation !== speechGenerationRef.current) return '';
       return window.baoyin.tts.synthesize(segment);
@@ -167,7 +213,10 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     });
     playbackTailRef.current = playback.catch((reason: unknown) => {
       if (generation !== speechGenerationRef.current) return;
-      emitSpeech(false);
+      clearEmotionFlushTimer();
+      expressionGateRef.current.reset();
+      actionGateRef.current.reset();
+      finishDialoguePresentation();
       setError(reason instanceof Error ? reason.message : '语音播放失败');
     });
   };
@@ -189,13 +238,10 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
         const generation = speechGenerationRef.current;
         void playbackTailRef.current.then(() => {
           if (generation !== speechGenerationRef.current) return;
-          emitSpeech(false);
-          window.baoyin.presentation.emit({
-            type: 'expression',
-            name: 'neutral',
-            source: 'assistant',
-            layer: 'dialogue_emotion'
-          });
+          clearEmotionFlushTimer();
+          expressionGateRef.current.reset();
+          actionGateRef.current.reset();
+          finishDialoguePresentation();
         });
         setMessages((current) => {
           const next = [...current];

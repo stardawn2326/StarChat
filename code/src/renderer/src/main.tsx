@@ -54,11 +54,19 @@ async function boot(): Promise<void> {
     const message = error instanceof Error ? error.message : 'Live2D runtime 启动失败';
     document.body.dataset.bootError = message;
     console.error(`[${role}-boot] ${message}`, error);
-    if (role === 'settings') {
-      root.textContent = message;
-    } else {
-      root.replaceChildren();
-    }
+    root.textContent = '';
+    root.className = 'boot-error-root';
+    const panel = document.createElement('section');
+    panel.className = 'boot-error-panel';
+    panel.setAttribute('role', 'alert');
+    const heading = document.createElement('strong');
+    heading.textContent = role === 'pet' ? '白音模型启动失败' : '白音界面启动失败';
+    const detail = document.createElement('span');
+    detail.textContent = message;
+    const hint = document.createElement('small');
+    hint.textContent = '界面仍保持可见；请在设置中检查模型入口或查看启动日志。';
+    panel.append(heading, detail, hint);
+    root.appendChild(panel);
   }
 }
 

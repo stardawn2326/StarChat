@@ -102,6 +102,11 @@ button { border: 0; color: inherit; cursor: pointer; }
 .security-note { margin: 12px 0; color: #9e94aa; font-size: 11px; line-height: 1.5; }
 .panel-actions { justify-content: flex-end; gap: 8px; margin-top: 14px; } .secondary-button { background: rgba(255,255,255,.09); color: #cfc3de; } .secondary-button:disabled { opacity: .4; cursor: not-allowed; }
 .loading-card { min-height: 100vh; display: grid; place-items: center; border-radius: 22px; background: rgba(28,25,40,.9); color: #d9ceef; font-size: 13px; }
+.boot-error-root { min-height: 100vh; display: grid; place-items: center; padding: 18px; box-sizing: border-box; background: rgba(28,25,40,.94); }
+.boot-error-panel { display: flex; max-width: 460px; flex-direction: column; gap: 8px; padding: 16px 18px; border: 1px solid rgba(255, 157, 181, .42); border-radius: 14px; background: rgba(86, 34, 56, .72); color: #ffe7ee; box-shadow: 0 12px 35px rgba(0, 0, 0, .28); line-height: 1.45; }
+.boot-error-panel strong { font-size: 14px; }
+.boot-error-panel span { color: #ffc9d6; font: 11px/1.5 Consolas, monospace; overflow-wrap: anywhere; }
+.boot-error-panel small { color: #e4bac8; font-size: 10px; }
 
 .settings-runtime-state { display: flex; flex-direction: column; gap: 4px; margin: 4px 0 10px; padding: 9px 11px; border-radius: 11px; background: rgba(203,183,246,.08); border: 1px solid rgba(255,255,255,.08); }
 .settings-runtime-state strong { color: #e7dcf6; font-size: 12px; }

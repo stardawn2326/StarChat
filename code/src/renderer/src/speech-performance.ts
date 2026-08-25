@@ -105,21 +105,42 @@ export function mouthFormAtProgress(text: string, progress: number): number {
 export class EmotionCueGate {
   private active: string | null = null;
   private changedAt = Number.NEGATIVE_INFINITY;
+  private pending: string | null = null;
 
   constructor(private readonly minimumHoldMs = 1600) {}
 
   accept(expression: string, timestamp: number): boolean {
     if (!expression || expression === this.active) return false;
     const now = Number.isFinite(timestamp) ? timestamp : Date.now();
-    if (this.active !== null && now - this.changedAt < this.minimumHoldMs) return false;
+    if (this.active !== null && now - this.changedAt < this.minimumHoldMs) {
+      this.pending = expression;
+      return false;
+    }
     this.active = expression;
     this.changedAt = now;
+    this.pending = null;
     return true;
+  }
+
+  flush(timestamp: number): string | null {
+    if (!this.pending) return null;
+    const now = Number.isFinite(timestamp) ? timestamp : Date.now();
+    if (this.active !== null && now - this.changedAt < this.minimumHoldMs) return null;
+    const next = this.pending;
+    this.pending = null;
+    this.active = next;
+    this.changedAt = now;
+    return next;
+  }
+
+  hasPending(): boolean {
+    return this.pending !== null;
   }
 
   reset(): void {
     this.active = null;
     this.changedAt = Number.NEGATIVE_INFINITY;
+    this.pending = null;
   }
 }
 

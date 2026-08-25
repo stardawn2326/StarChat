@@ -225,20 +225,21 @@ function applyRendererViewport(nextViewport) {
     canvas.dataset.viewportCss = `${Math.round(nextViewport.width)}x${Math.round(nextViewport.height)}`;
     canvas.dataset.renderScale = String(nextViewport.renderScale);
   }
-  // Deliberately do not call applyModelTransform here. Resize changes the
-  // renderer's transparent crop and render resolution only.
-}
-
-function applyTransformTo(targetModel, targetBase, next) {
-  if (!targetModel || !targetBase) {
-    return;
-  }
+  // do not call applyModelTransform here: keep the model's screen-space anchor stable while the renderer crop or
+  // DPR changes. This is a runtime-only local-position update; it does not
+  // write back model settings or change the user's model transform.
   if (sizeChanged && model && modelScreenAnchor) {
     const local = localPointForScreenAnchor(modelScreenAnchor, {
       x: nextViewport.screenX,
       y: nextViewport.screenY
     });
     model.position.set(local.x, local.y);
+  }
+}
+
+function applyTransformTo(targetModel, targetBase, next) {
+  if (!targetModel || !targetBase) {
+    return;
   }
   const userScale = clamp(finite(Number(next?.userScale), 1), MIN_USER_SCALE, MAX_USER_SCALE);
   const userX = finite(Number(next?.userX), 0);

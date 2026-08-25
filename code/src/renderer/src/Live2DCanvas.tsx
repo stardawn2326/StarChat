@@ -268,6 +268,14 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     const runtime = runtimeRef.current;
     if (!runtime || !ready) return;
     if (event.type === 'speech') return;
+    if (event.type === 'control' && event.name === 'neutral') {
+      characterStateRef.apply(event);
+      lastActionRef.current = null;
+      lastExpressionRef.current = 'neutral';
+      runtime.controller.neutral();
+      runtime.controller.releaseFocus();
+      return;
+    }
     characterStateRef.apply(event);
     void applyCharacterState(runtime).catch((error: unknown) => {
       setRuntimeStatus(error instanceof Error ? error.message : 'Cubism 表现应用失败');
