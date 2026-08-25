@@ -32,7 +32,7 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*3px[^}]*border-radius:\s*14px[^}]*background:\s*transparent[^}]*pointer-events:\s*none/s);
     expect(mainSource).toContain('petWindow.setResizable(false)');
     expect(mainSource).toContain("ipcMain.on('pet:resize-start'");
-    expect(mainSource).toContain('autoHideMenuBar: false');
+    expect(mainSource).toContain('autoHideMenuBar: true');
     expect(petSource).not.toContain('model-viewport-controls');
     expect(stylesSource).toMatch(/html, body, #root\s*\{[^}]*background:\s*transparent/s);
   });
