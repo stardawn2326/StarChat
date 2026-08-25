@@ -9,7 +9,7 @@ export class CursorFollowGate {
   private lastMovementAt: number | null = null;
   private released = false;
 
-  constructor(private readonly idleAfterMs = 3000) {}
+  constructor(private readonly idleAfterMs = 5000) {}
 
   update(moving: boolean, timestamp: number): CursorFollowDecision {
     const now = Number.isFinite(timestamp) ? timestamp : Date.now();

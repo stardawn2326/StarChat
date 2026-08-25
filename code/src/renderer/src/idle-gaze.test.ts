@@ -24,4 +24,19 @@ describe('AIRI-style idle gaze', () => {
     expect(downward.y).toBeGreaterThan(0.55);
     expect(upward.y).toBeLessThan(-0.55);
   });
+
+  it('keeps a subtle warmup before allowing larger random gaze transitions', () => {
+    const values = [1, 1, 0, 0, 0.5, 0, 0, 0]; let index = 0;
+    const gaze = new IdleGazeController(() => values[index++] ?? 0.5);
+
+    gaze.begin(1000);
+    const warmup = gaze.update(2500, 1);
+    expect(gaze.phaseAt(2500)).toBe('warmup');
+    expect(Math.abs(warmup.x)).toBeLessThanOrEqual(0.12);
+    expect(Math.abs(warmup.y)).toBeLessThanOrEqual(0.12);
+    expect(gaze.phaseAt(3999)).toBe('warmup');
+
+    gaze.update(4000, 1);
+    expect(gaze.phaseAt(4000)).toBe('random');
+  });
 });

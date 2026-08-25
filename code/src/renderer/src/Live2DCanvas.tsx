@@ -10,6 +10,7 @@ import { CursorFollowGate } from './cursor-follow-gate';
 import { DialogueFocusGate } from './dialogue-focus';
 import { DialogueIdleArbiter } from './dialogue-idle-arbiter';
 import { IdleGazeController } from './idle-gaze';
+import { IdlePresentationGate } from './idle-presentation-gate';
 import { dispatchCubismRuntimeCommand, runtimeCommandPhase } from './cubism-runtime-dispatch';
 import { createViewportSyncCoordinator, type ViewportFrame } from './viewport-sync';
 import { createRuntimeCommandFlight } from './runtime-command-flight';
@@ -69,9 +70,10 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const windowAndModelDragActiveRef = useRef(windowAndModelDragActive);
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
-  const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
+  const cursorFollowGateRef = useRef(new CursorFollowGate(5000));
   const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
+  const idlePresentationGateRef = useRef(new IdlePresentationGate());
   const dialogueIdleArbiterRef = useRef(new DialogueIdleArbiter());
   const runtimeResultHandlerRef = useRef(onRuntimeResult);
   const runtimeCommandFlightRef = useRef<ReturnType<typeof createRuntimeCommandFlight<CubismRuntimeResult>> | null>(null);
@@ -87,24 +89,32 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
 
   const pauseIdlePresentation = (runtime: RuntimeModule): void => {
     idleGazeRef.current.reset();
+    idlePresentationGateRef.current.pause();
     const decision = dialogueIdleArbiterRef.current.pause(runtime.controller.getRuntimeStatus().activeMotion?.priority);
     if (decision.stopIdleAction) {
       runtime.controller.stopAction();
     }
   };
 
-  const resumeIdlePresentation = (runtime: RuntimeModule): void => {
+  const resumeIdlePresentation = (): void => {
     idleGazeRef.current.reset();
-    if (!dialogueIdleArbiterRef.current.resume().restartIdleAction) return;
-    void runtime.controller.playAction('idle', false);
+    idlePresentationGateRef.current.reset();
+    // A dialogue end re-arms scheduling only. CursorFollowGate must observe a
+    // fresh five-second quiet period before a large idle action may start.
+    dialogueIdleArbiterRef.current.resume();
   };
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     if (dialogueFocusGateRef.current.shouldIgnoreCursor()) return;
     const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);
     if (decision.release) {
-      idleGazeRef.current.reset();
+      idleGazeRef.current.begin(update.timestamp);
+      idlePresentationGateRef.current.arm(update.timestamp);
     }
     if (decision.mode === 'released') {
+      const idlePresentation = idlePresentationGateRef.current.update(update.timestamp);
+      if (idlePresentation.startLargeAction) {
+        void runtime.controller.playAction('idle', false);
+      }
       const idleStrength = Math.min(1.6, Math.max(0.35,
         (gazeConfig?.idleMotionAmplitude ?? 0.035) / 0.035 * 0.55
         + (gazeConfig?.idleSwayStrength ?? 0.06) / 0.06 * 0.45));
@@ -342,7 +352,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     }
     if (!decision.resume) return;
     cursorFollowGateRef.current.reset();
-    resumeIdlePresentation(runtime);
+    resumeIdlePresentation();
     idleGazeRef.current.reset();
     const rect = canvasRef.current?.getBoundingClientRect();
     if (rect && cursor) applyCursorFollow(runtime, cursor, rect);
@@ -367,7 +377,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
       runtime.controller.releaseFocus();
       if (dialogueFocusGateRef.current.transition('end').resume) {
         cursorFollowGateRef.current.reset();
-        resumeIdlePresentation(runtime);
+        resumeIdlePresentation();
       }
       return;
     }

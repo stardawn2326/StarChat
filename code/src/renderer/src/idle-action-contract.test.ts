@@ -14,7 +14,7 @@ describe('idle presentation contracts', () => {
     expect(canvasSource).toContain('new IdleGazeController()');
     expect(canvasSource).toContain('idleGazeRef.current.update');
     expect(runtimeSource).toContain("requestedName === 'idle'");
-    expect(runtimeSource).toContain('startFallbackGesture(requestedName)');
+    expect(runtimeSource).toContain('startFallbackGesture(requestedName, 720, FALLBACK_GESTURE_INTENSITY)');
   });
 
   it('pauses and stops the current idle presentation when dialogue owns focus', () => {
@@ -35,7 +35,7 @@ describe('idle presentation contracts', () => {
   it('restores idle scheduling after end and after interrupted or timed-out conversation cleanup', () => {
     const endBranch = canvasSource.slice(canvasSource.indexOf('if (!decision.resume) return;'));
     expect(endBranch).toContain('cursorFollowGateRef.current.reset()');
-    expect(endBranch).toContain('resumeIdlePresentation(runtime)');
+    expect(endBranch).toContain('resumeIdlePresentation()');
     expect(endBranch).toContain('idleGazeRef.current.reset()');
     expect(endBranch).toContain('applyCursorFollow(runtime, cursor, rect)');
     expect(chatSource).toContain('finishDialoguePresentation();');
@@ -43,6 +43,28 @@ describe('idle presentation contracts', () => {
     expect(chatSource).toContain('语音音频播放超时');
     expect(canvasSource).toContain("void runtime.controller.playAction('idle', false)");
     expect(canvasSource).toContain('dialogueIdleArbiterRef.current.resume()');
+  });
+
+  it('waits five seconds after cursor stop and dialogue end before large idle motion', () => {
+    expect(canvasSource).toContain('new CursorFollowGate(5000)');
+    expect(canvasSource).toContain('new IdlePresentationGate()');
+    expect(canvasSource).toContain('idlePresentationGateRef.current.update');
+    const endBranch = canvasSource.slice(canvasSource.indexOf('if (!decision.resume) return;'));
+    expect(endBranch).toContain('cursorFollowGateRef.current.reset()');
+    expect(endBranch).toContain('resumeIdlePresentation()');
+    const resumeFunction = canvasSource.slice(
+      canvasSource.indexOf('const resumeIdlePresentation'),
+      canvasSource.indexOf('const applyCursorFollow')
+    );
+    expect(resumeFunction).toContain('idlePresentationGateRef.current.reset()');
+    expect(resumeFunction).not.toContain("playAction('idle', false)");
+  });
+
+  it('keeps stronger semantic gestures and a safe generic fallback when resources are missing', () => {
+    expect(runtimeSource).toContain('FALLBACK_GESTURE_INTENSITY');
+    expect(runtimeSource).toContain("'shake_head'");
+    expect(runtimeSource).toContain("'emphasis'");
+    expect(runtimeSource).toContain('startFallbackGesture(requestedName, 720, FALLBACK_GESTURE_INTENSITY)');
   });
 
   it('keeps Cubism native blink, natural movement and physics updates enabled during dialogue', () => {

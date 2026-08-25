@@ -87,6 +87,7 @@ let runtimeManifest = null;
 let fallbackGestureHandler = null;
 let fallbackGestureUpdater = null;
 const fallbackGestureTimeline = new ProceduralGestureTimeline();
+const FALLBACK_GESTURE_INTENSITY = 1.35;
 
 function finite(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
@@ -217,17 +218,17 @@ function applyFallbackGesture(now = performance.now()) {
   }
 }
 
-function startFallbackGesture(name, durationMs = 720) {
+function startFallbackGesture(name, durationMs = 720, intensity = FALLBACK_GESTURE_INTENSITY) {
   if (!runtimeManifest) return false;
-  const candidates = [name, 'lean_forward', 'nod', 'tilt_confused', 'surprised', 'caring_smile'];
-  const selected = candidates.find((candidate) => Object.keys(sampleProceduralGesture(candidate, durationMs / 2, durationMs))
+  const candidates = [name, 'lean_forward', 'nod', 'shake_head', 'tilt_confused', 'emphasis', 'surprised', 'caring_smile'];
+  const selected = candidates.find((candidate) => Object.keys(sampleProceduralGesture(candidate, durationMs / 2, durationMs, intensity))
     .some((semantic) => runtimeManifest.parameters[semantic]?.available));
   if (!selected) {
     stopFallbackGesture();
     state.lastError = `语义动作 ${name} 缺少可用参数；已记录 capability manifest 缺失项并保持安全姿态。`;
     return false;
   }
-  const token = fallbackGestureTimeline.start(selected, performance.now(), durationMs);
+  const token = fallbackGestureTimeline.start(selected, performance.now(), durationMs, intensity);
   fallbackGestureHandler = { token, name: selected };
   const available = selected === name;
   if (!available) {
@@ -475,13 +476,13 @@ async function playPackageMotion(route, requestedName, interrupt) {
     result = await runtimeControl.playMotion(capability.group, capability.index, priority);
   }
   if (!result) {
-    const available = startFallbackGesture(requestedName);
+    const available = startFallbackGesture(requestedName, 720, FALLBACK_GESTURE_INTENSITY);
     syncRuntimeControlState();
     return available || Boolean(fallbackGestureHandler);
   }
   syncRuntimeControlState();
   if (!result.ok) {
-    const fallback = startFallbackGesture(requestedName);
+    const fallback = startFallbackGesture(requestedName, 720, FALLBACK_GESTURE_INTENSITY);
     if (fallback || fallbackGestureHandler) return true;
     state.lastError = result.message;
   }

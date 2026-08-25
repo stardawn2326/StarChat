@@ -8,6 +8,13 @@ describe('adaptive procedural gestures', () => {
     expect(sampleProceduralGesture('tilt_confused', 360, 720)).toEqual({ head_z: 0.22 });
   });
 
+  it('scales semantic fallback gestures for readable nod, shake, tilt and emphasis', () => {
+    expect(sampleProceduralGesture('nod', 360, 720, 1.5)).toEqual({ head_y: -0.525 });
+    expect(sampleProceduralGesture('shake_head', 180, 720, 1.5)).toEqual({ head_x: 0.525 });
+    expect(sampleProceduralGesture('tilt_confused', 360, 720, 1.5)).toEqual({ head_z: 0.33 });
+    expect(sampleProceduralGesture('emphasis', 360, 720, 1.5)).toEqual({ body_x: 0.27, head_y: -0.18 });
+  });
+
   it('clamps progress, supports replacement, and cancels expired gestures', () => {
     const timeline = new ProceduralGestureTimeline();
     const first = timeline.start('nod', 100, 720);

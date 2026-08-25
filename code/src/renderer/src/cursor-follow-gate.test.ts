@@ -16,4 +16,24 @@ describe('cursor follow activity gate', () => {
     gate.update(false, 3000);
     expect(gate.update(true, 3100)).toEqual({ mode: 'following', release: false });
   });
+
+  it('requires five full seconds of stillness before releasing by default', () => {
+    const gate = new CursorFollowGate();
+    gate.update(true, 1000);
+
+    expect(gate.update(false, 5999)).toEqual({ mode: 'holding', release: false });
+    expect(gate.update(false, 6000)).toEqual({ mode: 'released', release: true });
+  });
+
+  it('re-arms the full five-second wait after a dialogue reset', () => {
+    const gate = new CursorFollowGate();
+    gate.update(true, 1000);
+    gate.update(false, 6000);
+    expect(gate.update(false, 6000).mode).toBe('released');
+
+    gate.reset();
+    expect(gate.update(false, 7000)).toEqual({ mode: 'following', release: false });
+    expect(gate.update(false, 11999)).toEqual({ mode: 'holding', release: false });
+    expect(gate.update(false, 12000)).toEqual({ mode: 'released', release: true });
+  });
 });
