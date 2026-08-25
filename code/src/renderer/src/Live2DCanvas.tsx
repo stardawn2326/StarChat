@@ -62,7 +62,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const lastExpressionRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
-  const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number } | null>(null);
+  const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number; screenX: number; screenY: number } | null>(null);
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
   const idleGazeRef = useRef(new IdleGazeController());
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
@@ -222,7 +222,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const syncViewport = (): void => {
+    const syncViewport = (windowOrigin: { x: number; y: number } = { x: window.screenX, y: window.screenY }): void => {
       const rect = canvas.getBoundingClientRect();
       const next = canvasViewport({ width: rect.width, height: rect.height }, window.devicePixelRatio || 1);
       const renderScale = next.renderScale;
@@ -230,22 +230,25 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
       canvas.dataset.viewportCss = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
       canvas.dataset.renderScale = String(renderScale);
       const previous = lastSyncedViewportRef.current;
-      if (previous && previous.width === next.width && previous.height === next.height && previous.renderScale === renderScale) {
+      if (previous && previous.width === next.width && previous.height === next.height && previous.renderScale === renderScale && previous.screenX === windowOrigin.x && previous.screenY === windowOrigin.y) {
         return;
       }
-      lastSyncedViewportRef.current = { width: next.width, height: next.height, renderScale };
-      runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale, window.screenX, window.screenY);
+      lastSyncedViewportRef.current = { width: next.width, height: next.height, renderScale, screenX: windowOrigin.x, screenY: windowOrigin.y };
+      runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale, windowOrigin.x, windowOrigin.y);
       // ResizeObserver and window resize can both report the same CSS viewport
       // during a drag or a cross-display move. The renderer owns backing pixels;
-      // this observer only forwards a changed CSS viewport/DPR tuple.
+      // this observer only forwards a changed CSS viewport/DPR/origin tuple.
     };
     syncViewport();
-    const observer = new ResizeObserver(syncViewport);
+    const syncViewportFromWindow = (): void => syncViewport();
+    const observer = new ResizeObserver(() => syncViewport());
     observer.observe(canvas);
-    window.addEventListener('resize', syncViewport);
+    window.addEventListener('resize', syncViewportFromWindow);
+    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((bounds) => syncViewport({ x: bounds.x, y: bounds.y }));
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', syncViewport);
+      window.removeEventListener('resize', syncViewportFromWindow);
+      unsubscribeBounds();
     };
   }, []);
 

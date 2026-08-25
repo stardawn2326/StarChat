@@ -210,6 +210,7 @@ function createPixiApplication(nextViewport) {
 
 function applyRendererViewport(nextViewport) {
   const sizeChanged = viewport.width !== nextViewport.width || viewport.height !== nextViewport.height;
+  const originChanged = viewport.screenX !== nextViewport.screenX || viewport.screenY !== nextViewport.screenY;
   viewport = { ...nextViewport };
   if (!app) {
     return;
@@ -225,10 +226,11 @@ function applyRendererViewport(nextViewport) {
     canvas.dataset.viewportCss = `${Math.round(nextViewport.width)}x${Math.round(nextViewport.height)}`;
     canvas.dataset.renderScale = String(nextViewport.renderScale);
   }
-  // do not call applyModelTransform here: keep the model's screen-space anchor stable while the renderer crop or
-  // DPR changes. This is a runtime-only local-position update; it does not
-  // write back model settings or change the user's model transform.
-  if (sizeChanged && model && modelScreenAnchor) {
+  // do not call applyModelTransform here: keep the model's screen-space anchor
+  // stable while the window moves/resizes or the renderer DPR changes. This is
+  // a runtime-only local-position update; it does not write back model
+  // settings or change the user's model transform.
+  if ((sizeChanged || originChanged) && model && modelScreenAnchor) {
     const local = localPointForScreenAnchor(modelScreenAnchor, {
       x: nextViewport.screenX,
       y: nextViewport.screenY
