@@ -29,8 +29,8 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(mainSourceText).toContain("document.title = role === 'pet' ? '' : '白音 AI 助手'");
     expect(stylesSource).toMatch(/\.pet-shell\.pet-hovered\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-shell\.pet-model-editing\s*\{\s*outline:\s*none/s);
-    expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*3px[^}]*border-radius:\s*14px[^}]*background:\s*transparent[^}]*pointer-events:\s*none/s);
-    expect(stylesSource).toMatch(/\.pet-shell\[data-pet-frame-hover="true"\] \.pet-resize-frame\s*\{[^}]*border-color:\s*rgba\(143,\s*196,\s*255,/s);
+    expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*0[^}]*box-sizing:\s*border-box[^}]*pointer-events:\s*none/s);
+    expect(stylesSource).toContain('.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame');
     expect(stylesSource).toMatch(/\.pet-shell \.live2d-canvas\s*\{[^}]*background:\s*transparent/s);
     expect(mainSource).toContain('petWindow.setResizable(false)');
     expect(mainSource).toContain("ipcMain.on('pet:resize-start'");
@@ -39,10 +39,38 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(stylesSource).toMatch(/html, body, #root\s*\{[^}]*background:\s*transparent/s);
   });
 
-  it('keeps the resize frame visible from global cursor presence, independent of model hit or hint delay', () => {
-    expect(petSource).toContain("data-pet-frame-hover={frameHover ? 'true' : 'false'}");
-    expect(stylesSource).toContain('.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame');
+  it('keeps the resize frame visibility tied to explicit adjustment mode', () => {
+    expect(petSource).toContain("data-pet-model-edit-mode={modelEditMode ? 'true' : 'false'}");
+    expect(stylesSource).toContain('.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame');
+    expect(stylesSource).not.toContain('.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame { border-color');
     expect(stylesSource).not.toContain('.pet-shell.pet-hovered:not([data-pet-locked="true"]) .pet-resize-frame');
+  });
+
+  it('draws a client-area rainbow frame only in explicit window-adjust mode', () => {
+    expect(petSource).toContain('data-pet-model-edit-mode={modelEditMode ? \'true\' : \'false\'}');
+    const frameBaseCss = stylesSource.slice(stylesSource.indexOf('.pet-resize-frame'), stylesSource.indexOf('.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame'));
+    expect(frameBaseCss).toContain('inset: 0');
+    expect(frameBaseCss).toContain('box-sizing: border-box');
+    expect(frameBaseCss).toContain('opacity: 0');
+    expect(frameBaseCss).toContain('visibility: hidden');
+    expect(frameBaseCss).toContain('background: transparent');
+    expect(frameBaseCss).toContain('box-shadow: none');
+    expect(frameBaseCss).toContain('pointer-events: none');
+    expect(stylesSource).toContain('.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame');
+    expect(stylesSource).toContain('.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame::before');
+    expect(stylesSource).toContain('background-position: 0% 50%');
+    expect(stylesSource).toContain('background-size: 280% 100%');
+    expect(stylesSource).toContain('animation: pet-rainbow-border-flow');
+    expect(stylesSource).toContain('@keyframes pet-rainbow-border-flow');
+    expect(stylesSource).toContain('pointer-events: none;');
+    const reducedMotionBlock = stylesSource.slice(stylesSource.lastIndexOf('@media (prefers-reduced-motion: reduce)'));
+    expect(reducedMotionBlock).toContain('.pet-resize-frame::before');
+    expect(reducedMotionBlock).toContain('animation: none');
+    const frameCss = stylesSource.slice(stylesSource.indexOf('.pet-resize-frame'), stylesSource.indexOf('.pet-shell .live2d-model-clip-layer'));
+    expect(frameCss).not.toContain('renderer.resize');
+    expect(frameCss).not.toContain('setBounds');
+    expect(frameCss).not.toContain('persistModelViewport');
+    expect(frameCss).not.toContain('modelViewport');
   });
 
   it('dims the model to exactly 30 percent only while locked and hovered', () => {

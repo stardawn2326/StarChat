@@ -1,6 +1,6 @@
 html[data-baoyin-window="settings"], body[data-window="settings"], body[data-window="settings"] #root { height: 100%; min-height: 0; overflow: hidden; }
-body[data-window="settings"] .settings-center-shell { height: 100vh; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none; }
-body[data-window="settings"] .settings-center-shell::-webkit-scrollbar { width: 0; height: 0; }
+body[data-window="settings"] .settings-center-shell { height: 100vh; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: auto; -ms-overflow-style: auto; }
+body[data-window="settings"] .settings-center-shell::-webkit-scrollbar { width: 10px; height: 10px; }
 body[data-window="settings"] .titlebar { position: sticky; top: 0; z-index: 20; -webkit-app-region: drag; }
 body[data-window="settings"] .titlebar button, body[data-window="settings"] .settings-home, body[data-window="settings"] .settings-details, body[data-window="settings"] input, body[data-window="settings"] textarea, body[data-window="settings"] select, body[data-window="settings"] button { -webkit-app-region: no-drag; }
 
@@ -318,6 +318,58 @@ body[data-window="settings"] .loading-card { display: grid; min-height: 100vh; p
   body[data-window="settings"] *, body[data-window="settings"] *::before, body[data-window="settings"] *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
 
+/* SettingsWindow inheritance contract: new pages and Agent surfaces inherit the same tokens. */
+body[data-window="settings"] .settings-center-shell :where(*) {
+  color: inherit;
+  border-color: var(--theme-border);
+}
+body[data-window="settings"] .settings-center-shell :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"]) {
+  color: inherit;
+  accent-color: var(--theme-accent);
+}
+body[data-window="settings"] .settings-center-shell :where(p, span, small, label, legend, dt, dd, li, .field-hint, .detail-note) {
+  color: var(--theme-muted);
+}
+body[data-window="settings"] .settings-center-shell :where(input, textarea, select, [contenteditable="true"]) {
+  color: var(--theme-text);
+  background: var(--theme-control-surface);
+  border-color: var(--theme-border);
+}
+body[data-window="settings"] .settings-center-shell :where(button, [role="button"], summary) {
+  color: var(--theme-text);
+  background: var(--theme-control-surface);
+  border-color: var(--theme-border);
+}
+body[data-window="settings"] .settings-center-shell :where(button:hover, [role="button"]:hover, summary:hover) {
+  color: var(--theme-heading);
+  background: var(--theme-control-hover);
+  border-color: var(--theme-border-strong);
+}
+body[data-window="settings"] .settings-center-shell :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"]) {
+  color: var(--theme-disabled);
+  border-color: var(--theme-border);
+}
+body[data-window="settings"] .settings-center-shell :where(input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, [role="button"]:focus-visible, summary:focus-visible) {
+  outline: 2px solid var(--theme-focus);
+  outline-offset: 2px;
+}
+body[data-window="settings"] .settings-center-shell :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay) {
+  color: var(--theme-text);
+  background: var(--theme-menu-surface);
+  border-color: var(--theme-menu-border);
+  box-shadow: 0 18px 48px var(--theme-shadow);
+}
+body[data-window="settings"] .settings-center-shell :where([data-settings-surface], [data-agent-ui], .settings-surface, .agent-surface) {
+  color: var(--theme-text);
+  background: var(--theme-surface);
+  border-color: var(--theme-border);
+}
+body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar) { width: 10px; height: 10px; }
+body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-track) { background: var(--theme-scrollbar-track); }
+body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb) { background: var(--theme-scrollbar-thumb); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb:hover) { background: var(--theme-accent); background-clip: padding-box; }
+body[data-window="settings"] .settings-center-shell :where(*) { scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track); }
+
 /* Theme contract: all settings surfaces consume the tokens owned by shared/theme.ts. */
 html[data-theme="light"] body[data-window="settings"] { color-scheme: light; }
 html[data-theme="dark"] body[data-window="settings"] { color-scheme: dark; }
@@ -445,3 +497,16 @@ body[data-window="settings"] .companion-status strong { color: var(--theme-headi
 body[data-window="settings"] .companion-message.user { background: var(--theme-accent-soft); }
 body[data-window="settings"] .loading-card { color: var(--theme-muted); background: var(--theme-window-bg); }
 body[data-window="settings"] .settings-overlay { background: var(--theme-overlay); }
+body[data-window="settings"] .role-create-actions,
+body[data-window="settings"] .runtime-capability-note,
+body[data-window="settings"] .priority-list,
+body[data-window="settings"] .metric-json,
+body[data-window="settings"] .companion-composer,
+body[data-window="settings"] .quick-actions,
+body[data-window="settings"] .toolbar,
+body[data-window="settings"] .path-row,
+body[data-window="settings"] .voice-list { color: var(--theme-text); }
+body[data-window="settings"] .runtime-capability-note { color: var(--theme-muted); background: var(--theme-surface); border-color: var(--theme-border); }
+body[data-window="settings"] .priority-list { color: var(--theme-muted); }
+body[data-window="settings"] .metric-json { color: var(--theme-text); background: var(--theme-control-surface); border: 1px solid var(--theme-border); }
+body[data-window="settings"] .settings-center-shell :where(.agent-ui, [data-agent-ui="status"], [data-agent-ui="message"], [data-agent-ui="panel"]) { color: var(--theme-text); background: var(--theme-surface); border-color: var(--theme-border); }

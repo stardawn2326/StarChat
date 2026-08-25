@@ -185,7 +185,28 @@ describe('settings center components', () => {
     expect(settingsCenterCss).toContain('background: var(--theme-menu-surface)');
     expect(settingsCenterCss).toContain('background: var(--theme-surface-selected)');
     expect(settingsCenterCss).toContain('scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track)');
+    expect(settingsCenterCss).not.toContain('scrollbar-width: none');
+    expect(settingsCenterCss).not.toContain('::-webkit-scrollbar { width: 0; height: 0; }');
     expect(settingsCenterCss).not.toContain('background: transparent;');
+  });
+
+  it('applies one token contract to every SettingsWindow surface, including future semantic controls', () => {
+    const homeMarkup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS, onOpen: () => undefined }));
+    expect(homeMarkup).toContain('class="settings-home"');
+    for (const card of SETTINGS_CARDS) {
+      const markup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps(card.id)));
+      expect(markup).toContain('class="settings-details"');
+    }
+
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(*)');
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"])');
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(input, textarea, select, [contenteditable="true"])');
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay)');
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"])');
+    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb)');
+    for (const token of ['--theme-text', '--theme-muted', '--theme-control-surface', '--theme-menu-surface', '--theme-surface-selected', '--theme-disabled', '--theme-danger']) {
+      expect(settingsCenterCss).toContain(token);
+    }
   });
 
   it('keeps theme application and opaque surfaces strictly inside SettingsWindow', () => {
@@ -201,6 +222,30 @@ describe('settings center components', () => {
     expect(mainProcessSource).toContain("petWindow.setBackgroundColor('#00000000')");
     expect(mainProcessSource).toContain('petWindow.setIgnoreMouseEvents(true)');
     expect(mainProcessSource).toContain('applyPetInputMode');
+  });
+
+  it('keeps the lock-to-adjust chain and Alt whole-window drag semantics intact', () => {
+    const behaviorMarkup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps('behavior')));
+    expect(behaviorMarkup).toContain('锁定桌宠窗口');
+    expect(behaviorMarkup).toContain('桌宠状态');
+    expect(mainProcessSource).toContain('if (next.petLocked && petModelEditMode)');
+    expect(mainProcessSource).toContain('setPetModelEditMode(false);');
+    expect(mainProcessSource).toContain('function togglePetModelEditMode()');
+    expect(mainProcessSource).toContain("ipcMain.on('pet:toggle-model-edit'");
+    expect(mainProcessSource).toContain("ipcMain.on('pet:drag-start'");
+    expect(mainProcessSource).toContain("ipcMain.on('pet:resize-start'");
+    expect(preloadSource).toContain('toggleModelEdit');
+    expect(preloadSource).toContain('dragStart');
+    expect(preloadSource).toContain('resizeStart');
+    expect(petAppSource).toContain("operation: 'window-and-model-drag'");
+    expect(petAppSource).toContain("operation: 'window-resize'");
+    expect(petAppSource).toContain("operation: 'model-transform'");
+    expect(petAppSource).toContain('if (event.altKey)');
+    expect(petAppSource).toContain('window.baoyin.pet.dragStart');
+    expect(petAppSource).toContain('window.baoyin.pet.resizeStart');
+    expect(petAppSource).toContain('window.baoyin.pet.pointerCancel');
+    expect(petStylesSource).toContain('.pet-shell .live2d-canvas');
+    expect(petStylesSource).toContain('background: transparent;');
   });
 
   it('drives the continuous root outline from real SettingsWindow focus state', () => {

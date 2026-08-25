@@ -180,8 +180,13 @@ body[data-window="settings"] .settings-center-shell { min-height: 100vh; max-hei
 .pet-shell .live2d-overlay { display: none; }
 .pet-shell.pet-hovered { outline: none; }
 .pet-shell.pet-model-editing { outline: none; }
-.pet-resize-frame { position: absolute; inset: 3px; z-index: 20; border: 1px solid transparent; border-radius: 14px; background: transparent; pointer-events: none; transition: border-color .12s ease; }
-.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame { border-color: rgba(143, 196, 255, var(--pet-hover-border-opacity, .72)); box-shadow: 0 0 12px rgba(143, 196, 255, .14); }
+.pet-resize-frame { position: absolute; inset: 0; z-index: 20; box-sizing: border-box; border: 0; border-radius: 0; background: transparent; opacity: 0; visibility: hidden; box-shadow: none; pointer-events: none; }
+.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame { opacity: 1; visibility: visible; }
+.pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame::before { position: absolute; inset: 0; box-sizing: border-box; padding: 2px; border-radius: 0; content: ""; background: linear-gradient(110deg, #ff5f6d, #ffc371, #f9f871, #7cf29a, #66d9ff, #8d7bff, #ff72d2, #ff5f6d) border-box; background-position: 0% 50%; background-size: 280% 100%; -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); mask-composite: exclude; animation: pet-rainbow-border-flow 4.8s linear infinite; pointer-events: none; }
+@keyframes pet-rainbow-border-flow { to { background-position: 280% 50%; } }
+@media (prefers-reduced-motion: reduce) {
+  .pet-shell[data-pet-model-edit-mode="true"] .pet-resize-frame::before { animation: none; background-position: 50% 50%; }
+}
 .pet-shell .live2d-model-clip-layer { transition: opacity .15s ease; }
 .pet-safe-state { display: none; }
 .pet-safe-state strong { font-size: 13px; }

@@ -48,7 +48,7 @@ describe('portable renderer artifact integrity', () => {
     for (const reference of references) archivePathFor(list, reference);
     archivePathFor(list, 'out/main/index.js');
     archivePathFor(list, 'out/preload/index.cjs');
-    archivePathFor(list, 'out/renderer/assets/live2dcubismcore-ClN_ODYk.js');
+    expect(list.some((entry) => /^out\/renderer\/assets\/live2dcubismcore-[A-Za-z0-9_-]+\.js$/.test(entry.replace(/\\/g, '/').replace(/^\/+/, '')))).toBe(true);
     expect(list.some((entry) => entry.replace(/\\/g, '/').includes('out/renderer/live2d-shaders/'))).toBe(true);
 
     const rendererJs = references
