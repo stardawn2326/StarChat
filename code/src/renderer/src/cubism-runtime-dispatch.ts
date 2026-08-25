@@ -1,7 +1,7 @@
 import type { CubismRuntimeController, CubismRuntimeResult, CubismRuntimePhase } from '../../shared/cubism';
 import type { CubismRuntimeCommand } from '../../shared/cubism-runtime-command';
 
-function phaseFor(command: CubismRuntimeCommand): CubismRuntimePhase {
+export function runtimeCommandPhase(command: CubismRuntimeCommand): CubismRuntimePhase {
   switch (command.type) {
     case 'capabilities': return 'capabilities';
     case 'play_expression': return 'expression';
@@ -23,7 +23,7 @@ export async function dispatchCubismRuntimeCommand(
   if (!controller || actualIdentity !== expectedModelIdentity) {
     return {
       ok: false,
-      phase: phaseFor(command),
+      phase: runtimeCommandPhase(command),
       code: 'not_ready',
       message: '桌宠 Cubism runtime 尚未初始化或正在切换模型。',
       status,
@@ -42,7 +42,7 @@ export async function dispatchCubismRuntimeCommand(
   } catch (error) {
     return {
       ok: false,
-      phase: phaseFor(command),
+      phase: runtimeCommandPhase(command),
       code: 'runtime_error',
       message: error instanceof Error ? error.message : String(error),
       status: controller.getRuntimeStatus(),

@@ -10,8 +10,9 @@ import { CursorFollowGate } from './cursor-follow-gate';
 import { DialogueFocusGate } from './dialogue-focus';
 import { DialogueIdleArbiter } from './dialogue-idle-arbiter';
 import { IdleGazeController } from './idle-gaze';
-import { dispatchCubismRuntimeCommand } from './cubism-runtime-dispatch';
+import { dispatchCubismRuntimeCommand, runtimeCommandPhase } from './cubism-runtime-dispatch';
 import { createViewportSyncCoordinator, type ViewportFrame } from './viewport-sync';
+import { createRuntimeCommandFlight } from './runtime-command-flight';
 
 interface RuntimeModule {
   controller: CubismRuntimeController;
@@ -72,9 +73,17 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
   const dialogueIdleArbiterRef = useRef(new DialogueIdleArbiter());
+  const runtimeResultHandlerRef = useRef(onRuntimeResult);
+  const runtimeCommandFlightRef = useRef<ReturnType<typeof createRuntimeCommandFlight<CubismRuntimeResult>> | null>(null);
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
 
   windowAndModelDragActiveRef.current = windowAndModelDragActive;
+  runtimeResultHandlerRef.current = onRuntimeResult;
+  if (!runtimeCommandFlightRef.current) {
+    runtimeCommandFlightRef.current = createRuntimeCommandFlight<CubismRuntimeResult>(
+      (requestId, result) => runtimeResultHandlerRef.current?.(requestId, result)
+    );
+  }
 
   const pauseIdlePresentation = (runtime: RuntimeModule): void => {
     idleGazeRef.current.reset();
@@ -222,6 +231,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   }, [live2d.entryPath, modelJsonName, onRuntimeFailure, onRuntimeReady, ready, runtimeRef]);
 
   useEffect(() => () => {
+    runtimeCommandFlightRef.current?.cancel();
     if (runtimeRef.current) {
       runtimeRef.current.stopExternalLive2D();
     } else {
@@ -386,10 +396,25 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
 
   useEffect(() => {
     if (!runtimeCommand) return;
+    const request = runtimeCommand;
     const runtime = runtimeRef.current;
-    void dispatchCubismRuntimeCommand(runtime?.controller ?? null, runtimeCommand.command, live2d.entryPath)
-      .then((result) => onRuntimeResult?.(runtimeCommand.requestId, result));
-  }, [live2d.entryPath, onRuntimeResult, runtimeCommand, runtimeReadyEpoch, runtimeRef]);
+    runtimeCommandFlightRef.current?.run(
+      request.requestId,
+      () => dispatchCubismRuntimeCommand(runtime?.controller ?? null, request.command, live2d.entryPath),
+      (reason) => {
+        const status = runtime?.controller.getRuntimeStatus() ?? { modelIdentity: live2d.entryPath, activeExpression: null, activeMotion: null };
+        const capabilities = runtime?.controller.getCapabilities() ?? { modelIdentity: live2d.entryPath, expressions: [], motions: [], idleGroup: null };
+        return {
+          ok: false,
+          phase: runtimeCommandPhase(request.command),
+          code: 'runtime_error',
+          message: reason === 'timeout' ? 'Cubism runtime 预览超时，已释放本次请求。' : 'Cubism runtime 预览调用失败，已释放本次请求。',
+          status,
+          capabilities
+        };
+      }
+    );
+  }, [live2d.entryPath, runtimeCommand, runtimeReadyEpoch, runtimeRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

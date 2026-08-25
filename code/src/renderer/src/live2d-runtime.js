@@ -284,6 +284,7 @@ function createPixiApplication(nextViewport) {
 
 function applyRendererViewport(nextViewport, preserveModelScreenAnchor = true) {
   const sizeChanged = viewport.width !== nextViewport.width || viewport.height !== nextViewport.height;
+  const resolutionChanged = viewport.renderScale !== nextViewport.renderScale;
   const originChanged = viewport.screenX !== nextViewport.screenX || viewport.screenY !== nextViewport.screenY;
   viewport = { ...nextViewport };
   if (!app) {
@@ -291,11 +292,13 @@ function applyRendererViewport(nextViewport, preserveModelScreenAnchor = true) {
   }
   // Pixi owns the canvas backing store. Keep the scene in CSS-pixel units and
   // let renderer resolution, rather than stage scale, account for the DPR.
-  app.renderer.resolution = nextViewport.renderScale;
-  app.renderer.resize(
-    Math.round(nextViewport.width),
-    Math.round(nextViewport.height)
-  );
+  if (sizeChanged || resolutionChanged) {
+    app.renderer.resolution = nextViewport.renderScale;
+    app.renderer.resize(
+      Math.round(nextViewport.width),
+      Math.round(nextViewport.height)
+    );
+  }
   if (canvas) {
     canvas.dataset.viewportCss = `${Math.round(nextViewport.width)}x${Math.round(nextViewport.height)}`;
     canvas.dataset.renderScale = String(nextViewport.renderScale);

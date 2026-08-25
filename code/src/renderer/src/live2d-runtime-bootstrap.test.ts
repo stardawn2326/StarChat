@@ -25,6 +25,14 @@ describe('Live2D renderer bootstrap contracts', () => {
     expect(transformPath).not.toContain('nextViewport');
   });
 
+  it('does not recreate the Pixi backing store for an origin-only frame', () => {
+    const viewportPath = sourceBetween(runtimeSource, 'function applyRendererViewport', 'function applyTransformTo');
+
+    expect(viewportPath).toContain('const resolutionChanged =');
+    expect(viewportPath).toContain('if (sizeChanged || resolutionChanged)');
+    expect(viewportPath).toContain('app.renderer.resize(');
+  });
+
   it('keeps the pet UI visible with a clear boot error when a renderer module fails', () => {
     const boot = sourceBetween(bootstrapSource, 'async function boot()', 'void boot()');
 
