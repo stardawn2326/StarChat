@@ -1,13 +1,17 @@
 import { Application } from '@pixi/app';
 import { extensions } from '@pixi/extensions';
 import { Ticker, TickerPlugin } from '@pixi/ticker';
-import { Live2DModel, MotionPriority } from 'pixi-live2d-display/cubism4';
+import { Cubism4ExpressionManager, Live2DModel } from 'pixi-live2d-display/cubism4';
 import { pixiWorldPointFromCursor } from './airi-world-coordinate.ts';
 import { ExpressionMotionAdapter } from './expression-motion-adapter.ts';
+import { CubismRuntimeControl } from './cubism-runtime-control.ts';
+import { installPhysicsGate } from './cubism-physics-gate.ts';
+import { registerRuntimeAssets } from './runtime-asset-registration.ts';
+import { localPointForScreenAnchor, screenPointForLocalPoint } from './screen-space-anchor.ts';
 
 const MIN_USER_SCALE = 0.55;
 const MAX_USER_SCALE = 2.4;
-const DEFAULT_VIEWPORT = { width: 432, height: 600, renderScale: 1 };
+const DEFAULT_VIEWPORT = { width: 432, height: 600, renderScale: 1, screenX: 0, screenY: 0 };
 
 const state = {
   status: 'idle',
@@ -65,12 +69,15 @@ let tickerInstalled = false;
 let viewport = { ...DEFAULT_VIEWPORT };
 let firstViewport = { ...DEFAULT_VIEWPORT };
 let modelBase = null;
+let modelScreenAnchor = null;
 let currentTransform = { userScale: 1, userX: 0, userY: 0 };
+let runtimeControl = null;
 let lipSyncValue = 0;
 let lipSyncForm = 0;
 let mouthFormSupported = false;
 let lipSyncHandler = null;
 let persistentWatermarkHandler = null;
+let motionFinishHandler = null;
 let persistentWatermarkEffect = null;
 let gazeEnabled = true;
 let gazeConfig = null;
@@ -91,7 +98,12 @@ function sanitizeGazeConfig(config) {
     bodyFollowStrength: clamp(finite(Number(config?.bodyFollowStrength), 0.82), 0, 1),
     bodyLag: clamp(finite(Number(config?.bodyLag), 0.32), 0.05, 1.5),
     inertiaStrength: clamp(finite(Number(config?.inertiaStrength), 0.72), 0, 5),
-    idleSwayStrength: clamp(finite(Number(config?.idleSwayStrength), 0.06), 0, 0.15)
+    idleSwayStrength: clamp(finite(Number(config?.idleSwayStrength), 0.06), 0, 0.15),
+    smoothing: clamp(finite(Number(config?.smoothing), 0.22), 0.02, 1),
+    maxStep: clamp(finite(Number(config?.maxStep), 0.08), 0.005, 0.4),
+    rangeX: clamp(finite(Number(config?.rangeX), 1), 0.1, 1),
+    rangeY: clamp(finite(Number(config?.rangeY), 1), 0.1, 1),
+    physicsEnabled: config?.physicsEnabled !== false
   };
 }
 
@@ -160,7 +172,13 @@ function readViewport() {
   const width = Math.max(1, finite(rect?.width, finite(canvas?.clientWidth, DEFAULT_VIEWPORT.width)));
   const height = Math.max(1, finite(rect?.height, finite(canvas?.clientHeight, DEFAULT_VIEWPORT.height)));
   const renderScale = clamp(finite(globalThis.devicePixelRatio, 1), 0.5, 4);
-  return { width, height, renderScale };
+  return {
+    width,
+    height,
+    renderScale,
+    screenX: finite(globalThis.screenX, 0),
+    screenY: finite(globalThis.screenY, 0)
+  };
 }
 
 function installAiriTicker() {
@@ -191,6 +209,7 @@ function createPixiApplication(nextViewport) {
 }
 
 function applyRendererViewport(nextViewport) {
+  const sizeChanged = viewport.width !== nextViewport.width || viewport.height !== nextViewport.height;
   viewport = { ...nextViewport };
   if (!app) {
     return;
@@ -210,16 +229,37 @@ function applyRendererViewport(nextViewport) {
   // renderer's transparent crop and render resolution only.
 }
 
-function applyModelTransform(next) {
-  if (!model || !modelBase) {
+function applyTransformTo(targetModel, targetBase, next) {
+  if (!targetModel || !targetBase) {
     return;
   }
+  if (sizeChanged && model && modelScreenAnchor) {
+    const local = localPointForScreenAnchor(modelScreenAnchor, {
+      x: nextViewport.screenX,
+      y: nextViewport.screenY
+    });
+    model.position.set(local.x, local.y);
+  }
+  const userScale = clamp(finite(Number(next?.userScale), 1), MIN_USER_SCALE, MAX_USER_SCALE);
+  const userX = finite(Number(next?.userX), 0);
+  const userY = finite(Number(next?.userY), 0);
+  const finalScale = targetBase.scale * userScale;
+  targetModel.scale.set(finalScale);
+  targetModel.position.set(targetBase.x + userX, targetBase.y + userY);
+}
+
+function applyModelTransform(next) {
+  if (!model || !modelBase) return;
   const userScale = clamp(finite(Number(next?.userScale), 1), MIN_USER_SCALE, MAX_USER_SCALE);
   const userX = finite(Number(next?.userX), 0);
   const userY = finite(Number(next?.userY), 0);
   const finalScale = modelBase.scale * userScale;
   model.scale.set(finalScale);
   model.position.set(modelBase.x + userX, modelBase.y + userY);
+  modelScreenAnchor = screenPointForLocalPoint(
+    { x: model.position.x, y: model.position.y },
+    { x: viewport.screenX, y: viewport.screenY }
+  );
   currentTransform = { userScale, userX, userY };
   state.transform = {
     baseScale: modelBase.scale,
@@ -235,27 +275,6 @@ function applyModelTransform(next) {
 
 function modelDefinitionFile(definition) {
   return definition?.File ?? definition?.file ?? definition?.fileName ?? '';
-}
-
-function findExpressionName(sourceFile) {
-  const definitions = model?.internalModel?.motionManager?.expressionManager?.definitions;
-  for (const definition of Object.values(definitions ?? {})) {
-    if (sameAsset(modelDefinitionFile(definition), sourceFile)) {
-      return definition?.Name ?? definition?.name ?? stripExtension(sourceFile, /\.exp3\.json$/i);
-    }
-  }
-  return stripExtension(sourceFile, /\.exp3\.json$/i);
-}
-
-function findMotionDefinition(sourceFile) {
-  const definitions = model?.internalModel?.motionManager?.definitions ?? {};
-  for (const [group, entries] of Object.entries(definitions)) {
-    const index = (entries ?? []).findIndex((definition) => sameAsset(modelDefinitionFile(definition), sourceFile));
-    if (index >= 0) {
-      return { group, index };
-    }
-  }
-  return null;
 }
 
 function updateModelMetrics() {
@@ -295,7 +314,11 @@ function updateModelMetrics() {
     : [];
   state.gazeX = finite(focus?.x, 0);
   state.gazeY = finite(focus?.y, 0);
-  state.activeMotion = internalModel?.motionManager?.state?.currentGroup ?? state.activeMotion;
+  const runtimeStatus = runtimeControl?.getRuntimeStatus?.();
+  state.activeExpression = runtimeStatus?.activeExpression ?? null;
+  state.activeMotion = runtimeStatus?.activeMotion
+    ? runtimeStatus.activeMotion.group + '[' + runtimeStatus.activeMotion.index + ']'
+    : null;
   state.contextLost = Boolean(app?.renderer?.gl?.isContextLost?.());
 }
 
@@ -334,55 +357,48 @@ function routeFor(name, category = 'expression') {
 }
 
 async function applyExpressionRoute(route) {
-  if (!model || !route?.sourceFile) {
-    return false;
-  }
-  const expressionName = findExpressionName(route.sourceFile);
-  const started = await model.expression(expressionName);
-  if (!started) {
-    state.lastError = `AIRI 表情定义未启动：${expressionName}`;
-  }
-  return started;
+  if (!runtimeControl || !route?.sourceFile) return false;
+  const capability = runtimeControl.findExpressionByFile(route.sourceFile);
+  const result = await runtimeControl.playExpression(capability?.id ?? null);
+  syncRuntimeControlState();
+  if (!result.ok) state.lastError = result.message;
+  return result.ok;
 }
 
 function stopPackageMotion() {
-  model?.internalModel?.motionManager?.stopAllMotions?.();
+  const result = runtimeControl?.stopMotion?.();
+  if (result && !result.ok) state.lastError = result.message;
   semanticAdapter?.clearAction();
-  state.activeMotion = null;
+  syncRuntimeControlState();
 }
 
 async function playPackageMotion(route, requestedName, interrupt) {
-  if (!model) {
-    return false;
+  if (!runtimeControl) return false;
+  let capability = route?.sourceFile ? runtimeControl.findMotionByFile(route.sourceFile) : null;
+  if (!capability && requestedName === 'idle') {
+    const idleGroup = runtimeControl.getCapabilities().idleGroup;
+    capability = idleGroup
+      ? runtimeControl.getCapabilities().motions.find((item) => item.group === idleGroup) ?? null
+      : null;
   }
-  const motionManager = model.internalModel?.motionManager;
-  if (interrupt) {
-    motionManager?.stopAllMotions?.();
-  }
-  let definition = route?.sourceFile ? findMotionDefinition(route.sourceFile) : null;
-  if (!definition && requestedName === 'idle') {
-    const idleGroup = motionManager?.groups?.idle ?? 'Idle';
-    if (motionManager?.definitions?.[idleGroup]) {
-      definition = { group: idleGroup, index: undefined };
-    }
-  }
-  if (!definition) {
-    state.lastError = `AIRI 动作定义未找到：${requestedName}`;
-    state.activeMotion = null;
-    return false;
-  }
-  const started = await model.motion(
-    definition.group,
-    definition.index,
-    interrupt ? MotionPriority.FORCE : MotionPriority.NORMAL
-  );
-  if (started) {
-    state.activeMotion = requestedName;
-  } else {
-    state.lastError = `AIRI 动作未启动：${definition.group}`;
-    state.activeMotion = null;
-  }
-  return started;
+  const priority = interrupt ? 'force' : requestedName === 'idle' ? 'idle' : 'normal';
+  const result = capability
+    ? await runtimeControl.playMotion(capability.group, capability.index, priority)
+    : {
+        ok: false,
+        message: '当前模型没有可用的动作映射：' + requestedName
+      };
+  syncRuntimeControlState();
+  if (!result.ok) state.lastError = result.message;
+  return result.ok;
+}
+
+function syncRuntimeControlState() {
+  const runtimeStatus = runtimeControl?.getRuntimeStatus?.();
+  state.activeExpression = runtimeStatus?.activeExpression ?? null;
+  state.activeMotion = runtimeStatus?.activeMotion
+    ? runtimeStatus.activeMotion.group + '[' + runtimeStatus.activeMotion.index + ']'
+    : null;
 }
 
 function installModelEvents() {
@@ -396,26 +412,14 @@ function installModelEvents() {
     }
   };
   internalModel?.on?.('beforeModelUpdate', lipSyncHandler);
+  motionFinishHandler = syncRuntimeControlState;
   persistentWatermarkHandler = () => {
     if (persistentWatermarkEffect?.id) {
       internalModel?.coreModel?.setParameterValueById?.(persistentWatermarkEffect.id, persistentWatermarkEffect.value);
     }
   };
   internalModel?.on?.('beforeModelUpdate', persistentWatermarkHandler);
-  model?.on?.('hit', (hitAreas) => {
-    const motionManager = model?.internalModel?.motionManager;
-    const hitBody = (hitAreas ?? []).some((area) => /body|head/i.test(area));
-    if (!hitBody || !motionManager) {
-      return;
-    }
-    const group = ['TapBody', 'tap_body', 'Tap', 'tap'].find((candidate) => motionManager.definitions?.[candidate]);
-    if (group) {
-      void model.motion(group, undefined, MotionPriority.NORMAL);
-    }
-  });
-  model?.internalModel?.motionManager?.on?.('motionFinish', () => {
-    state.activeMotion = null;
-  });
+  model?.internalModel?.motionManager?.on?.('motionFinish', motionFinishHandler);
 }
 
 function tapAtNormalizedPoint(x, y) {
@@ -464,17 +468,22 @@ export const controller = {
     if (!nextOptions?.modelJsonName) {
       throw new Error('缺少 model3.json 文件名');
     }
-    if (running) {
-      this.dispose();
+    const sameModel = model && options?.modelIdentity && nextOptions?.modelIdentity
+      ? options.modelIdentity === nextOptions.modelIdentity
+      : Boolean(model && sameAsset(options?.modelJsonName, nextOptions.modelJsonName));
+    if (sameModel) {
+      return;
     }
+    const previousModel = model;
+    const previousOptions = options;
+    const previousModelBase = modelBase;
+    const previousTransform = { ...currentTransform };
+    const hadPreviousRuntime = Boolean(previousModel && app);
     resetMetrics();
-    options = nextOptions;
-    semanticAdapter = new ExpressionMotionAdapter(nextOptions.adapter ?? null, {
+    const candidateAdapter = new ExpressionMotionAdapter(nextOptions.adapter ?? null, {
       expressions: (nextOptions.expressions ?? []).map((asset) => asset.fileName),
       motions: (nextOptions.motions ?? []).map((asset) => asset.fileName)
     });
-    currentTransform = { userScale: 1, userX: 0, userY: 0 };
-    modelBase = null;
     state.status = 'loading';
     state.model = nextOptions.modelJsonName;
     state.lastError = null;
@@ -483,30 +492,88 @@ export const controller = {
       state.status = 'error';
       throw new Error('缺少 Live2D Pixi canvas');
     }
-    viewport = readViewport();
-    firstViewport = { ...viewport };
-    createPixiApplication(viewport);
+    if (!app) {
+      viewport = readViewport();
+      firstViewport = { ...viewport };
+      createPixiApplication(viewport);
+    }
     running = true;
+    let candidateModel = null;
+    let candidateControl = null;
     try {
       const source = `live2d://model/${encodeURIComponent(basename(nextOptions.modelJsonName))}`;
-      model = await Live2DModel.from(source, { autoInteract: false, autoUpdate: true });
-      model.anchor.set(0.5, 0.5);
-      app.stage.addChild(model);
-      const naturalWidth = Math.max(1, finite(model.width, finite(model.internalModel?.originalWidth, 1)));
-      const naturalHeight = Math.max(1, finite(model.height, finite(model.internalModel?.originalHeight, 1)));
-      modelBase = {
+      candidateModel = await Live2DModel.from(source, { autoInteract: false, autoUpdate: true });
+      installPhysicsGate(candidateModel.internalModel);
+      // The committed runtime continues to use model.anchor.set(0.5, 0.5).
+      candidateModel.anchor.set(0.5, 0.5);
+      candidateModel.visible = false;
+      app.stage.addChild(candidateModel);
+      const registration = registerRuntimeAssets(candidateModel.internalModel ?? {}, {
+        expressions: nextOptions.expressions,
+        motions: nextOptions.motions
+      });
+      if (registration.needsExpressionManager) {
+        candidateModel.internalModel.motionManager.expressionManager = new Cubism4ExpressionManager(
+          candidateModel.internalModel.settings,
+          nextOptions
+        );
+      }
+      const naturalWidth = Math.max(1, finite(candidateModel.width, finite(candidateModel.internalModel?.originalWidth, 1)));
+      const naturalHeight = Math.max(1, finite(candidateModel.height, finite(candidateModel.internalModel?.originalHeight, 1)));
+      const candidateBase = {
         scale: Math.min(firstViewport.width / naturalWidth, firstViewport.height / naturalHeight),
         x: firstViewport.width / 2,
         y: firstViewport.height / 2
       };
-      applyModelTransform(currentTransform);
+      applyTransformTo(candidateModel, candidateBase, { userScale: 1, userX: 0, userY: 0 });
+      candidateControl = new CubismRuntimeControl();
+      candidateControl.bind(candidateModel, nextOptions.modelIdentity ?? null);
+
+      // Commit only after the complete model and its initial transform exist.
+      // The old model stays visible while Live2DModel.from() parses assets.
+      if (previousModel && app.stage) {
+        app.stage.removeChild(previousModel);
+        if (lipSyncHandler) previousModel.internalModel?.off?.('beforeModelUpdate', lipSyncHandler);
+        if (persistentWatermarkHandler) previousModel.internalModel?.off?.('beforeModelUpdate', persistentWatermarkHandler);
+        if (motionFinishHandler) previousModel.internalModel?.motionManager?.off?.('motionFinish', motionFinishHandler);
+        previousModel.destroy?.({ children: true });
+      }
+      runtimeControl?.dispose?.();
+      model = candidateModel;
+      candidateModel = null;
+      runtimeControl = candidateControl;
+      candidateControl = null;
+      options = nextOptions;
+      semanticAdapter = candidateAdapter;
+      currentTransform = { userScale: 1, userX: 0, userY: 0 };
+      modelBase = candidateBase;
+      model.visible = true;
+      lipSyncHandler = null;
+      persistentWatermarkHandler = null;
+      persistentWatermarkEffect = null;
       installModelEvents();
+      applyModelTransform(currentTransform);
+      syncRuntimeControlState();
       state.status = 'ready';
       updateModelMetrics();
     } catch (error) {
-      state.status = 'error';
-      state.lastError = error instanceof Error ? error.message : String(error);
-      this.dispose();
+      candidateControl?.dispose?.();
+      candidateModel?.parent?.removeChild?.(candidateModel);
+      candidateModel?.destroy?.({ children: true });
+      if (hadPreviousRuntime && previousModel) {
+        model = previousModel;
+        options = previousOptions;
+        modelBase = previousModelBase;
+        currentTransform = previousTransform;
+        state.status = 'ready';
+        state.model = previousOptions?.modelJsonName ?? null;
+        state.lastError = error instanceof Error ? error.message : String(error);
+        updateModelMetrics();
+      } else {
+        state.status = 'error';
+        state.lastError = error instanceof Error ? error.message : String(error);
+        this.dispose();
+      }
       throw error;
     }
   },
@@ -518,8 +585,10 @@ export const controller = {
     }
     if (lipSyncHandler) model?.internalModel?.off?.('beforeModelUpdate', lipSyncHandler);
     if (persistentWatermarkHandler) model?.internalModel?.off?.('beforeModelUpdate', persistentWatermarkHandler);
+    if (motionFinishHandler) model?.internalModel?.motionManager?.off?.('motionFinish', motionFinishHandler);
     lipSyncHandler = null;
     persistentWatermarkHandler = null;
+    motionFinishHandler = null;
     persistentWatermarkEffect = null;
     lipSyncValue = 0;
     lipSyncForm = 0;
@@ -531,6 +600,8 @@ export const controller = {
     canvas = null;
     options = null;
     semanticAdapter = null;
+    runtimeControl?.dispose?.();
+    runtimeControl = null;
     modelBase = null;
     currentTransform = { userScale: 1, userX: 0, userY: 0 };
     state.status = 'disposed';
@@ -547,12 +618,21 @@ export const controller = {
   },
 
   resetParameters() {
-    this.stopExpression();
+    this.reset();
   },
 
-  playExpression(name) {
-    if (!model || !name) {
-      return;
+  async playExpression(expressionId) {
+    const result = runtimeControl?.playExpression
+      ? await runtimeControl.playExpression(expressionId)
+      : { ok: false, phase: 'expression', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
+    syncRuntimeControlState();
+    if (!result.ok) state.lastError = result.message;
+    return result;
+  },
+
+  async playSemanticExpression(name) {
+    if (!runtimeControl || !name) {
+      return false;
     }
     let route;
     if (name === 'watermark_on' || name === 'watermark_off') {
@@ -560,27 +640,71 @@ export const controller = {
     } else {
       route = semanticAdapter?.setExpression(name) ?? routeFor(name, 'expression');
     }
-    state.activeExpression = name;
     if (!route?.sourceFile) {
       if (name !== 'watermark_on' && name !== 'watermark_off') {
         this.stopExpression();
       }
-      return;
+      return false;
     }
-    void applyExpressionRoute(route).catch((error) => {
-      state.lastError = error instanceof Error ? error.message : String(error);
-    });
+    return applyExpressionRoute(route);
+  },
+
+  async playMotion(group, index, priority = 'normal') {
+    const result = runtimeControl?.playMotion
+      ? await runtimeControl.playMotion(group, index, priority)
+      : { ok: false, phase: 'motion', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
+    syncRuntimeControlState();
+    if (!result.ok) state.lastError = result.message;
+    return result;
   },
 
   stopExpression() {
-    model?.internalModel?.motionManager?.expressionManager?.resetExpression?.();
+    const result = runtimeControl?.stopExpression?.()
+      ?? { ok: false, phase: 'stop_expression', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
     semanticAdapter?.clearExpression();
-    state.activeExpression = null;
+    syncRuntimeControlState();
+    if (!result.ok) state.lastError = result.message;
+    return result;
+  },
+
+  stopMotion() {
+    const result = runtimeControl?.stopMotion?.()
+      ?? { ok: false, phase: 'stop_motion', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
+    semanticAdapter?.clearAction();
+    syncRuntimeControlState();
+    if (!result.ok) state.lastError = result.message;
+    return result;
+  },
+
+  reset() {
+    const result = runtimeControl?.reset?.()
+      ?? { ok: false, phase: 'reset', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
+    semanticAdapter?.clearExpression();
+    semanticAdapter?.clearAction();
+    syncRuntimeControlState();
+    if (!result.ok) state.lastError = result.message;
+    return result;
+  },
+
+  getCapabilities() {
+    return runtimeControl?.getCapabilities?.() ?? {
+      modelIdentity: null,
+      expressions: [],
+      motions: [],
+      idleGroup: null
+    };
+  },
+
+  getRuntimeStatus() {
+    return runtimeControl?.getRuntimeStatus?.() ?? {
+      modelIdentity: null,
+      activeExpression: null,
+      activeMotion: null
+    };
   },
 
   neutral() {
-    this.stopExpression();
-    this.stopAction();
+    this.reset();
   },
 
   async playAction(name, interrupt = true) {
@@ -592,7 +716,7 @@ export const controller = {
   },
 
   stopAction() {
-    stopPackageMotion();
+    return stopPackageMotion();
   },
 
   interruptAction(name) {
@@ -607,19 +731,22 @@ export const controller = {
     applyModelTransform(next);
   },
 
-  setViewport(width, height, renderScale) {
+  setViewport(width, height, renderScale, screenX, screenY) {
     applyRendererViewport({
       width: Math.max(1, finite(Number(width), viewport.width)),
       height: Math.max(1, finite(Number(height), viewport.height)),
-      renderScale: clamp(finite(Number(renderScale), viewport.renderScale), 0.5, 4)
+      renderScale: clamp(finite(Number(renderScale), viewport.renderScale), 0.5, 4),
+      screenX: finite(Number(screenX), viewport.screenX),
+      screenY: finite(Number(screenY), viewport.screenY)
     });
   },
 
   configureGaze(config) {
     gazeEnabled = config?.enabled !== false;
     gazeConfig = sanitizeGazeConfig(config);
+    state.physicsEnabled = gazeConfig.physicsEnabled;
     model?.internalModel?.configureFocus?.(gazeConfig);
-    state.physicsEnabled = config?.physicsEnabled !== false;
+    model?.internalModel?.setPhysicsEnabled?.(state.physicsEnabled);
     if (!gazeEnabled) {
       focusAtModelCenter(true);
       state.gazeIdle = true;

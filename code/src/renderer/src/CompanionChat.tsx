@@ -7,6 +7,7 @@ import {
   EmotionCueGate,
   LipSyncEnvelope,
   StreamingSentenceBuffer,
+  splitRealtimePresentation,
   mouthFormAtProgress,
   timeDomainRms
 } from './speech-performance';
@@ -93,18 +94,23 @@ async function playAnalyzedSpeech(
   });
 }
 
-function emitSegmentPresentation(
-  text: string,
-  mappings: Readonly<Record<string, RoleSemanticMapping>>,
-  expressionGate: EmotionCueGate,
-  actionGate: EmotionCueGate
+function emitPresentationEvents(
+  events: ReturnType<typeof presentationForAssistantText>,
+  gate: EmotionCueGate
 ): void {
   const now = Date.now();
-  for (const event of presentationForAssistantText(text, mappings)) {
-    if (event.type === 'expression' && !expressionGate.accept(event.name, now)) continue;
-    if (event.type === 'action' && !actionGate.accept(event.name, now)) continue;
+  for (const event of events) {
+    if (!('name' in event)) continue;
+    if (!gate.accept(event.name, now)) continue;
     window.baoyin.presentation.emit(event);
   }
+}
+
+function segmentPresentation(
+  text: string,
+  mappings: Readonly<Record<string, RoleSemanticMapping>>
+): ReturnType<typeof splitRealtimePresentation> {
+  return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
 export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
@@ -142,6 +148,10 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     const segment = text.trim();
     if (!segment) return;
     const generation = speechGenerationRef.current;
+    const presentation = segmentPresentation(segment, mappingsRef.current);
+    // A completed streamed sentence already contains enough meaning to update
+    // the face. Do not wait for online TTS synthesis or the playback queue.
+    emitPresentationEvents(presentation.realtime, expressionGateRef.current);
     const sourcePromise = synthesisTailRef.current.then(() => {
       if (generation !== speechGenerationRef.current) return '';
       return window.baoyin.tts.synthesize(segment);
@@ -150,7 +160,7 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     const playback = playbackTailRef.current.then(async () => {
       const source = await sourcePromise;
       if (!source || generation !== speechGenerationRef.current) return;
-      emitSegmentPresentation(segment, mappingsRef.current, expressionGateRef.current, actionGateRef.current);
+      emitPresentationEvents(presentation.playback, actionGateRef.current);
       await playAnalyzedSpeech(segment, source, settingsRef.current, (cancel) => {
         if (generation === speechGenerationRef.current) cancelPlaybackRef.current = cancel;
       });

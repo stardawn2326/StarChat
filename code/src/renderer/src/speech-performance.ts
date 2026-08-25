@@ -1,3 +1,5 @@
+import type { PresentationEvent } from '../../shared/presentation';
+
 export class StreamingSentenceBuffer {
   private buffer = '';
 
@@ -30,6 +32,16 @@ export class StreamingSentenceBuffer {
   reset(): void {
     this.buffer = '';
   }
+}
+
+export function splitRealtimePresentation(events: readonly PresentationEvent[]): {
+  realtime: PresentationEvent[];
+  playback: PresentationEvent[];
+} {
+  return {
+    realtime: events.filter((event) => event.type === 'expression'),
+    playback: events.filter((event) => event.type !== 'expression')
+  };
 }
 
 export interface LipSyncEnvelopeOptions {

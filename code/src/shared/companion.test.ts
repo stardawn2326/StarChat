@@ -38,4 +38,31 @@ describe('companion relationship, memory and presentation contract', () => {
     expect(presentationForAssistantText('我有些紧张，不知道会不会出问题。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'anxious' });
     expect(presentationForAssistantText('好困，想稍微休息一下。', snapshot.semanticMappings)[0]).toMatchObject({ name: 'sleepy' });
   });
+
+  it('extracts common dialogue emotions instead of leaving every sentence in listening state', () => {
+    expect(presentationForAssistantText('我真的很难过，有点想哭。', {})[0]).toMatchObject({ name: 'worried' });
+    expect(presentationForAssistantText('气死我了，这也太过分了！', {})[0]).toMatchObject({ name: 'annoyed' });
+    expect(presentationForAssistantText('欸？居然会是这样！', {})[0]).toMatchObject({ name: 'surprised' });
+    expect(presentationForAssistantText('我没太明白，这是怎么回事？', {})[0]).toMatchObject({ name: 'confused_blank' });
+  });
+
+  it('covers the complete dialogue emotion whitelist through semantic mappings and safe fallbacks', () => {
+    const cases = [
+      ['太好了，真的很开心！', 'bright_smile'],
+      ['什么？竟然会这样！', 'surprised'],
+      ['气死我了，太过分了。', 'annoyed'],
+      ['我很难过，想哭。', 'worried'],
+      ['我没明白这是怎么回事。', 'confused_blank'],
+      ['有点不好意思，别一直看我。', 'blush'],
+      ['才不是特意帮你。', 'tsundere_pout'],
+      ['我有些焦虑和不安。', 'anxious'],
+      ['好困，想睡觉。', 'sleepy'],
+      ['你没事吧，注意安全。', 'caring_smile'],
+      ['这件事我不能答应。', 'annoyed']
+    ] as const;
+
+    for (const [text, expression] of cases) {
+      expect(presentationForAssistantText(text, {})[0]).toMatchObject({ name: expression });
+    }
+  });
 });

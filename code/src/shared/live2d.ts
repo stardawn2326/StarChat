@@ -74,6 +74,8 @@ export type Live2DFileKind =
   | 'texture'
   | 'physics'
   | 'display_info'
+  | 'pose'
+  | 'user_data'
   | 'expression'
   | 'motion'
   | 'editor_animation'
@@ -203,6 +205,21 @@ export interface Live2DModelState {
   license: Live2DLicenseNotice | null;
   issues: string[];
   warnings: string[];
+}
+
+export type Live2DModelSourceKind = 'folder' | 'file' | 'zip';
+
+export interface Live2DModelRecord {
+  id: string;
+  displayName: string;
+  sourcePath: string;
+  sourceKind: Live2DModelSourceKind;
+  runtimeDirectory: string;
+  entryPath: string;
+  importedAt: number;
+  lastUsedAt: number | null;
+  lastStatus: Live2DModelStatus;
+  lastMessage: string;
 }
 
 export interface Live2DResolvedSemantic {

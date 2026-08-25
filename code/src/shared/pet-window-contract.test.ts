@@ -28,6 +28,6 @@ describe('PetWindow input contracts', () => {
     expect(petSource).toContain('hitRegion');
     expect(petSource).toContain("hitRegion === 'frame'");
     expect(petSource).toContain("hitRegion === 'model'");
-    expect(petSource).toContain("hitRegion === 'transparent'");
+    expect(petSource).toContain(": 'transparent'");
   });
 });

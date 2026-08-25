@@ -1,7 +1,11 @@
 import type {
   ChatEvent,
+  ConnectionTestRequest,
+  ConnectionTestResult,
   CubismDebugCommand,
   CubismRuntimeMetrics,
+  CubismRuntimeCommand,
+  CubismRuntimeCommandRequest,
   CursorUpdate,
   DisplaySummary,
   PetDragPoint,
@@ -28,9 +32,13 @@ declare global {
         hideSettings(): void;
         toggleSettings(): void;
         showContextMenu(): void;
-        runtimeReady(): void;
+        runtimeReady(request?: { entryPath?: string | null }): void;
+        runtimeCommandReady(): void;
+        runtimeFailed(request: import('../../shared/ipc').Live2DRuntimeFailure): void;
         showPet(): void;
+        togglePet(): void;
         toggleModelEdit(): void;
+        onWindowFocusState(callback: (active: boolean) => void): () => void;
         onModelEditMode(callback: (enabled: boolean) => void): () => void;
         setInputMode(mode: PetInputMode): void;
         visibility(): Promise<{ role: 'pet' | 'settings'; petVisible: boolean; settingsVisible: boolean }>;
@@ -44,6 +52,9 @@ declare global {
         preview(detail: SettingsPreviewDetail): void;
         onPreview(callback: (detail: SettingsPreviewDetail) => void): () => void;
       };
+      api: {
+        testConnection(request: ConnectionTestRequest): Promise<ConnectionTestResult>;
+      };
       roles: {
         save(request: RoleSaveRequest): Promise<PublicAppState>;
         activate(request: RoleIdRequest): Promise<PublicAppState>;
@@ -54,11 +65,17 @@ declare global {
       debug: {
         command(command: CubismDebugCommand): void;
         onCommand(callback: (command: CubismDebugCommand) => void): () => void;
+        runtimeCommand(command: CubismRuntimeCommand): Promise<import('../../shared/cubism').CubismRuntimeResult>;
+        onRuntimeCommand(callback: (request: CubismRuntimeCommandRequest) => void): () => void;
+        runtimeResult(requestId: string, result: import('../../shared/cubism').CubismRuntimeResult): void;
+        onRuntimeReady(callback: (modelIdentity: string | null) => void): () => void;
         reportMetrics(request: { metrics: CubismRuntimeMetrics }): void;
         metrics(): Promise<CubismRuntimeMetrics | null>;
       };
       live2d: {
         inspect(path: string): Promise<Live2DModelState>;
+        import(path: string): Promise<import('../../shared/ipc').Live2DModelImportResult>;
+        remove(request: import('../../shared/ipc').Live2DModelIdRequest): Promise<PublicAppState>;
         chooseFile(): Promise<string | null>;
         chooseDirectory(): Promise<string | null>;
       };
@@ -87,6 +104,7 @@ declare global {
         dragStart(point: PetDragPoint): void;
         dragMove(point: PetDragPoint): void;
         dragEnd(): void;
+        pointerCancel(): void;
         resizeStart(request: PetResizeStart): void;
         resizeMove(point: PetDragPoint): void;
         resizeEnd(): void;

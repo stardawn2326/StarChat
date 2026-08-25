@@ -29,7 +29,7 @@ import {
 
 const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const SUPPORTED_MODEL3_JSON_VERSIONS = new Set([3, 4, 5]);
+const SUPPORTED_MODEL3_JSON_VERSIONS = new Set([3, 4]);
 const UNSUPPORTED_SCRIPT_EXTENSIONS = new Set([
   '.bat',
   '.cmd',
@@ -65,6 +65,10 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function stringValue(value: unknown): string | null {
   return typeof value === 'string' && value.trim().length > 0 ? value : null;
+}
+
+function fileKindLabel(kind: Live2DFileKind): string {
+  return ({ physics: 'Physics', pose: 'Pose', user_data: 'UserData', expression: 'Expression', motion: 'Motion' } as Partial<Record<Live2DFileKind, string>>)[kind] ?? kind;
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -192,6 +196,16 @@ function resolveSelection(selection: string):
   | { state: Live2DModelState } {
   const input = selection.trim();
   const entryPath = resolve(input);
+  if (entryPath.toLowerCase().endsWith('.model.json')) {
+    return {
+      state: createEmptyState(
+        entryPath,
+        'invalid',
+        '暂不支持 Cubism 2 legacy model.json；请使用 Cubism 3/4 的 .model3.json。',
+        ['不支持 Cubism 2 legacy model.json']
+      )
+    };
+  }
   let stats;
   try {
     stats = statSync(entryPath);
@@ -222,10 +236,20 @@ function resolveSelection(selection: string):
       };
     }
     if (candidates.length === 0) {
+      const legacyCandidates = readdirSync(entryPath, { withFileTypes: true })
+        .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith('.model.json'))
+        .map((entry) => entry.name);
       return {
-        state: createEmptyState(entryPath, 'invalid', '模型目录内没有 .model3.json 入口。', [
-          '目录未找到 .model3.json'
-        ])
+        state: createEmptyState(
+          entryPath,
+          'invalid',
+          legacyCandidates.length > 0
+            ? '暂不支持 Cubism 2 legacy model.json；请使用 Cubism 3/4 的 .model3.json。'
+            : '模型目录内没有 .model3.json 入口。',
+          legacyCandidates.length > 0
+            ? ['不支持 Cubism 2 legacy model.json']
+            : ['目录未找到 .model3.json']
+        )
       };
     }
     if (candidates.length > 1) {
@@ -796,6 +820,21 @@ function inspectOptionalAssets(
   }
 }
 
+function collectRelativeFiles(rootPath: string, currentPath = rootPath, prefix = ''): string[] {
+  const result: string[] = [];
+  for (const entry of readdirSync(currentPath, { withFileTypes: true })) {
+    if (entry.isSymbolicLink()) continue;
+    const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+    const absolutePath = resolve(currentPath, entry.name);
+    if (entry.isDirectory()) {
+      result.push(...collectRelativeFiles(rootPath, absolutePath, relativePath));
+    } else if (entry.isFile()) {
+      result.push(relativePath.replace(/\\/g, '/'));
+    }
+  }
+  return result;
+}
+
 export function inspectExternalLive2DModel(selection: string | null | undefined): Live2DModelState {
   if (!selection || !selection.trim()) {
     return createEmptyState(null, 'not_configured', '尚未配置外部 Live2D 模型。');
@@ -836,8 +875,8 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
   state.version = version;
   if (version === null || !SUPPORTED_MODEL3_JSON_VERSIONS.has(version)) {
     state.status = 'invalid';
-    state.message = '只支持 Cubism 3/4/5 的 model3.json 格式版本。';
-    state.issues.push(`model3.json Version=${String(modelJson.value.Version)}，不在 3/4/5 兼容范围`);
+    state.message = '只支持 Cubism 3/4 的 model3.json 格式版本。';
+    state.issues.push(`model3.json Version=${String(modelJson.value.Version)}，不在 Cubism 3/4 兼容范围`);
     return state;
   }
 
@@ -849,17 +888,20 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
     return state;
   }
 
-  let hasMissingResource = false;
-  let hasUnreadableResource = false;
+  let hasMissingRequiredResource = false;
+  let hasUnreadableRequiredResource = false;
   let hasInvalidResource = false;
   const addReferencedFile = (
     kind: Live2DFileKind,
     reference: string | null,
-    parseJson = false
+    parseJson = false,
+    required = true
   ): Live2DFileRecord | null => {
     if (!reference) {
-      state.issues.push(`${kind} 缺少文件引用`);
-      hasInvalidResource = true;
+      if (required) {
+        state.issues.push(`${kind} 缺少文件引用`);
+        hasInvalidResource = true;
+      }
       return null;
     }
     const absolutePath = resolveSafeReference(directoryPath, reference);
@@ -869,11 +911,19 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
       state.issues.push(record.error ?? `${basename(reference)} 不是模型目录内的相对路径`);
       hasInvalidResource = true;
     } else if (!record.exists) {
-      hasMissingResource = true;
-      state.issues.push(`${basename(reference)} 文件不存在`);
+      if (required) {
+        hasMissingRequiredResource = true;
+        state.issues.push(`${basename(reference)} 文件不存在`);
+      } else {
+        state.warnings.push(`可选 ${fileKindLabel(kind)} 资源 ${basename(reference)} 文件不存在，已降级运行。`);
+      }
     } else if (!record.readable) {
-      hasUnreadableResource = true;
-      state.issues.push(`${basename(reference)} 文件不可读`);
+      if (required) {
+        hasUnreadableRequiredResource = true;
+        state.issues.push(`${basename(reference)} 文件不可读`);
+      } else {
+        state.warnings.push(`可选 ${fileKindLabel(kind)} 资源 ${basename(reference)} 文件不可读，已降级运行。`);
+      }
     }
     if (parseJson && record.exists && record.readable && record.absolutePath) {
       const parsed = parseJsonFile(record.absolutePath);
@@ -917,12 +967,42 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
   }
 
   const physicsReference = stringValue(fileReferences.Physics);
-  const physicsRecord = addReferencedFile('physics', physicsReference, true);
+  const physicsRecord = addReferencedFile('physics', physicsReference, true, false);
   const displayInfoReference = stringValue(fileReferences.DisplayInfo);
-  const displayInfoRecord = addReferencedFile('display_info', displayInfoReference, true);
+  const displayInfoRecord = addReferencedFile('display_info', displayInfoReference, true, false);
+  const poseReference = stringValue(fileReferences.Pose);
+  addReferencedFile('pose', poseReference, true, false);
+  const userDataReference = stringValue(fileReferences.UserData);
+  addReferencedFile('user_data', userDataReference, true, false);
 
-  if (!mocRecord || !physicsRecord || !displayInfoRecord) {
-    state.status = 'invalid';
+  const declaredOptionalReferences: Array<{ kind: Live2DFileKind; reference: string }> = [];
+  if (Array.isArray(fileReferences.Expressions)) {
+    for (const item of fileReferences.Expressions) {
+      if (isRecord(item)) {
+        const reference = stringValue(item.File);
+        if (reference) declaredOptionalReferences.push({ kind: 'expression', reference });
+      }
+    }
+  }
+  if (isRecord(fileReferences.Motions)) {
+    for (const group of Object.values(fileReferences.Motions)) {
+      if (!Array.isArray(group)) continue;
+      for (const item of group) {
+        if (isRecord(item)) {
+          const reference = stringValue(item.File);
+          if (reference) declaredOptionalReferences.push({ kind: 'motion', reference });
+        }
+      }
+    }
+  }
+  for (const { kind, reference } of declaredOptionalReferences) {
+    const absolutePath = resolveSafeReference(directoryPath, reference);
+    if (!absolutePath) {
+      state.issues.push(`${kind} 引用不是模型目录内的相对路径：${reference}`);
+      hasInvalidResource = true;
+    } else if (!existsSync(absolutePath)) {
+      state.warnings.push(`可选 ${fileKindLabel(kind)} 资源 ${basename(reference)} 文件不存在，已降级运行。`);
+    }
   }
 
   let physicsJson: JsonRecord | null = null;
@@ -944,13 +1024,11 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
 
   let directoryEntries: string[] = [];
   try {
-    directoryEntries = readdirSync(directoryPath, { withFileTypes: true })
-      .filter((entry) => entry.isFile())
-      .map((entry) => entry.name);
+    directoryEntries = collectRelativeFiles(directoryPath);
     inspectOptionalAssets(directoryPath, directoryEntries, state);
   } catch (error) {
     state.issues.push(`无法扫描模型目录：${error instanceof Error ? error.message : '未知错误'}`);
-    hasUnreadableResource = true;
+    hasUnreadableRequiredResource = true;
   }
 
   const license = parseLicenseNotice(directoryPath, directoryEntries);
@@ -975,13 +1053,13 @@ export function inspectExternalLive2DModel(selection: string | null | undefined)
     state.warnings.push('同目录存在无法解析的 motion3.json；已从动作清单中标记错误。');
   }
 
-  if (hasInvalidResource || state.issues.length > 0 && state.status === 'invalid') {
+  if (hasInvalidResource) {
     state.status = 'invalid';
     state.message = '外部 Live2D 模型存在不安全引用或必需文件问题。';
-  } else if (hasUnreadableResource) {
+  } else if (hasUnreadableRequiredResource) {
     state.status = 'unreadable';
     state.message = '外部 Live2D 模型存在不可读文件。';
-  } else if (hasMissingResource) {
+  } else if (hasMissingRequiredResource) {
     state.status = 'missing';
     state.message = '外部 Live2D 模型缺少 model3.json 声明的资源。';
   } else if (state.warnings.length > 0) {

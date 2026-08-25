@@ -1,6 +1,6 @@
 import type { RolePackage } from './role-package';
 import type { AppSettings } from './settings';
-import type { Live2DModelState } from './live2d';
+import type { Live2DModelRecord, Live2DModelState } from './live2d';
 import type { PresentationEvent } from './presentation';
 import type { CubismParameterPatch, CubismRuntimeMetrics } from './cubism';
 import type { PresentationSettings } from './presentation-contract';
@@ -13,6 +13,7 @@ export interface PublicAppState {
   role: RolePackage;
   roles: RolePackage[];
   live2d: Live2DModelState;
+  live2dModels: Live2DModelRecord[];
   companion: CompanionSummary;
   voices: VoiceProfile[];
 }
@@ -21,8 +22,17 @@ export interface SaveSettingsRequest {
   settings: Partial<AppSettings>;
   apiKey?: string;
   clearApiKey?: boolean;
-  /** 新模型入口或模型切换时必须由用户确认已获得资源使用许可。 */
-  licenseAccepted?: boolean;
+}
+
+export interface ConnectionTestRequest {
+  apiBaseUrl: string;
+  model: string;
+  apiKey?: string;
+}
+
+export interface ConnectionTestResult {
+  ok: boolean;
+  message: string;
 }
 
 export interface TtsSynthesizeRequest {
@@ -52,6 +62,8 @@ export interface CubismDebugMetricRequest {
   metrics: CubismRuntimeMetrics;
 }
 
+export type { CubismRuntimeCommand, CubismRuntimeCommandRequest, CubismRuntimeCommandResult } from './cubism-runtime-command';
+
 export interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
@@ -64,6 +76,22 @@ export interface StartChatRequest {
 
 export interface Live2DInspectRequest {
   path: string;
+}
+
+export interface Live2DModelIdRequest {
+  id: string;
+}
+
+export interface Live2DModelImportResult {
+  record: Live2DModelRecord;
+  state: Live2DModelState;
+  models: Live2DModelRecord[];
+}
+
+export interface Live2DRuntimeFailure {
+  entryPath: string | null;
+  stage: 'load' | 'initialize' | 'render';
+  message: string;
 }
 
 export interface DisplaySummary {

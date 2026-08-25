@@ -26,6 +26,13 @@ import type {
   PublicAppState,
   CubismDebugCommand,
   CubismDebugMetricRequest,
+  CubismRuntimeCommand,
+  CubismRuntimeCommandResult,
+  ConnectionTestRequest,
+  ConnectionTestResult,
+  Live2DModelIdRequest,
+  Live2DModelImportResult,
+  Live2DRuntimeFailure,
   RoleIdRequest,
   RoleSaveRequest,
   SaveSettingsRequest,
@@ -33,18 +40,21 @@ import type {
   StartChatRequest
 } from '../shared/ipc';
 import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, validateRolePackage } from '../shared/role-package';
-import type { CubismRuntimeMetrics } from '../shared/cubism';
+import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimePhase, CubismRuntimeResult, CubismRuntimeStatus } from '../shared/cubism';
+import { isSafeCubismRuntimeCommand } from '../shared/cubism-runtime-command';
 import type { PresentationEvent, PresentationLayer } from '../shared/presentation';
-import { clampPetWindowBounds, nextPetResizeBounds, type WindowBounds } from '../shared/window-contract';
+import { clampPetWindowBounds, nextPetResizeBounds, sameWindowBounds, type WindowBounds } from '../shared/window-contract';
 import { petInteractionEnabled, petInteractionSettingsForEnabled } from '../shared/pet-interaction';
-import { streamChatCompletion } from './api/openai-compatible';
+import { streamChatCompletion, testChatConnection } from './api/openai-compatible';
 import { SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
+import { Live2DModelRegistry, Live2DModelRegistryError, type Live2DModelInspection } from './live2d-model-registry';
 import { nextPetDragBounds } from './window-drag';
 import { buildCompanionSystemPrompt, companionSummary, recordCompanionExchange } from '../shared/companion';
 import { synthesizeCosyVoice } from './tts/cosyvoice';
 import { ensureCosyVoiceService, stopManagedCosyVoiceService } from './tts/cosyvoice-service';
 import { VoiceProfileStore } from './voice-profile-store';
+import { CubismRuntimeSession } from './cubism-runtime-session';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -53,6 +63,7 @@ let clickTargetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settingsStore: SettingsStore;
 let voiceProfileStore: VoiceProfileStore;
+let live2dRegistry: Live2DModelRegistry;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,11 +74,36 @@ let petResizeStart: { request: PetResizeStart; bounds: Electron.Rectangle; displ
 let petModelEditMode = false;
 let petBoundsRestored = false;
 let petRendererReady = false;
+let petRuntimeCommandSubscribed = false;
 let petStartupShowPending = true;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
 let latestCubismMetrics: CubismRuntimeMetrics | null = null;
+interface PendingCubismRuntimeCommand {
+  command: CubismRuntimeCommand;
+  resolve: (result: CubismRuntimeResult) => void;
+  timer: ReturnType<typeof setTimeout>;
+  retryTimer: ReturnType<typeof setTimeout> | null;
+  identity: string | null;
+  attempts: number;
+}
+
+const pendingCubismRuntimeCommands = new Map<string, PendingCubismRuntimeCommand>();
+const cubismRuntimeSession = new CubismRuntimeSession();
 const activeRequests = new Map<string, AbortController>();
+
+interface PendingLive2DSwitch {
+  token: string;
+  previousPath: string | null;
+  previousModelId: string | null;
+  previousAdapter: ReturnType<SettingsStore['readLive2DAdapter']>;
+  candidate: Live2DModelInspection;
+  resolve: (state: PublicAppState) => void;
+  reject: (error: Error) => void;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+let pendingLive2DSwitch: PendingLive2DSwitch | null = null;
 
 const LIVE2D_PROTOCOL = 'live2d';
 const LIVE2D_MODEL_BASE = 'live2d://model/';
@@ -238,9 +274,21 @@ function getStore(): SettingsStore {
   return settingsStore;
 }
 
+function getLive2DRegistry(): Live2DModelRegistry {
+  if (!live2dRegistry) {
+    throw new Error('Live2D 模型注册表尚未初始化');
+  }
+  return live2dRegistry;
+}
+
 function getPublicState(): PublicAppState {
   const store = getStore();
   const settings = store.readSettings();
+  const registry = getLive2DRegistry();
+  const legacyRecord = registry.ensureLegacyPath(settings.live2dModelPath);
+  if (legacyRecord && registry.current()?.id !== legacyRecord.id) {
+    registry.setCurrentModel(legacyRecord.id);
+  }
   const live2d = inspectExternalLive2DModel(settings.live2dModelPath);
   const roles = store.readRolePackages();
   const role = roles.find((item) => item.id === settings.activeRoleId) ?? roles[0] ?? DEFAULT_ROLE_PACKAGE;
@@ -251,6 +299,7 @@ function getPublicState(): PublicAppState {
     role,
     roles,
     live2d,
+    live2dModels: registry.list(),
     companion: companionSummary(companion, role.personality.relationshipStages),
     voices: voiceProfileStore.list()
   };
@@ -322,7 +371,6 @@ function restorePetBounds(): void {
   };
   restoringPetBounds = true;
   petWindow.setBounds(safePetBounds(initial, display));
-  syncPetWindowShape();
   restoringPetBounds = false;
 }
 
@@ -365,27 +413,23 @@ function syncPetWindowResizable(): void {
   }
   // Custom edge gestures own resizing. Native DWM resize paints a white
   // non-client strip on transparent frameless windows.
-  petWindow.setResizable(false);
-  syncPetWindowShape();
-}
-
-function syncPetWindowShape(): void {
-  if (process.platform !== 'win32' || !petWindow || petWindow.isDestroyed()) {
-    return;
+  if (petWindow.isResizable()) {
+    petWindow.setResizable(false);
   }
-  const bounds = petWindow.getBounds();
-  petWindow.setShape([{ x: 0, y: 0, width: bounds.width, height: bounds.height }]);
 }
 
-function applyPetWindowSettings(): void {
+function applyPetWindowSettings(previousSettings?: ReturnType<SettingsStore['readSettings']>): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
   const settings = getStore().readSettings();
-  petWindow.setAlwaysOnTop(true, 'floating', 1);
-  petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  petWindow.setOpacity(settings.petWindowOpacity);
-  syncPetWindowResizable();
+  if (!previousSettings || settings.alwaysOnTop !== previousSettings.alwaysOnTop) {
+    petWindow.setAlwaysOnTop(true, 'floating', 1);
+    petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  }
+  if (!previousSettings || settings.petWindowOpacity !== previousSettings.petWindowOpacity) {
+    petWindow.setOpacity(settings.petWindowOpacity);
+  }
 }
 
 function showPetWindowInactive(): void {
@@ -410,11 +454,16 @@ function cancelPetPointerTransactions(): void {
   const hadTransaction = Boolean(petDragStart || petResizeStart);
   petDragStart = null;
   petResizeStart = null;
-  syncPetWindowResizable();
+  if (petBoundsPersistTimer) {
+    clearTimeout(petBoundsPersistTimer);
+    petBoundsPersistTimer = null;
+  }
   if (hadTransaction) {
     persistPetBounds(true);
     sendPetBoundsChanged();
+    arrangeInteractionTestWindow();
   }
+  applyPetInputMode(petInteractionEnabled(getStore().readSettings()) ? 'interactive' : 'passthrough');
 }
 
 function createPetWindow(): void {
@@ -429,12 +478,14 @@ function createPetWindow(): void {
     roundedCorners: false,
     autoHideMenuBar: true,
     titleBarOverlay: false,
-    accentColor: false,
     transparent: true,
     resizable: false,
     alwaysOnTop: true,
     focusable: false,
     show: false,
+    // Classify the non-focusable overlay as a Win32 tool window so Shell/menu
+    // activation does not treat it as a normal top-level application window.
+    type: 'toolbar',
     skipTaskbar: true,
     hasShadow: false,
     backgroundColor: '#00000000',
@@ -451,7 +502,7 @@ function createPetWindow(): void {
   petWindow.setMenuBarVisibility(false);
   petWindow.setBackgroundColor('#00000000');
   applyPetWindowSettings();
-  petWindow.setIgnoreMouseEvents(true, { forward: true });
+  petWindow.setIgnoreMouseEvents(true);
   petWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   petWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     console.log(`[pet-renderer:${level}] ${message} (${sourceId}:${line})`);
@@ -471,12 +522,17 @@ function createPetWindow(): void {
     maybeShowPetWindow();
   });
   petWindow.on('move', () => {
+    if (petResizeStart) {
+      return;
+    }
     persistPetBounds();
     sendPetBoundsChanged();
     arrangeInteractionTestWindow();
   });
   petWindow.on('resize', () => {
-    syncPetWindowShape();
+    if (petResizeStart) {
+      return;
+    }
     persistPetBounds();
     sendPetBoundsChanged();
     arrangeInteractionTestWindow();
@@ -491,9 +547,17 @@ function createPetWindow(): void {
     }
   });
   petWindow.on('closed', () => {
+    for (const [requestId, pending] of pendingCubismRuntimeCommands) {
+      clearTimeout(pending.timer);
+      if (pending.retryTimer) clearTimeout(pending.retryTimer);
+      pending.resolve(runtimeNotReadyResult(pending.command, '桌宠窗口已关闭，Cubism runtime 不可用。'));
+      pendingCubismRuntimeCommands.delete(requestId);
+    }
+    cubismRuntimeSession.markFailed(cubismRuntimeSession.state().currentModelIdentity);
     petWindow = null;
     petBoundsRestored = false;
     petRendererReady = false;
+    petRuntimeCommandSubscribed = false;
     petStartupShowPending = true;
   });
 }
@@ -526,7 +590,12 @@ function createSettingsWindow(): void {
   settingsWindow.setMenuBarVisibility(false);
   settingsWindow.setBackgroundColor('#00000000');
   settingsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  settingsWindow.on('focus', () => sendSettingsWindowFocusState(true));
+  settingsWindow.on('blur', () => sendSettingsWindowFocusState(false));
+  settingsWindow.on('show', () => sendSettingsWindowFocusState(settingsWindow?.isFocused() === true));
+  settingsWindow.on('hide', () => sendSettingsWindowFocusState(false));
   settingsWindow.webContents.on('did-finish-load', () => {
+    sendSettingsWindowFocusState(settingsWindow?.isFocused() === true);
     // Keep wheel, touchpad and keyboard scrolling while removing the native
     // scrollbar chrome from the custom settings window.
     void settingsWindow?.webContents.insertCSS(`
@@ -612,6 +681,89 @@ function sendStateChanged(): void {
   }
 }
 
+function sendSettingsWindowFocusState(active: boolean): void {
+  if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isDestroyed()) {
+    return;
+  }
+  settingsWindow.webContents.send('settings:window-focus', active);
+}
+
+function inspectLive2DSelection(path: string): Live2DModelInspection {
+  const registry = getLive2DRegistry();
+  const existing = registry.findByEntryPath(path);
+  if (existing) return registry.inspectModel(existing.id);
+  return registry.importSelection(path);
+}
+
+function live2dSwitchError(stage: Live2DRuntimeFailure['stage'], message: string): Error {
+  return new Error(`外部 Live2D 模型${stage === 'load' ? '加载' : stage === 'initialize' ? '初始化' : '渲染'}失败：${message}`);
+}
+
+function matchesPendingEntry(entryPath: unknown, pending: PendingLive2DSwitch): boolean {
+  if (typeof entryPath !== 'string' || !entryPath.trim()) return false;
+  try {
+    return resolve(entryPath) === resolve(pending.candidate.record.entryPath);
+  } catch {
+    return false;
+  }
+}
+
+function settlePendingLive2DSwitchSuccess(entryPath: unknown): void {
+  const pending = pendingLive2DSwitch;
+  if (!pending || !matchesPendingEntry(entryPath, pending)) return;
+  clearTimeout(pending.timer);
+  pendingLive2DSwitch = null;
+  getLive2DRegistry().setCurrentModel(pending.candidate.record.id);
+  sendStateChanged();
+  pending.resolve(getPublicState());
+}
+
+function settlePendingLive2DSwitchFailure(notice: Live2DRuntimeFailure): void {
+  const pending = pendingLive2DSwitch;
+  if (!pending || !matchesPendingEntry(notice.entryPath, pending)) return;
+  clearTimeout(pending.timer);
+  pendingLive2DSwitch = null;
+  const store = getStore();
+  getLive2DRegistry().markRuntimeFailure(
+    pending.candidate.record.id,
+    String(notice.stage) + '：' + String(notice.message)
+  );
+  store.save({ live2dModelPath: pending.previousPath }, undefined, false, pending.previousAdapter);
+  getLive2DRegistry().setCurrentModel(pending.previousModelId);
+  cubismRuntimeSession.setCurrentModel(pending.previousPath);
+  sendStateChanged();
+  pending.reject(live2dSwitchError(notice.stage, `${pending.candidate.record.entryPath}：${notice.message}`));
+}
+
+function waitForLive2DSwitch(
+  previousSettings: ReturnType<SettingsStore['readSettings']>,
+  candidate: Live2DModelInspection,
+  previousAdapter: ReturnType<SettingsStore['readLive2DAdapter']>
+): Promise<PublicAppState> {
+  if (pendingLive2DSwitch) throw new Error('已有一个外部模型切换正在进行');
+  const previousModelId = getLive2DRegistry().current()?.id ?? null;
+  cubismRuntimeSession.setCurrentModel(candidate.record.entryPath);
+  return new Promise<PublicAppState>((resolvePromise, rejectPromise) => {
+    const timer = setTimeout(() => {
+      settlePendingLive2DSwitchFailure({
+        entryPath: candidate.record.entryPath,
+        stage: 'initialize',
+        message: '等待桌宠完成稳定初始化超时。'
+      });
+    }, 15000);
+    pendingLive2DSwitch = {
+      token: randomUUID(),
+      previousPath: previousSettings.live2dModelPath,
+      previousModelId,
+      previousAdapter,
+      candidate,
+      resolve: resolvePromise,
+      reject: rejectPromise,
+      timer
+    };
+  });
+}
+
 function centerPetWindow(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
@@ -653,7 +805,7 @@ function applyPetInputMode(mode: PetInputMode, force = false): void {
   }
   const settings = getStore().readSettings();
   const interactive = mode === 'interactive' && (force || petModelEditMode || petInteractionEnabled(settings));
-  petWindow.setIgnoreMouseEvents(!interactive, { forward: true });
+  petWindow.setIgnoreMouseEvents(!interactive);
 }
 
 function setPetModelEditMode(enabled: boolean): void {
@@ -837,8 +989,79 @@ async function runChat(
   sendStateChanged();
 }
 
+function runtimeCommandPhase(command: CubismRuntimeCommand): CubismRuntimePhase {
+  switch (command.type) {
+    case 'capabilities': return 'capabilities';
+    case 'play_expression': return 'expression';
+    case 'play_motion': return 'motion';
+    case 'stop_expression': return 'stop_expression';
+    case 'stop_motion': return 'stop_motion';
+    case 'reset': return 'reset';
+  }
+}
+
+function emptyRuntimeCapabilities(): CubismRuntimeCapabilities {
+  return { modelIdentity: null, expressions: [], motions: [], idleGroup: null };
+}
+
+function emptyRuntimeStatus(): CubismRuntimeStatus {
+  return { modelIdentity: null, activeExpression: null, activeMotion: null };
+}
+
+function runtimeNotReadyResult(command: CubismRuntimeCommand, message: string): CubismRuntimeResult {
+  return {
+    ok: false,
+    phase: runtimeCommandPhase(command),
+    code: 'not_ready',
+    message,
+    status: emptyRuntimeStatus(),
+    capabilities: emptyRuntimeCapabilities()
+  };
+}
+
+function runtimeResultIdentity(result: CubismRuntimeResult): string | null {
+  return result.capabilities.modelIdentity ?? result.status.modelIdentity;
+}
+
+function settleCubismRuntimePending(requestId: string, result: CubismRuntimeResult): void {
+  const pending = pendingCubismRuntimeCommands.get(requestId);
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  if (pending.retryTimer) clearTimeout(pending.retryTimer);
+  pendingCubismRuntimeCommands.delete(requestId);
+  pending.resolve(result);
+}
+
+function dispatchPendingCubismRuntimeCommand(requestId: string): void {
+  const pending = pendingCubismRuntimeCommands.get(requestId);
+  if (!pending || !petWindow || petWindow.isDestroyed() || !petRuntimeCommandSubscribed) return;
+  const currentIdentity = cubismRuntimeSession.state().currentModelIdentity;
+  if (!currentIdentity || !cubismRuntimeSession.isReady(currentIdentity)) return;
+  if (pending.attempts >= 2) {
+    settleCubismRuntimePending(requestId, runtimeNotReadyResult(pending.command, '当前模型 runtime 身份未能稳定确认，请稍后重试。'));
+    return;
+  }
+  pending.identity = currentIdentity;
+  pending.attempts += 1;
+  petWindow.webContents.send('cubism:runtime-command', { requestId, command: pending.command });
+}
+
+function flushPendingCubismRuntimeCommands(): void {
+  for (const requestId of pendingCubismRuntimeCommands.keys()) {
+    dispatchPendingCubismRuntimeCommand(requestId);
+  }
+}
+
 function registerIpc(): void {
   ipcMain.handle('state:get', () => getPublicState());
+  ipcMain.handle('api:test-connection', async (event, request: ConnectionTestRequest): Promise<ConnectionTestResult> => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以测试服务连接');
+    const apiKey = typeof request?.apiKey === 'string' && request.apiKey.trim() ? request.apiKey.trim() : getStore().readSecrets().apiKey;
+    if (!apiKey) throw new Error('请先输入或保存 API Key');
+    const current = getStore().readSettings();
+    await testChatConnection({ ...current, apiBaseUrl: request.apiBaseUrl, model: request.model }, apiKey);
+    return { ok: true, message: '连接成功，服务已返回有效响应。' };
+  });
   ipcMain.handle('tts:synthesize', async (event, request: { text?: unknown }) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口请求语音');
     const text = typeof request?.text === 'string' ? request.text : '';
@@ -893,30 +1116,45 @@ function registerIpc(): void {
       promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
     });
   });
-  ipcMain.handle('settings:save', (_event, request: SaveSettingsRequest) => {
+  ipcMain.handle('settings:save', async (_event, request: SaveSettingsRequest) => {
     const store = getStore();
     const previousSettings = store.readSettings();
-    const previousPath = previousSettings.live2dModelPath;
     const candidate = {
       ...store.readSettings(),
       ...request.settings
     };
-    const live2d = inspectExternalLive2DModel(candidate.live2dModelPath);
-    if (live2d.status === 'invalid') {
+    const modelPathChanged = Object.prototype.hasOwnProperty.call(request.settings ?? {}, 'live2dModelPath')
+      && candidate.live2dModelPath !== previousSettings.live2dModelPath;
+    let live2d = inspectExternalLive2DModel(candidate.live2dModelPath);
+    let candidateInspection: Live2DModelInspection | null = null;
+    if (modelPathChanged && candidate.live2dModelPath) {
+      try {
+        candidateInspection = inspectLive2DSelection(candidate.live2dModelPath);
+        live2d = candidateInspection.state;
+      } catch (error) {
+        if (error instanceof Live2DModelRegistryError && error.state) {
+          throw new Error(`${error.state.message}${error.state.issues[0] ? `：${error.state.issues[0]}` : ''}`);
+        }
+        throw error;
+      }
+      if (!['ready', 'ready_with_warnings'].includes(live2d.status)) {
+        throw new Error(`${live2d.message}${live2d.issues[0] ? `：${live2d.issues[0]}` : ''}`);
+      }
+      candidate.live2dModelPath = candidateInspection.record.entryPath;
+    } else if (live2d.status === 'invalid') {
       throw new Error(live2d.issues[0] ?? '外部 Live2D 模型路径无效');
-    }
-    if (
-      candidate.live2dModelPath &&
-      candidate.live2dModelPath !== previousPath &&
-      request.licenseAccepted !== true
-    ) {
-      throw new Error('切换外部模型前，请确认你已获得该模型及其资源的使用许可。');
     }
     const activeRoleId = getStore().readRolePackages().some((role) => role.id === candidate.activeRoleId)
       ? candidate.activeRoleId
       : DEFAULT_ROLE_PACKAGE.id;
+    const previousAdapter = store.readLive2DAdapter();
+    const settingsToSave = {
+      ...request.settings,
+      ...(modelPathChanged ? { live2dModelPath: candidate.live2dModelPath } : {}),
+      activeRoleId
+    };
     const next = store.save(
-      { ...request.settings, activeRoleId },
+      settingsToSave,
       request.apiKey,
       request.clearApiKey,
       live2d.adapter
@@ -924,7 +1162,7 @@ function registerIpc(): void {
     if (next.petLocked && petModelEditMode) {
       setPetModelEditMode(false);
     }
-    applyPetWindowSettings();
+    applyPetWindowSettings(previousSettings);
     if (next.petDisplayId !== previousSettings.petDisplayId) {
       restorePetBounds();
     }
@@ -937,8 +1175,15 @@ function registerIpc(): void {
       }
     }
     registerSettingsShortcut();
+    const pending = modelPathChanged && candidateInspection
+      ? waitForLive2DSwitch(previousSettings, candidateInspection, previousAdapter)
+      : null;
+    if (modelPathChanged && !candidateInspection) {
+      getLive2DRegistry().setCurrentModel(null);
+      cubismRuntimeSession.setCurrentModel(null);
+    }
     sendStateChanged();
-    return getPublicState();
+    return pending ?? getPublicState();
   });
   ipcMain.handle('roles:save', (event, request: RoleSaveRequest) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
@@ -1007,6 +1252,50 @@ function registerIpc(): void {
       petWindow.webContents.send('cubism:debug-command', command);
     }
   });
+  ipcMain.handle('cubism:runtime-command', (event, command: CubismRuntimeCommand): Promise<CubismRuntimeResult> => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !isSafeCubismRuntimeCommand(command)) {
+      throw new Error('无效的 Cubism runtime 命令');
+    }
+    if (!petWindow || petWindow.isDestroyed()) {
+      return Promise.resolve(runtimeNotReadyResult(command, '桌宠窗口尚未启动。'));
+    }
+    const requestId = randomUUID();
+    return new Promise<CubismRuntimeResult>((resolvePromise) => {
+      const timer = setTimeout(() => {
+        const pending = pendingCubismRuntimeCommands.get(requestId);
+        if (!pending) return;
+        settleCubismRuntimePending(requestId, runtimeNotReadyResult(command, '等待当前模型 Cubism runtime ready 超时，模型仍保持可见。'));
+      }, 8000);
+      pendingCubismRuntimeCommands.set(requestId, { command, resolve: resolvePromise, timer, retryTimer: null, identity: null, attempts: 0 });
+      dispatchPendingCubismRuntimeCommand(requestId);
+    });
+  });
+  ipcMain.on('cubism:runtime-result', (event, payload: CubismRuntimeCommandResult) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !payload || typeof payload.requestId !== 'string') {
+      return;
+    }
+    const pending = pendingCubismRuntimeCommands.get(payload.requestId);
+    if (!pending) return;
+    const identity = runtimeResultIdentity(payload.result);
+    const identityMatches = identity ? cubismRuntimeSession.isReady(identity) : false;
+    if (!identityMatches && pending.attempts < 2) {
+      pending.retryTimer = setTimeout(() => {
+        pending.retryTimer = null;
+        dispatchPendingCubismRuntimeCommand(payload.requestId);
+      }, 180);
+      return;
+    }
+    if (!identityMatches) {
+      settleCubismRuntimePending(payload.requestId, runtimeNotReadyResult(pending.command, '收到的 runtime 结果属于旧模型或未绑定模型，已丢弃。'));
+      return;
+    }
+    settleCubismRuntimePending(payload.requestId, payload.result);
+  });
+  ipcMain.on('pet:runtime-command-ready', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    petRuntimeCommandSubscribed = true;
+    flushPendingCubismRuntimeCommands();
+  });
   ipcMain.on('cubism:metrics', (event, request: CubismDebugMetricRequest) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !isSafeCubismMetrics(request)) {
       return;
@@ -1020,14 +1309,41 @@ function registerIpc(): void {
     }
     return latestCubismMetrics;
   });
-  ipcMain.handle('live2d:inspect', (_event, request: { path: string }) =>
-    inspectExternalLive2DModel(request?.path ?? null)
-  );
+  ipcMain.handle('live2d:inspect', (_event, request: { path: string }) => {
+    const path = request?.path ?? '';
+    if (path.toLowerCase().endsWith('.zip')) {
+      return getLive2DRegistry().importSelection(path).state;
+    }
+    return inspectExternalLive2DModel(path);
+  });
+  ipcMain.handle('live2d:import', (event, request: { path?: unknown }): Live2DModelImportResult => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
+      throw new Error('只有设置窗口可以导入外部 Live2D 模型');
+    }
+    const path = typeof request?.path === 'string' ? request.path : '';
+    if (!path.trim()) throw new Error('没有选择外部 Live2D 模型');
+    const imported = getLive2DRegistry().importSelection(path);
+    return { ...imported, models: getLive2DRegistry().list() };
+  });
+  ipcMain.handle('live2d:remove', (event, request: Live2DModelIdRequest): PublicAppState => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
+      throw new Error('只有设置窗口可以移除外部 Live2D 模型记录');
+    }
+    const record = getLive2DRegistry().list().find((candidate) => candidate.id === request?.id);
+    if (!record) throw new Error('模型记录不存在');
+    if (getStore().readSettings().live2dModelPath === record.entryPath) {
+      getStore().save({ live2dModelPath: null }, undefined, false, null);
+      getLive2DRegistry().setCurrentModel(null);
+    }
+    getLive2DRegistry().removeModel(record.id);
+    sendStateChanged();
+    return getPublicState();
+  });
   ipcMain.handle('live2d:choose-file', async () => {
     const result = await dialog.showOpenDialog({
-      title: '选择 Live2D model3.json',
+      title: '选择 Live2D model3.json 或 ZIP 模型包',
       properties: ['openFile'],
-      filters: [{ name: 'Live2D model3', extensions: ['model3.json'] }]
+      filters: [{ name: 'Live2D model3 / ZIP', extensions: ['model3.json', 'zip', 'json'] }]
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
@@ -1067,11 +1383,26 @@ function registerIpc(): void {
   });
   ipcMain.on('settings:hide', () => settingsWindow?.hide());
   ipcMain.on('settings:toggle', toggleSettings);
-  ipcMain.on('pet:runtime-ready', (event) => {
+  ipcMain.on('pet:runtime-ready', (event, request?: { entryPath?: unknown }) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow) {
       return;
     }
     petRendererReady = true;
+    const entryPath = typeof request?.entryPath === 'string' ? request.entryPath : null;
+    if (cubismRuntimeSession.markReady(entryPath)) {
+      settingsWindow?.webContents.send('cubism:runtime-ready', entryPath);
+      flushPendingCubismRuntimeCommands();
+    }
+    settlePendingLive2DSwitchSuccess(request?.entryPath);
+    maybeShowPetWindow();
+  });
+  ipcMain.on('pet:runtime-failed', (event, request?: Live2DRuntimeFailure) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    petRendererReady = true;
+    cubismRuntimeSession.markFailed(request?.entryPath ?? null);
+    if (request && (request.stage === 'load' || request.stage === 'initialize' || request.stage === 'render')) {
+      settlePendingLive2DSwitchFailure(request);
+    }
     maybeShowPetWindow();
   });
   ipcMain.on('pet:show', (event) => {
@@ -1080,6 +1411,12 @@ function registerIpc(): void {
       showPetWindowInactive();
       petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
+  });
+  ipcMain.on('pet:toggle', (event) => {
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (sourceWindow !== settingsWindow && sourceWindow !== petWindow) return;
+    if (petWindow?.isVisible()) petWindow.hide();
+    else showPetWindowInactive();
   });
   ipcMain.on('pet:center', (event) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1125,6 +1462,11 @@ function registerIpc(): void {
       togglePetModelEditMode();
     }
   });
+  ipcMain.on('pet:pointer-cancel', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) === petWindow) {
+      cancelPetPointerTransactions();
+    }
+  });
   ipcMain.on('pet:drag-start', (event, point: PetDragPoint) => {
     if (
       BrowserWindow.fromWebContents(event.sender) === petWindow &&
@@ -1133,9 +1475,9 @@ function registerIpc(): void {
       Number.isFinite(point?.screenY) &&
       petWindow
     ) {
-      // A new Alt-drag is authoritative. Drop any stale resize transaction
-      // before capturing its immutable window dimensions.
-      petResizeStart = null;
+      // A new Alt-drag is authoritative. Drop any stale transaction before
+      // capturing its immutable window dimensions.
+      cancelPetPointerTransactions();
       petDragStart = { point, bounds: petWindow.getBounds() };
       // Keep the native resize frame disabled while User32 holds the mouse
       // button. The drag move sends a complete immutable rectangle so this
@@ -1151,26 +1493,36 @@ function registerIpc(): void {
     petWindow.setBounds(nextBounds);
   });
   ipcMain.on('pet:drag-end', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) === petWindow) {
-      petDragStart = null;
-      syncPetWindowResizable();
-      persistPetBounds(true);
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petDragStart) {
+      return;
     }
+    petDragStart = null;
+    syncPetWindowResizable();
+    persistPetBounds(true);
   });
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || petResizeStart || !petInteractionEnabled(getStore().readSettings())) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petInteractionEnabled(getStore().readSettings())) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
+    // A new valid resize is authoritative. If a pointerup was lost, do not
+    // let an old drag or resize transaction permanently block the next gesture.
+    cancelPetPointerTransactions();
     petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });
   ipcMain.on('pet:resize-move', (event, point: PetDragPoint) => {
     if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || !petResizeStart) return;
+    if (!Number.isFinite(point?.screenX) || !Number.isFinite(point?.screenY)) return;
     const next = nextPetResizeBounds(petResizeStart.bounds, petResizeStart.request, point, petResizeStart.request.edge);
-    petWindow.setBounds(safePetBounds(next, petResizeStart.display));
+    const safeNext = safePetBounds(next, petResizeStart.display);
+    if (!sameWindowBounds(petWindow.getBounds(), safeNext)) {
+      petWindow.setBounds(safeNext);
+    }
   });
   ipcMain.on('pet:resize-end', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petResizeStart) return;
     petResizeStart = null;
     persistPetBounds(true);
+    sendPetBoundsChanged();
+    arrangeInteractionTestWindow();
   });
   ipcMain.on('presentation:emit', (event, payload: PresentationEvent) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1186,6 +1538,13 @@ function registerIpc(): void {
     if (source === petWindow && detail?.domain === 'settings') {
       if (!detail.patch || Object.keys(detail.patch).some((key) => key !== 'modelViewportByModel')) return;
       settingsWindow?.webContents.send('baoyin:settings-preview', detail);
+      return;
+    }
+    if (source === settingsWindow && detail?.domain === 'settings') {
+      if (!detail.patch || typeof detail.patch !== 'object') return;
+      const allowed = new Set(['cursorTrackingEnabled', 'cursorEyeWeight', 'cursorHeadWeight', 'cursorBodyWeight', 'cursorSmoothing', 'cursorMaxStep', 'cursorRangeX', 'cursorRangeY', 'cursorIdleMotion']);
+      if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;
+      petWindow?.webContents.send('baoyin:settings-preview', detail);
       return;
     }
     if (source !== settingsWindow || !detail || detail.domain !== 'presentation') return;
@@ -1216,7 +1575,9 @@ if (singleInstanceLock) {
     Menu.setApplicationMenu(null);
     settingsStore = new SettingsStore(app.getPath('userData'));
     voiceProfileStore = new VoiceProfileStore(app.getPath('userData'));
+    live2dRegistry = new Live2DModelRegistry(app.getPath('userData'));
     const settings = settingsStore.readSettings();
+    cubismRuntimeSession.setCurrentModel(settings.live2dModelPath);
     void ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), settings.cosyVoiceMode)
       .catch((error: unknown) => console.warn('CosyVoice startup failed:', error));
     registerLive2DProtocol();

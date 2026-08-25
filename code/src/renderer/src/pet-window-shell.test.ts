@@ -30,6 +30,8 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(stylesSource).toMatch(/\.pet-shell\.pet-hovered\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-shell\.pet-model-editing\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*3px[^}]*border-radius:\s*14px[^}]*background:\s*transparent[^}]*pointer-events:\s*none/s);
+    expect(stylesSource).toMatch(/\.pet-shell\[data-pet-frame-hover="true"\] \.pet-resize-frame\s*\{[^}]*border-color:\s*rgba\(143,\s*196,\s*255,/s);
+    expect(stylesSource).toMatch(/\.pet-shell \.live2d-canvas\s*\{[^}]*background:\s*transparent/s);
     expect(mainSource).toContain('petWindow.setResizable(false)');
     expect(mainSource).toContain("ipcMain.on('pet:resize-start'");
     expect(mainSource).toContain('autoHideMenuBar: true');

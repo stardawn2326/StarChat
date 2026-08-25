@@ -1,10 +1,17 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   ChatEvent,
+  ConnectionTestRequest,
   CubismDebugCommand,
   CubismDebugMetricRequest,
+  CubismRuntimeCommand,
+  CubismRuntimeCommandRequest,
+  CubismRuntimeCommandResult,
   CursorUpdate,
   DisplaySummary,
+  Live2DModelIdRequest,
+  Live2DModelImportResult,
+  Live2DRuntimeFailure,
   PublicAppState,
   PetDragPoint,
   PetResizeStart,
@@ -28,9 +35,17 @@ const bridge = {
     hideSettings: (): void => ipcRenderer.send('settings:hide'),
     toggleSettings: (): void => ipcRenderer.send('settings:toggle'),
     showContextMenu: (): void => ipcRenderer.send('pet:context-menu'),
-    runtimeReady: (): void => ipcRenderer.send('pet:runtime-ready'),
+    runtimeReady: (request?: { entryPath?: string | null }): void => ipcRenderer.send('pet:runtime-ready', request),
+    runtimeCommandReady: (): void => ipcRenderer.send('pet:runtime-command-ready'),
+    runtimeFailed: (request: Live2DRuntimeFailure): void => ipcRenderer.send('pet:runtime-failed', request),
     showPet: (): void => ipcRenderer.send('pet:show'),
+    togglePet: (): void => ipcRenderer.send('pet:toggle'),
     toggleModelEdit: (): void => ipcRenderer.send('pet:toggle-model-edit'),
+    onWindowFocusState: (callback: (active: boolean) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, active: boolean): void => callback(active === true);
+      ipcRenderer.on('settings:window-focus', listener);
+      return () => ipcRenderer.removeListener('settings:window-focus', listener);
+    },
     onModelEditMode: (callback: (enabled: boolean) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, enabled: boolean): void => callback(enabled === true);
       ipcRenderer.on('pet:model-edit-mode', listener);
@@ -66,6 +81,9 @@ const bridge = {
       return () => ipcRenderer.removeListener('baoyin:settings-preview', listener);
     }
   },
+  api: {
+    testConnection: (request: ConnectionTestRequest): Promise<import('../shared/ipc').ConnectionTestResult> => ipcRenderer.invoke('api:test-connection', request)
+  },
   roles: {
     save: (request: RoleSaveRequest): Promise<PublicAppState> => ipcRenderer.invoke('roles:save', request),
     activate: (request: RoleIdRequest): Promise<PublicAppState> => ipcRenderer.invoke('roles:activate', request),
@@ -80,12 +98,32 @@ const bridge = {
       ipcRenderer.on('cubism:debug-command', listener);
       return () => ipcRenderer.removeListener('cubism:debug-command', listener);
     },
+    runtimeCommand: (command: CubismRuntimeCommand): Promise<import('../shared/cubism').CubismRuntimeResult> =>
+      ipcRenderer.invoke('cubism:runtime-command', command),
+    onRuntimeCommand: (callback: (request: CubismRuntimeCommandRequest) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, request: CubismRuntimeCommandRequest): void => callback(request);
+      ipcRenderer.on('cubism:runtime-command', listener);
+      return () => ipcRenderer.removeListener('cubism:runtime-command', listener);
+    },
+    runtimeResult: (requestId: string, result: import('../shared/cubism').CubismRuntimeResult): void => {
+      const payload: CubismRuntimeCommandResult = { requestId, result };
+      ipcRenderer.send('cubism:runtime-result', payload);
+    },
+    onRuntimeReady: (callback: (modelIdentity: string | null) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, modelIdentity: unknown): void => callback(typeof modelIdentity === 'string' ? modelIdentity : null);
+      ipcRenderer.on('cubism:runtime-ready', listener);
+      return () => ipcRenderer.removeListener('cubism:runtime-ready', listener);
+    },
     reportMetrics: (request: CubismDebugMetricRequest): void => ipcRenderer.send('cubism:metrics', request),
     metrics: (): Promise<import('../shared/cubism').CubismRuntimeMetrics | null> => ipcRenderer.invoke('cubism:metrics')
   },
   live2d: {
     inspect: (path: string): Promise<Live2DModelState> =>
       ipcRenderer.invoke('live2d:inspect', { path }),
+    import: (path: string): Promise<Live2DModelImportResult> =>
+      ipcRenderer.invoke('live2d:import', { path }),
+    remove: (request: Live2DModelIdRequest): Promise<PublicAppState> =>
+      ipcRenderer.invoke('live2d:remove', request),
     chooseFile: (): Promise<string | null> => ipcRenderer.invoke('live2d:choose-file'),
     chooseDirectory: (): Promise<string | null> => ipcRenderer.invoke('live2d:choose-directory')
   },
@@ -127,6 +165,7 @@ const bridge = {
     dragStart: (point: PetDragPoint): void => ipcRenderer.send('pet:drag-start', point),
     dragMove: (point: PetDragPoint): void => ipcRenderer.send('pet:drag-move', point),
     dragEnd: (): void => ipcRenderer.send('pet:drag-end'),
+    pointerCancel: (): void => ipcRenderer.send('pet:pointer-cancel'),
     resizeStart: (request: PetResizeStart): void => ipcRenderer.send('pet:resize-start', request),
     resizeMove: (point: PetDragPoint): void => ipcRenderer.send('pet:resize-move', point),
     resizeEnd: (): void => ipcRenderer.send('pet:resize-end')

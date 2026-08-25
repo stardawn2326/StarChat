@@ -36,6 +36,9 @@ export function nextPetResizeBounds(start: WindowBounds, startPoint: { screenX: 
   const height = Math.max(PET_WINDOW_BOUNDS.minHeight, start.height + (south ? dy : north ? -dy : 0));
   return { x: west ? start.x + start.width - width : start.x, y: north ? start.y + start.height - height : start.y, width, height };
 }
+export function sameWindowBounds(a: WindowBounds, b: WindowBounds): boolean {
+  return a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+}
 export const PET_WINDOW_BOUNDS = { minWidth: 240, minHeight: 240, maxWidth: 1200, maxHeight: 1200 } as const;
 const finite = (value: number, fallback: number): number => Number.isFinite(value) ? value : fallback;
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));

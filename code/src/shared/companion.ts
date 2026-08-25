@@ -105,13 +105,16 @@ function intentFromText(text: string): string {
   if (/(害羞|不好意思|脸红|别一直看)/u.test(text)) return 'shy';
   if (/(紧张|不安|焦虑|慌张)/u.test(text)) return 'anxious';
   if (/(好困|困了|想睡|休息一下|晚安)/u.test(text)) return 'sleepy';
+  if (/(生气|气死|恼火|过分|可恶|讨厌死了)/u.test(text)) return 'angry';
+  if (/(难过|伤心|想哭|失落|委屈|沮丧)/u.test(text)) return 'sad';
+  if (/(没.{0,3}明白|不明白|不理解|怎么回事|搞不懂|困惑)/u.test(text)) return 'confused';
   if (/(不能|无法|不可以|拒绝|抱歉)/u.test(text)) return 'refusal';
   if (/(错误|失败|出问题|异常)/u.test(text)) return 'error';
   if (/(担心|小心|注意安全|没事吧)/u.test(text)) return 'caring';
   if (/(让我想想|考虑一下|分析|推理)/u.test(text)) return 'thinking';
   if (/(你好|早上好|晚上好|欢迎|很高兴见到)/u.test(text)) return 'greeting';
   if (/(太好了|真棒|开心|恭喜|哈哈)/u.test(text)) return 'happy';
-  if (/(什么|竟然|真的吗|没想到)/u.test(text)) return 'surprised';
+  if (/(什么|竟然|居然|真的吗|没想到)/u.test(text)) return 'surprised';
   return 'listening';
 }
 
@@ -127,7 +130,10 @@ const FALLBACK_PRESENTATION: Record<string, RoleSemanticMapping> = {
   tsundere: { expression: 'tsundere_pout', action: 'look_away' },
   shy: { expression: 'blush', action: 'look_away' },
   anxious: { expression: 'anxious' },
-  sleepy: { expression: 'sleepy' }
+  sleepy: { expression: 'sleepy' },
+  angry: { expression: 'annoyed' },
+  sad: { expression: 'worried' },
+  confused: { expression: 'confused_blank', action: 'thinking' }
 };
 
 export function presentationForAssistantText(text: string, mappings: Readonly<Record<string, RoleSemanticMapping>>): PresentationEvent[] {

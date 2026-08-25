@@ -119,8 +119,14 @@ describe('PetWindow drag and DPI viewport invariants', () => {
     expect(runtimeSource).not.toMatch(/viewport\.(width|height)\s*\*\s*viewport\.renderScale/);
   });
 
-  it('keeps the model screen anchor fixed through north/west resize origin changes', () => {
-    expect(petSource).toContain('compensateModelViewportForWindowOrigin');
-    expect(petSource).toContain('persistModelViewport');
+  it('keeps window resize independent from the persisted model viewport', () => {
+    const finalizeStart = petSource.indexOf('const finalizeActivePointer');
+    const resizeMove = petSource.slice(petSource.indexOf("if (gesture.operation === 'window-resize')"), finalizeStart);
+    const resizeFinish = petSource.slice(petSource.indexOf("if (gesture.operation === 'window-resize')", finalizeStart), petSource.indexOf('const cancelActivePointer'));
+    for (const resizePath of [resizeMove, resizeFinish]) {
+      expect(resizePath).not.toContain('persistModelViewport');
+      expect(resizePath).not.toContain('updateModelViewport');
+    }
+    expect(petSource).not.toContain('compensateModelViewportForWindowOrigin');
   });
 });

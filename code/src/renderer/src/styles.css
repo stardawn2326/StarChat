@@ -176,7 +176,7 @@ body[data-window="settings"] .settings-center-shell { min-height: 100vh; max-hei
 .pet-shell.pet-hovered { outline: none; }
 .pet-shell.pet-model-editing { outline: none; }
 .pet-resize-frame { position: absolute; inset: 3px; z-index: 20; border: 1px solid transparent; border-radius: 14px; background: transparent; pointer-events: none; transition: border-color .12s ease; }
-.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame { border-color: rgba(196, 174, 235, var(--pet-hover-border-opacity, .72)); }
+.pet-shell[data-pet-frame-hover="true"] .pet-resize-frame { border-color: rgba(143, 196, 255, var(--pet-hover-border-opacity, .72)); box-shadow: 0 0 12px rgba(143, 196, 255, .14); }
 .pet-shell .live2d-model-clip-layer { transition: opacity .15s ease; }
 .pet-safe-state { display: none; }
 .pet-safe-state strong { font-size: 13px; }

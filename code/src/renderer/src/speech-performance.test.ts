@@ -3,8 +3,10 @@ import {
   EmotionCueGate,
   LipSyncEnvelope,
   StreamingSentenceBuffer,
+  splitRealtimePresentation,
   mouthFormAtProgress
 } from './speech-performance';
+import type { PresentationEvent } from '../../shared/presentation';
 
 describe('streaming speech performance', () => {
   it('releases complete clauses immediately and flushes the final fragment once', () => {
@@ -49,5 +51,27 @@ describe('streaming speech performance', () => {
     expect(gate.accept('surprised', 1800)).toBe(false);
     expect(gate.accept('surprised', 2700)).toBe(true);
     expect(gate.accept('surprised', 4000)).toBe(false);
+  });
+
+  it('keeps only the newest hold-blocked emotion and applies it after the minimum hold', () => {
+    const gate = new EmotionCueGate(1600);
+    expect(gate.accept('caring_smile', 1000)).toBe(true);
+    expect(gate.accept('surprised', 1500)).toBe(false);
+    expect(gate.accept('angry', 1600)).toBe(false);
+    expect(gate.flush(2500)).toBeNull();
+    expect(gate.flush(2600)).toBe('angry');
+    expect(gate.flush(4000)).toBeNull();
+  });
+
+  it('separates completed-sentence emotion from playback actions for immediate expression updates', () => {
+    const events: PresentationEvent[] = [
+      { type: 'expression', name: 'surprised', source: 'assistant', layer: 'dialogue_emotion' },
+      { type: 'action', name: 'lean_forward', source: 'assistant', layer: 'reply_state' }
+    ];
+
+    expect(splitRealtimePresentation(events)).toEqual({
+      realtime: [events[0]],
+      playback: [events[1]]
+    });
   });
 });

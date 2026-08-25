@@ -7,6 +7,7 @@ import { pixiWorldPointFromCursor } from './airi-world-coordinate';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
 const runtimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
+const physicsGateSource = readFileSync(resolve(testDirectory, 'cubism-physics-gate.ts'), 'utf8');
 const canvasSource = readFileSync(resolve(testDirectory, 'Live2DCanvas.tsx'), 'utf8');
 const chatSource = readFileSync(resolve(testDirectory, 'CompanionChat.tsx'), 'utf8');
 const packageJson = JSON.parse(readFileSync(resolve(testDirectory, '../../../package.json'), 'utf8')) as {
@@ -111,6 +112,26 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(packageRuntimeSource).not.toContain('this.idParamBodyAngleY, this.bodyFocusY');
     expect(runtimeSource).toContain('gazeConfig = sanitizeGazeConfig(config)');
     expect(runtimeSource).toContain('hitTestNormalized');
+  });
+
+  it('does not replace the package focus dynamics while retaining an independent physics gate', () => {
+    expect(runtimeSource).not.toContain('installFocusConsumer');
+    expect(runtimeSource).not.toContain('internalModel.configureFocus =');
+    expect(runtimeSource).not.toContain('internalModel.updateFocus =');
+    expect(runtimeSource).not.toContain('focusController.update =');
+    expect(runtimeSource).toContain('installPhysicsGate');
+    expect(physicsGateSource).toContain('physics.evaluate =');
+    expect(packageRuntimeSource).toContain('configureFocus(settings = {})');
+    expect(packageRuntimeSource).toContain('updateFocus(_dt = 1 / 60, _now = 0)');
+    expect(packageRuntimeSource).toContain('this.focusController.x * 10');
+  });
+
+  it('keeps the package default focus trajectory and forwards custom values through configureFocus', () => {
+    expect(packageRuntimeSource).toContain('this.focusSettings = { eyeWeight: 1, headWeight: 1, bodyWeight: 1, bodyFollowStrength: 1, bodyLag: 0.22, inertiaStrength: 0, idleSwayStrength: 0 }');
+    expect(packageRuntimeSource).toContain('this.coreModel.addParameterValueById(this.idParamAngleX, this.focusController.x * 30)');
+    expect(packageRuntimeSource).toContain('this.coreModel.addParameterValueById(this.idParamBodyAngleX, this.focusController.x * 10)');
+    expect(runtimeSource).toContain('gazeConfig = sanitizeGazeConfig(config)');
+    expect(runtimeSource).toContain('model?.internalModel?.configureFocus?.(gazeConfig)');
   });
 
   it('drives lip sync from played audio frames instead of a fixed mouth timer', () => {

@@ -67,3 +67,24 @@ export async function* streamChatCompletion({
     yield delta;
   }
 }
+
+export async function testChatConnection(settings: AppSettings, apiKey: string): Promise<void> {
+  const response = await fetch(buildChatUrl(settings.apiBaseUrl), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: settings.model,
+      messages: [{ role: 'user', content: 'ping' }],
+      max_tokens: 1,
+      stream: false
+    })
+  });
+
+  if (!response.ok) {
+    const detail = (await response.text()).trim().slice(0, 180);
+    throw new Error(detail ? `连接失败（HTTP ${response.status}）：${detail}` : `连接失败（HTTP ${response.status}）`);
+  }
+}

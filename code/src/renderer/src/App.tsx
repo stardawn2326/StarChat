@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import type { CubismDebugCommand, PublicAppState } from '../../shared/ipc';
-import type { CubismRuntimeMetrics } from '../../shared/cubism';
+import type { CubismDebugCommand, CubismRuntimeCommand, PublicAppState } from '../../shared/ipc';
+import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
 import { cloneRolePackage, createBlankRolePackage, type RolePackage } from '../../shared/role-package';
 import { DEFAULT_APP_SETTINGS, DEFAULT_MODEL_VIEWPORT, modelViewportForPath, sanitizeModelViewport, type AppSettings, type ModelViewportSettings } from '../../shared/settings';
-import { SettingsDetails } from './SettingsDetails';
+import { SettingsDetailsV2 } from './SettingsDetailsV2';
 import { SettingsHome } from './SettingsHome';
 import type { SettingsPageId } from './settings-schema';
 import { emitSettingsPreview, isWindowIntent } from './settings-preview';
@@ -22,10 +22,12 @@ function App(): JSX.Element {
   const [roleDraft, setRoleDraft] = useState<RolePackage | null>(null);
   const [live2dPreview, setLive2dPreview] = useState<Live2DModelState | null>(null);
   const [debugMetrics, setDebugMetrics] = useState<CubismRuntimeMetrics | null>(null);
+  const [runtimeCapabilities, setRuntimeCapabilities] = useState<CubismRuntimeCapabilities | null>(null);
+  const [runtimeResult, setRuntimeResult] = useState<CubismRuntimeResult | null>(null);
+  const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
   const [displays, setDisplays] = useState<Awaited<ReturnType<typeof window.baoyin.display.list>>>([]);
   const [page, setPage] = useState<SettingsPageId | null>(null);
   const [error, setError] = useState('');
-  const [licenseAccepted, setLicenseAccepted] = useState(false);
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [presentationDraft, setPresentationDraft] = useState<PresentationSettings>(DEFAULT_PRESENTATION_SETTINGS);
   const settingsDirty = useRef(false);
@@ -38,6 +40,10 @@ function App(): JSX.Element {
   const presentationRef = useRef<PresentationSettings>(presentationDraft);
 
   const applyState = (next: PublicAppState): void => {
+    if (stateRef.current?.live2d.entryPath !== next.live2d.entryPath) {
+      setRuntimeCapabilities(null);
+      setRuntimeResult(null);
+    }
     stateRef.current = next;
     setAppState(next);
     if (!settingsDirty.current) {
@@ -77,6 +83,11 @@ function App(): JSX.Element {
       settingsRef.current = next;
       setSettingsDraft(next);
     });
+    const unsubscribeRuntimeReady = window.baoyin.debug.onRuntimeReady((modelIdentity) => {
+      const currentIdentity = stateRef.current?.live2d.entryPath;
+      if (modelIdentity && currentIdentity && modelIdentity !== currentIdentity) return;
+      setRuntimeReadyEpoch((epoch) => epoch + 1);
+    });
     const popstate = (): void => setPage(null);
     window.addEventListener('popstate', popstate);
     window.history.replaceState({ settingsPage: null }, '', '#home');
@@ -85,6 +96,7 @@ function App(): JSX.Element {
       unsubscribe();
       unsubscribeBounds();
       unsubscribePreview();
+      unsubscribeRuntimeReady();
       window.removeEventListener('popstate', popstate);
       if (settingsTimer.current) window.clearTimeout(settingsTimer.current);
       if (presentationTimer.current) window.clearTimeout(presentationTimer.current);
@@ -118,13 +130,12 @@ function App(): JSX.Element {
 
   const persistSettings = async (next: AppSettings, clearApiKey = false): Promise<void> => {
     try {
-      const saved = await window.baoyin.settings.save({ settings: next, apiKey: apiKeyDraft.trim() || undefined, clearApiKey, licenseAccepted });
+      const saved = await window.baoyin.settings.save({ settings: next, apiKey: apiKeyDraft.trim() || undefined, clearApiKey });
       settingsDirty.current = false;
       settingsRef.current = saved.settings;
       setSettingsDraft(saved.settings);
       applyState(saved);
       setApiKeyDraft('');
-      setLicenseAccepted(false);
       setError('');
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : '设置保存失败');
@@ -198,17 +209,17 @@ function App(): JSX.Element {
       roleRef.current = appState.role;
       return;
     }
-    if (page === 'composition') {
+    if (page === 'model') {
       onViewportChange(DEFAULT_MODEL_VIEWPORT);
+      onSettingsChange({ live2dShowWatermark: DEFAULT_APP_SETTINGS.live2dShowWatermark });
       return;
     }
-    if (page === 'presentation') {
-      onSettingsChange({ cursorTrackingEnabled: true, cursorEyeWeight: 1, cursorHeadWeight: 0.35, cursorBodyWeight: DEFAULT_APP_SETTINGS.cursorBodyWeight, cursorSmoothing: 0.22, cursorMaxStep: 0.08, cursorRangeX: 1, cursorRangeY: 1, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion });
-      onPresentationChange(DEFAULT_PRESENTATION_SETTINGS);
+    if (page === 'voice') {
+      onSettingsChange({ cosyVoiceBaseUrl: DEFAULT_APP_SETTINGS.cosyVoiceBaseUrl, cosyVoiceSpeaker: DEFAULT_APP_SETTINGS.cosyVoiceSpeaker, cosyVoiceMode: DEFAULT_APP_SETTINGS.cosyVoiceMode, activeVoiceProfileId: DEFAULT_APP_SETTINGS.activeVoiceProfileId, ttsRate: DEFAULT_APP_SETTINGS.ttsRate, ttsVolume: DEFAULT_APP_SETTINGS.ttsVolume });
       return;
     }
-    if (page === 'window') {
-      onSettingsChange({ alwaysOnTop: true, petLocked: false, petInteractionMode: true, petWindowOpacity: 1, petHoverBorderOpacity: 0.8, petHoverShowDelayMs: 80, petHoverFadeMs: 420 });
+    if (page === 'behavior') {
+      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, petLocked: DEFAULT_APP_SETTINGS.petLocked, petInteractionMode: DEFAULT_APP_SETTINGS.petInteractionMode, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut });
       return;
     }
     if (page === 'service') {
@@ -238,10 +249,48 @@ function App(): JSX.Element {
   const chooseModel = async (kind: 'file' | 'directory'): Promise<void> => {
     const path = kind === 'file' ? await window.baoyin.live2d.chooseFile() : await window.baoyin.live2d.chooseDirectory();
     if (!path) return;
-    onSettingsChange({ live2dModelPath: path }, false);
-    setLicenseAccepted(false);
-    await inspectModel(path);
+    try {
+      const imported = await window.baoyin.live2d.import(path);
+      onSettingsChange({ live2dModelPath: imported.record.entryPath }, false);
+      setLive2dPreview(imported.state);
+      setError('');
+    } catch (importError) {
+      setError(importError instanceof Error ? importError.message : '外部模型导入失败');
+    }
   };
+
+  const switchModel = async (id: string): Promise<void> => {
+    const record = appState?.live2dModels.find((candidate) => candidate.id === id);
+    if (!record) return;
+    await persistSettings({ ...settings, live2dModelPath: record.entryPath });
+  };
+
+  const removeModel = async (id: string): Promise<void> => {
+    try {
+      const next = await window.baoyin.live2d.remove({ id });
+      settingsDirty.current = false;
+      applyState(next);
+      setError('');
+    } catch (removeError) {
+      setError(removeError instanceof Error ? removeError.message : '移除模型记录失败');
+    }
+  };
+
+  const runRuntimeCommand = async (command: CubismRuntimeCommand): Promise<void> => {
+    try {
+      const result = await window.baoyin.debug.runtimeCommand(command);
+      setRuntimeResult(result);
+      setRuntimeCapabilities(result.capabilities);
+    } catch (runtimeError) {
+      setRuntimeResult(null);
+      setError(runtimeError instanceof Error ? runtimeError.message : 'Cubism runtime 命令失败');
+    }
+  };
+
+  useEffect(() => {
+    if (page !== 'model' || !settings.live2dModelPath) return;
+    void runRuntimeCommand({ type: 'capabilities' });
+  }, [page, settings.live2dModelPath, runtimeReadyEpoch]);
 
   const cloneRole = (): void => {
     if (!role) return;
@@ -296,7 +345,7 @@ function App(): JSX.Element {
 
   return <main className="app-shell settings-center-shell">
     <header className="titlebar"><div className="drag-region"><span className="status-dot" /><span>白音 AI 助手 · 配置中心</span></div><div className="window-actions"><button aria-label="显示桌宠" type="button" onClick={() => window.baoyin.app.showPet()}>⌂</button><button aria-label="最小化" type="button" onClick={() => window.baoyin.app.minimize()}>－</button><button aria-label="隐藏设置" type="button" onClick={() => window.baoyin.app.hideSettings()}>×</button></div></header>
-    {page ? <SettingsDetails state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onLicenseChange={setLicenseAccepted} licenseAccepted={licenseAccepted} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} /> : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />}
+    {page ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} /> : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />}
   </main>;
 }
 

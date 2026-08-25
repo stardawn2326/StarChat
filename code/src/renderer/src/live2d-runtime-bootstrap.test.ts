@@ -1,0 +1,34 @@
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const testDirectory = dirname(fileURLToPath(import.meta.url));
+const runtimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
+const bootstrapSource = readFileSync(resolve(testDirectory, 'main.tsx'), 'utf8');
+
+function sourceBetween(start: string, end: string): string {
+  const startIndex = runtimeSource.indexOf(start);
+  const endIndex = runtimeSource.indexOf(end, startIndex + start.length);
+  return runtimeSource.slice(startIndex, endIndex < 0 ? undefined : endIndex);
+}
+
+describe('Live2D renderer bootstrap contracts', () => {
+  it('keeps viewport anchor variables inside the viewport resize path', () => {
+    const viewportPath = sourceBetween('function applyRendererViewport', 'function applyTransformTo');
+    const transformPath = sourceBetween('function applyTransformTo', 'function applyModelTransform');
+
+    expect(viewportPath).toContain('const sizeChanged =');
+    expect(viewportPath).toContain('if (sizeChanged && model && modelScreenAnchor)');
+    expect(transformPath).not.toContain('sizeChanged');
+    expect(transformPath).not.toContain('nextViewport');
+  });
+
+  it('keeps the pet UI visible with a clear boot error when a renderer module fails', () => {
+    const boot = sourceBetween('async function boot()', 'void boot()');
+
+    expect(bootstrapSource).toContain('boot-error-panel');
+    expect(boot).toContain('root.textContent');
+    expect(boot).not.toContain('root.replaceChildren()');
+  });
+});

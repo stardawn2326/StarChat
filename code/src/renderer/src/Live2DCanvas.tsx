@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Live2DModelState } from '../../shared/live2d';
-import type { CubismDebugCommand, CursorUpdate } from '../../shared/ipc';
+import type { CubismDebugCommand, CubismRuntimeCommandRequest, CursorUpdate } from '../../shared/ipc';
 import type { PresentationEvent } from '../../shared/presentation';
-import type { CubismGazeConfig, CubismRuntimeController, CubismRuntimeMetrics } from '../../shared/cubism';
+import type { CubismGazeConfig, CubismRuntimeController, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import { DEFAULT_MODEL_VIEWPORT, type ModelViewportSettings } from '../../shared/settings';
 import { CharacterStateResolver } from '../../shared/character-state';
 import { canvasViewport, composeAbsoluteModelTransform } from '../../shared/window-contract';
 import { CursorFollowGate } from './cursor-follow-gate';
 import { IdleGazeController } from './idle-gaze';
+import { dispatchCubismRuntimeCommand } from './cubism-runtime-dispatch';
 
 interface RuntimeModule {
   controller: CubismRuntimeController;
@@ -25,9 +26,12 @@ interface Live2DCanvasProps {
   tapPoint?: { x: number; y: number } | null;
   showWatermark?: boolean;
   debugCommand?: CubismDebugCommand | null;
+  runtimeCommand?: CubismRuntimeCommandRequest | null;
+  onRuntimeResult?: (requestId: string, result: CubismRuntimeResult) => void;
   onFitFrame?: (bounds: { x: number; y: number; width: number; height: number }) => void;
   onModelHitChange?: (hit: boolean) => void;
   onRuntimeReady?: () => void;
+  onRuntimeFailure?: (failure: { entryPath: string | null; stage: 'load' | 'initialize' | 'render'; message: string }) => void;
 }
 
 function waitForStableFrames(frameCount = 2): Promise<void> {
@@ -47,7 +51,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, onFitFrame, onModelHitChange, onRuntimeReady }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, runtimeCommand = null, onRuntimeResult, onFitFrame, onModelHitChange, onRuntimeReady, onRuntimeFailure }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -109,7 +113,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const applyCharacterState = async (runtime: RuntimeModule): Promise<void> => {
     const snapshot = characterStateRef.snapshot();
     if (snapshot.activeExpression !== lastExpressionRef.current) {
-      runtime.controller.playExpression(snapshot.activeExpression);
+      void runtime.controller.playSemanticExpression(snapshot.activeExpression);
       lastExpressionRef.current = snapshot.activeExpression;
     }
     if (snapshot.activeAction && snapshot.activeAction !== lastActionRef.current) {
@@ -137,6 +141,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
           return;
         }
         await module.startExternalLive2D(modelJsonName, {
+          modelIdentity: live2d.entryPath,
           adapter: live2d.adapter,
           expressions: live2d.expressions,
           motions: live2d.motions
@@ -175,6 +180,11 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
       })
       .catch((error: unknown) => {
         if (active) {
+          onRuntimeFailure?.({
+            entryPath: live2d.entryPath,
+            stage: 'initialize',
+            message: error instanceof Error ? error.message : 'Cubism runtime 启动失败'
+          });
           setRuntimeStatus(error instanceof Error ? error.message : 'Cubism runtime 启动失败');
           void waitForStableFrames(2).then(() => {
             if (active) onRuntimeReady?.();
@@ -184,13 +194,16 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
 
     return () => {
       active = false;
-      if (runtimeRef.current) {
-        runtimeRef.current.stopExternalLive2D();
-      } else {
-        void import('./live2d-runtime.js').then((module) => module.stopExternalLive2D());
-      }
     };
-  }, [live2d.entryPath, modelJsonName, onRuntimeReady, ready, runtimeRef]);
+  }, [live2d.entryPath, modelJsonName, onRuntimeFailure, onRuntimeReady, ready, runtimeRef]);
+
+  useEffect(() => () => {
+    if (runtimeRef.current) {
+      runtimeRef.current.stopExternalLive2D();
+    } else {
+      void import('./live2d-runtime.js').then((module) => module.stopExternalLive2D());
+    }
+  }, [runtimeRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;
@@ -221,7 +234,7 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
         return;
       }
       lastSyncedViewportRef.current = { width: next.width, height: next.height, renderScale };
-      runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale);
+      runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale, window.screenX, window.screenY);
       // ResizeObserver and window resize can both report the same CSS viewport
       // during a drag or a cross-display move. The renderer owns backing pixels;
       // this observer only forwards a changed CSS viewport/DPR tuple.
@@ -276,6 +289,13 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
     if (!runtime || !ready) return;
     runtime.controller.setWatermarkVisible(showWatermark);
   }, [showWatermark, ready, runtimeRef]);
+
+  useEffect(() => {
+    if (!runtimeCommand) return;
+    const runtime = runtimeRef.current;
+    void dispatchCubismRuntimeCommand(runtime?.controller ?? null, runtimeCommand.command, live2d.entryPath)
+      .then((result) => onRuntimeResult?.(runtimeCommand.requestId, result));
+  }, [live2d.entryPath, onRuntimeResult, runtimeCommand, runtimeReadyEpoch, runtimeRef]);
 
   useEffect(() => {
     const runtime = runtimeRef.current;

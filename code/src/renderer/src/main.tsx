@@ -20,6 +20,13 @@ async function loadCubismCore(): Promise<void> {
   });
 }
 
+function setSettingsWindowActiveState(active: boolean): void {
+  const value = String(active);
+  document.documentElement.dataset.windowActive = value;
+  document.body.dataset.windowActive = value;
+  document.getElementById('root')?.setAttribute('data-window-active', value);
+}
+
 async function boot(): Promise<void> {
   const root = document.getElementById('root');
   if (!root) {
@@ -29,6 +36,10 @@ async function boot(): Promise<void> {
   document.documentElement.dataset.baoyinWindow = role;
   document.body.dataset.window = role;
   document.title = role === 'pet' ? '' : '白音 AI 助手';
+  if (role === 'settings') {
+    setSettingsWindowActiveState(false);
+    window.baoyin.app.onWindowFocusState(setSettingsWindowActiveState);
+  }
   try {
     if (role === 'pet') {
       await loadCubismCore();

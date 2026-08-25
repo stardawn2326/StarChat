@@ -4,30 +4,48 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const source = readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), 'index.ts'), 'utf8');
+const packageJson = JSON.parse(readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), '../../package.json'), 'utf8')) as {
+  devDependencies?: { electron?: string };
+};
 
 describe('Windows transparent pet shell', () => {
-  it('removes the native thick frame and DWM corner from the frameless pet window', () => {
+  it('pins the transparent-shell runtime to the isolated Electron regression baseline', () => {
+    expect(packageJson.devDependencies?.electron).toBe('34.3.3');
+  });
+
+  it('keeps the transparent shell rectangular without a stale native shape region', () => {
     const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
     expect(creation).toContain('thickFrame: false');
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: true');
     expect(creation).not.toContain("backgroundMaterial: 'none'");
     expect(creation).not.toContain("titleBarStyle: 'hidden'");
-    expect(creation).toContain('accentColor: false');
+    expect(creation).not.toContain('accentColor: false');
     expect(creation).toContain('titleBarOverlay: false');
-    expect(creation).not.toContain("petWindow.setBackgroundMaterial('none')");
+    expect(creation).toContain('restorePetBounds();');
+    expect(source).not.toContain('function syncPetWindowShape');
+    expect(source).not.toContain('setShape(');
   });
 
-  it('pins a transparent pet to a full native rectangle so DWM cannot paint an inactive non-client strip', () => {
-    const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
-    expect(source).toContain('function syncPetWindowShape');
-    expect(source).toContain('petWindow.setShape([{ x: 0, y: 0, width: bounds.width, height: bounds.height }])');
-    expect(creation).toContain('syncPetWindowShape();');
+  it('keeps native shape synchronization out of the resize hot path', () => {
+    const resizeListener = source.slice(source.indexOf("petWindow.on('resize'"), source.indexOf("petWindow.on('blur'"));
+    const resizeMove = source.slice(source.indexOf("ipcMain.on('pet:resize-move'"), source.indexOf("ipcMain.on('pet:resize-end'"));
+    expect(source).not.toContain('function schedulePetWindowShapeSync');
+    expect(resizeListener).not.toContain('setShape');
+    expect(resizeMove).not.toContain('setShape');
+    expect(resizeMove).toContain('sameWindowBounds');
+    expect(source).toContain("ipcMain.on('pet:resize-end'");
+    expect(source).not.toContain('function syncPetWindowShape');
+    expect(source).not.toContain('setShape(');
   });
 
-  it('does not opt the transparent pet into the Windows hidden-title-bar path', () => {
-    const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
-    expect(creation).not.toContain('titleBarStyle:');
+  it('does not use opacity or backdrop mutation as a blur workaround', () => {
+    const blurHandler = source.slice(source.indexOf("petWindow.on('blur'"), source.indexOf("petWindow.on('close'"));
+    expect(blurHandler).not.toContain('petWindow.setOpacity');
+    expect(blurHandler).not.toContain('setTimeout');
+    expect(blurHandler).not.toContain('setBackgroundMaterial');
+    expect(blurHandler).not.toContain('setAlwaysOnTop');
+    expect(blurHandler).not.toContain('focus()');
   });
 
   it('neutralizes non-client chrome on the settings window as well', () => {
@@ -41,6 +59,7 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain("settingsWindow.setTitle('')");
     expect(creation).toContain('settingsWindow.setMenuBarVisibility(false)');
     expect(creation).toContain("settingsWindow.setBackgroundColor('#00000000')");
+    expect(creation).not.toContain("settingsWindow.setBackgroundMaterial('none')");
     expect(creation).not.toContain("titleBarStyle: 'hidden'");
   });
 
@@ -57,6 +76,23 @@ describe('Windows transparent pet shell', () => {
     expect(blurHandler).not.toContain('setAlwaysOnTop');
     expect(source).not.toContain('petWindow?.focus()');
     expect(source).toContain('petWindow?.showInactive()');
+  });
+
+  it('does not repeat native activation and shape work for an interaction-only settings save', () => {
+    const applySettings = source.slice(source.indexOf('function applyPetWindowSettings'), source.indexOf('function showPetWindowInactive'));
+    expect(applySettings).toContain('previousSettings');
+    expect(applySettings).not.toContain('syncPetWindowResizable();');
+    expect(applySettings).toContain('settings.alwaysOnTop !== previousSettings.alwaysOnTop');
+    expect(applySettings).toContain('settings.petWindowOpacity !== previousSettings.petWindowOpacity');
+  });
+
+  it('does not reshape the transparent pet merely because it lost focus', () => {
+    const blurCancellation = source.slice(source.indexOf('function cancelPetPointerTransactions'), source.indexOf('function createPetWindow'));
+    expect(blurCancellation).not.toContain('syncPetWindowResizable();');
+  });
+
+  it('does not forward passthrough mouse messages through the native pet window', () => {
+    expect(source).not.toContain('{ forward: true }');
   });
 
   it('keeps the pet non-focusable while leaving the settings window focusable', () => {
@@ -78,10 +114,11 @@ describe('Windows transparent pet shell', () => {
     expect(petMenu).toContain('显示/隐藏桌宠');
   });
 
-  it('does not opt the transparent pet into Electron toolbar appearance', () => {
+  it('uses a Windows tool-window class for the transparent pet shell', () => {
     const creation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
-    expect(creation).not.toContain("type: 'toolbar'");
+    expect(creation).toContain("type: 'toolbar'");
     expect(creation).toContain('autoHideMenuBar: true');
+    expect(creation).toContain('skipTaskbar: true');
   });
 
   it('does not make the transparent pet HWND the native context-menu owner', () => {
