@@ -11,11 +11,11 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('thickFrame: false');
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: true');
-    expect(creation).toContain("backgroundMaterial: 'none'");
+    expect(creation).not.toContain("backgroundMaterial: 'none'");
     expect(creation).not.toContain("titleBarStyle: 'hidden'");
     expect(creation).toContain('accentColor: false');
     expect(creation).toContain('titleBarOverlay: false');
-    expect(creation).toContain("petWindow.setBackgroundMaterial('none')");
+    expect(creation).not.toContain("petWindow.setBackgroundMaterial('none')");
   });
 
   it('pins a transparent pet to a full native rectangle so DWM cannot paint an inactive non-client strip', () => {
@@ -36,7 +36,7 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('thickFrame: false');
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: true');
-    expect(creation).toContain("backgroundMaterial: 'none'");
+    expect(creation).not.toContain("backgroundMaterial: 'none'");
     expect(creation).toContain('titleBarOverlay: false');
     expect(creation).toContain("settingsWindow.setTitle('')");
     expect(creation).toContain('settingsWindow.setMenuBarVisibility(false)');

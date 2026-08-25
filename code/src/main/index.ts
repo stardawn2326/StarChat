@@ -429,7 +429,6 @@ function createPetWindow(): void {
     roundedCorners: false,
     autoHideMenuBar: true,
     titleBarOverlay: false,
-    backgroundMaterial: 'none',
     accentColor: false,
     transparent: true,
     resizable: false,
@@ -451,7 +450,6 @@ function createPetWindow(): void {
   petWindow?.setTitle('');
   petWindow.setMenuBarVisibility(false);
   petWindow.setBackgroundColor('#00000000');
-  petWindow.setBackgroundMaterial('none');
   applyPetWindowSettings();
   petWindow.setIgnoreMouseEvents(true, { forward: true });
   petWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -512,7 +510,6 @@ function createSettingsWindow(): void {
     roundedCorners: false,
     autoHideMenuBar: true,
     titleBarOverlay: false,
-    backgroundMaterial: 'none',
     resizable: true,
     hasShadow: false,
     show: false,
