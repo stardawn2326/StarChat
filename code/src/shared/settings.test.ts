@@ -35,6 +35,12 @@ describe('settings sanitization', () => {
     expect(sanitizeAppSettings({ petInteractionMode: false })).toMatchObject({ petLocked: true, petInteractionMode: false });
   });
 
+  it('persists and sanitizes Agent routing independently of desktop behavior', () => {
+    expect(sanitizeAppSettings({}).assistantMode).toBe('auto');
+    expect(sanitizeAppSettings({ assistantMode: 'agent' }).assistantMode).toBe('agent');
+    expect(sanitizeAppSettings({ assistantMode: 'unsafe' as never }).assistantMode).toBe('auto');
+  });
+
   it('uses CosyVoice as the only speech provider', () => {
     const defaults = sanitizeAppSettings({});
     expect(defaults.ttsProvider).toBe('cosyvoice');

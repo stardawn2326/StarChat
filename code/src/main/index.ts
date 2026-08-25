@@ -16,6 +16,9 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
 import type {
+  AgentApproveRequest,
+  AgentEvent,
+  AgentRespondRequest,
   ChatEvent,
   ChatMessage,
   CursorUpdate,
@@ -39,6 +42,7 @@ import type {
   SettingsPreviewDetail,
   StartChatRequest
 } from '../shared/ipc';
+import { sanitizeAgentStartRequest, type AgentStartRequest } from '../shared/agent';
 import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, validateRolePackage } from '../shared/role-package';
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimePhase, CubismRuntimeResult, CubismRuntimeStatus } from '../shared/cubism';
 import { isSafeCubismRuntimeCommand } from '../shared/cubism-runtime-command';
@@ -55,6 +59,10 @@ import { synthesizeCosyVoice } from './tts/cosyvoice';
 import { ensureCosyVoiceService, stopManagedCosyVoiceService } from './tts/cosyvoice-service';
 import { VoiceProfileStore } from './voice-profile-store';
 import { CubismRuntimeSession } from './cubism-runtime-session';
+import { AgentStore } from './agent-store';
+import { AgentService } from './agent-service';
+import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
+import { routeTurn } from './agent-router';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -64,6 +72,8 @@ let tray: Tray | null = null;
 let settingsStore: SettingsStore;
 let voiceProfileStore: VoiceProfileStore;
 let live2dRegistry: Live2DModelRegistry;
+let agentStore: AgentStore;
+let agentService: AgentService;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -91,6 +101,7 @@ interface PendingCubismRuntimeCommand {
 const pendingCubismRuntimeCommands = new Map<string, PendingCubismRuntimeCommand>();
 const cubismRuntimeSession = new CubismRuntimeSession();
 const activeRequests = new Map<string, AbortController>();
+const agentTaskSenders = new Map<string, Electron.WebContents>();
 
 interface PendingLive2DSwitch {
   token: string;
@@ -128,6 +139,11 @@ function cosyVoiceProjectRoots(): string[] {
     resolve(dirname(process.execPath), '..'),
     process.cwd()
   ].filter(Boolean);
+}
+
+function agentWorkspaceRoot(): string {
+  const configured = process.env.BAOYIN_AGENT_WORKSPACE_ROOT?.trim();
+  return configured && isAbsolute(configured) ? configured : resolve(app.getAppPath(), '..');
 }
 
 if (!singleInstanceLock) {
@@ -317,6 +333,25 @@ function sendChatEvent(sender: Electron.WebContents, event: ChatEvent): void {
   if (!sender.isDestroyed()) {
     sender.send('chat:event', event);
   }
+}
+
+function sendAgentEvent(event: AgentEvent): void {
+  const sender = agentTaskSenders.get(event.taskId);
+  if (sender && !sender.isDestroyed()) sender.send('agent:event', event);
+  if (event.type === 'complete' || event.type === 'error') agentTaskSenders.delete(event.taskId);
+}
+
+function getAgentService(): AgentService {
+  if (!agentService) throw new Error('Agent 子系统尚未初始化');
+  return agentService;
+}
+
+function agentContext(): import('./agent-service').AgentServiceContext {
+  const store = getStore();
+  const settings = store.readSettings();
+  const roles = store.readRolePackages();
+  const role = roles.find((item) => item.id === settings.activeRoleId) ?? roles[0] ?? DEFAULT_ROLE_PACKAGE;
+  return { settings, apiKey: store.readSecrets().apiKey, roleId: role.id, live2dPath: settings.live2dModelPath };
 }
 
 function sendAssistantPresentation(event: PresentationEvent): void {
@@ -950,6 +985,42 @@ function normalizeHistory(value: unknown): ChatMessage[] {
     .slice(-20);
 }
 
+function bindAgentTaskSender(taskId: string, sender: Electron.WebContents): void {
+  agentTaskSenders.set(taskId, sender);
+  const task = getAgentService().get(taskId);
+  if (task && !sender.isDestroyed()) sender.send('agent:event', { type: 'task', taskId, task, timestamp: Date.now() } satisfies AgentEvent);
+}
+
+async function startRoutedChat(sender: Electron.WebContents, request: StartChatRequest): Promise<string> {
+  const message = typeof request?.message === 'string' ? request.message.trim() : '';
+  if (!message) throw new Error('消息不能为空');
+  const settings = getStore().readSettings();
+  const requestedMode = request.mode === 'auto' || request.mode === 'companion' || request.mode === 'agent' ? request.mode : settings.assistantMode;
+  const context = agentContext();
+  const decision = await routeTurn({
+    mode: requestedMode,
+    message,
+    classifyAmbiguous: requestedMode === 'auto' && context.apiKey
+      ? () => classifyAmbiguousWithModel(settings, context.apiKey, message)
+      : undefined
+  });
+  if (decision.route === 'agent') {
+    const started = await getAgentService().start({ message, mode: requestedMode }, decision);
+    bindAgentTaskSender(started.taskId, sender);
+    return started.taskId;
+  }
+  const requestId = randomUUID();
+  const controller = new AbortController();
+  activeRequests.set(requestId, controller);
+  void runChat(sender, requestId, { ...request, message, mode: requestedMode }, controller)
+    .catch((error: unknown) => {
+      const errorMessage = error instanceof Error ? error.message : '对话请求失败';
+      sendChatEvent(sender, { type: 'error', requestId, message: errorMessage });
+    })
+    .finally(() => activeRequests.delete(requestId));
+  return requestId;
+}
+
 async function runChat(
   sender: Electron.WebContents,
   requestId: string,
@@ -1564,19 +1635,40 @@ function registerIpc(): void {
     petWindow?.webContents.send('baoyin:settings-preview', detail);
   });
   ipcMain.handle('chat:start', (event, request: StartChatRequest) => {
-    const requestId = randomUUID();
-    const controller = new AbortController();
-    activeRequests.set(requestId, controller);
-    void runChat(event.sender, requestId, request, controller)
-      .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : '对话请求失败';
-        sendChatEvent(event.sender, { type: 'error', requestId, message });
-      })
-      .finally(() => activeRequests.delete(requestId));
-    return requestId;
+    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (sourceWindow !== settingsWindow) throw new Error('只有设置窗口可以开始对话');
+    return startRoutedChat(event.sender, request);
   });
-  ipcMain.handle('chat:cancel', (_event, requestId: string) => {
+  ipcMain.handle('chat:cancel', async (event, requestId: string) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof requestId !== 'string') return;
     activeRequests.get(requestId)?.abort();
+    if (!activeRequests.has(requestId)) await getAgentService().cancel(requestId).catch(() => undefined);
+  });
+  ipcMain.handle('agent:start', async (event, request: AgentStartRequest) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以开始 Agent 任务');
+    const started = await getAgentService().start(sanitizeAgentStartRequest(request));
+    bindAgentTaskSender(started.taskId, event.sender);
+    return started;
+  });
+  ipcMain.handle('agent:cancel', async (event, taskId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
+    await getAgentService().cancel(taskId);
+  });
+  ipcMain.handle('agent:approve', async (event, request: AgentApproveRequest) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.approved !== 'boolean') throw new Error('Agent 审批请求无效');
+    await getAgentService().approve(request.taskId, request.requestId, request.approved);
+  });
+  ipcMain.handle('agent:respond', async (event, request: AgentRespondRequest) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.value !== 'string') throw new Error('Agent 输入请求无效');
+    await getAgentService().respond(request.taskId, request.requestId, request.value);
+  });
+  ipcMain.handle('agent:list', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以读取 Agent 任务');
+    return getAgentService().list();
+  });
+  ipcMain.handle('agent:get', (event, taskId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
+    return getAgentService().get(taskId);
   });
 }
 
@@ -1587,6 +1679,21 @@ if (singleInstanceLock) {
     settingsStore = new SettingsStore(app.getPath('userData'));
     voiceProfileStore = new VoiceProfileStore(app.getPath('userData'));
     live2dRegistry = new Live2DModelRegistry(app.getPath('userData'));
+    agentStore = new AgentStore(join(app.getPath('userData'), 'agent-tasks.json'));
+    agentService = new AgentService({
+      store: agentStore,
+      workspaceRoot: agentWorkspaceRoot(),
+      getContext: agentContext,
+      createModel: (context) => {
+        if (!context.apiKey) throw new Error('请先在设置中保存 API Key，Agent 才能执行模型步骤');
+        return createOpenAICompatibleAgentModel(context.settings, context.apiKey);
+      },
+      classifyAmbiguous: async (message, context) => {
+        if (!context.apiKey) throw new Error('没有 API Key');
+        return classifyAmbiguousWithModel(context.settings, context.apiKey, message);
+      },
+      emit: sendAgentEvent
+    });
     const settings = settingsStore.readSettings();
     cubismRuntimeSession.setCurrentModel(settings.live2dModelPath);
     void ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), settings.cosyVoiceMode)
@@ -1630,6 +1737,14 @@ app.on('before-quit', () => {
   for (const controller of activeRequests.values()) {
     controller.abort();
   }
+  if (agentService) {
+    for (const task of agentService.list()) {
+      if (['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(task.status)) {
+        void agentService.cancel(task.id).catch(() => undefined);
+      }
+    }
+  }
+  agentTaskSenders.clear();
 });
 
 function isSafePresentationEvent(value: unknown): value is PresentationEvent {

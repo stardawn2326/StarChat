@@ -301,7 +301,7 @@ function BehaviorDetails(props: SettingsDetailsV2Props): JSX.Element {
 }
 
 function ChatDetails(props: SettingsDetailsV2Props): JSX.Element {
-  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat state={props.state} /></div>;
+  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat state={props.state} onModeChange={(mode) => props.onSettingsChange({ assistantMode: mode })} /></div>;
 }
 
 export function SettingsDetailsV2(props: SettingsDetailsV2Props): JSX.Element {

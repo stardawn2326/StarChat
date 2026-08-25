@@ -20,6 +20,7 @@ import type {
   SettingsPreviewDetail,
   StartChatRequest
 } from '../../shared/ipc';
+import type { AgentEvent, AgentStartRequest, AgentStartResponse, AgentTask } from '../../shared/agent';
 import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
 
@@ -114,6 +115,15 @@ declare global {
         start(request: StartChatRequest): Promise<string>;
         cancel(requestId: string): Promise<void>;
         onEvent(callback: (event: ChatEvent) => void): () => void;
+      };
+      agent: {
+        start(request: AgentStartRequest): Promise<AgentStartResponse>;
+        cancel(taskId: string): Promise<void>;
+        approve(request: import('../../shared/ipc').AgentApproveRequest): Promise<void>;
+        respond(request: import('../../shared/ipc').AgentRespondRequest): Promise<void>;
+        list(): Promise<AgentTask[]>;
+        get(taskId: string): Promise<AgentTask | null>;
+        onEvent(callback: (event: AgentEvent) => void): () => void;
       };
     };
   }

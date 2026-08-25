@@ -5,6 +5,12 @@ body[data-window="settings"] .titlebar { position: sticky; top: 0; z-index: 20; 
 body[data-window="settings"] .titlebar button, body[data-window="settings"] .settings-home, body[data-window="settings"] .settings-details, body[data-window="settings"] input, body[data-window="settings"] textarea, body[data-window="settings"] select, body[data-window="settings"] button { -webkit-app-region: no-drag; }
 
 .companion-chat { display: grid; gap: 14px; }
+.companion-route-control { display: grid; grid-template-columns: auto minmax(150px, auto) 1fr; gap: 8px 12px; align-items: center; padding: 10px 12px; border: 1px solid rgba(124, 156, 196, .2); border-radius: 12px; background: rgba(124, 156, 196, .07); }
+.companion-route-control label { color: rgba(232, 239, 248, .78); font-size: 11px; }
+.companion-route-control select { min-width: 0; }
+.companion-route-control small { color: rgba(232, 239, 248, .55); font-size: 10px; line-height: 1.45; }
+.agent-approval, .agent-input { grid-template-columns: 1fr; align-items: stretch; }
+.agent-approval small, .agent-input span { white-space: normal; overflow-wrap: anywhere; }
 .companion-status { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
 .companion-status span { display: grid; gap: 4px; padding: 10px; border: 1px solid rgba(255,255,255,.1); border-radius: 10px; color: #aaa1ba; }
 .companion-status strong { color: #fff; font-size: 14px; }

@@ -1,8 +1,10 @@
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from './presentation-contract';
 import { normalizePetInteractionSettings } from './pet-interaction';
 import { DEFAULT_THEME_PREFERENCE, sanitizeThemePreference, type ThemePreference } from './theme';
+import type { AgentMode } from './agent';
 
 export interface AppSettings {
+  assistantMode: AgentMode;
   apiBaseUrl: string;
   model: string;
   temperature: number;
@@ -74,6 +76,7 @@ export const INTERMEDIATE_CURSOR_BODY_WEIGHT = 0.32;
 export const DEFAULT_CURSOR_BODY_WEIGHT = 0.72;
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
+  assistantMode: 'auto',
   apiBaseUrl: 'https://api.openai.com/v1',
   model: 'gpt-4o-mini',
   temperature: 0.7,
@@ -206,6 +209,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
         }
       : DEFAULT_APP_SETTINGS.petBounds;
   return {
+    assistantMode: input.assistantMode === 'companion' || input.assistantMode === 'agent' ? input.assistantMode : DEFAULT_APP_SETTINGS.assistantMode,
     apiBaseUrl:
       typeof input.apiBaseUrl === 'string' && input.apiBaseUrl.trim()
         ? input.apiBaseUrl.trim().replace(/\/+$/, '')

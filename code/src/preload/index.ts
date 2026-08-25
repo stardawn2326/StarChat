@@ -1,6 +1,8 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type {
   ChatEvent,
+  AgentApproveRequest,
+  AgentRespondRequest,
   ConnectionTestRequest,
   CubismDebugCommand,
   CubismDebugMetricRequest,
@@ -23,6 +25,7 @@ import type {
   SettingsPreviewDetail,
   StartChatRequest
 } from '../shared/ipc';
+import type { AgentEvent, AgentStartRequest, AgentTask } from '../shared/agent';
 import type { Live2DModelState } from '../shared/live2d';
 import type { PresentationEvent } from '../shared/presentation';
 import type { PetBoundsChange, WindowBounds } from '../shared/window-contract';
@@ -177,6 +180,19 @@ const bridge = {
       const listener = (_event: IpcRendererEvent, payload: ChatEvent): void => callback(payload);
       ipcRenderer.on('chat:event', listener);
       return () => ipcRenderer.removeListener('chat:event', listener);
+    }
+  },
+  agent: {
+    start: (request: AgentStartRequest): Promise<import('../shared/agent').AgentStartResponse> => ipcRenderer.invoke('agent:start', request),
+    cancel: (taskId: string): Promise<void> => ipcRenderer.invoke('agent:cancel', taskId),
+    approve: (request: AgentApproveRequest): Promise<void> => ipcRenderer.invoke('agent:approve', request),
+    respond: (request: AgentRespondRequest): Promise<void> => ipcRenderer.invoke('agent:respond', request),
+    list: (): Promise<AgentTask[]> => ipcRenderer.invoke('agent:list'),
+    get: (taskId: string): Promise<AgentTask | null> => ipcRenderer.invoke('agent:get', taskId),
+    onEvent: (callback: (event: AgentEvent) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, payload: AgentEvent): void => callback(payload);
+      ipcRenderer.on('agent:event', listener);
+      return () => ipcRenderer.removeListener('agent:event', listener);
     }
   }
 };

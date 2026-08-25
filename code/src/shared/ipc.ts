@@ -6,6 +6,7 @@ import type { CubismParameterPatch, CubismRuntimeMetrics } from './cubism';
 import type { PresentationSettings } from './presentation-contract';
 import type { CompanionSummary } from './companion';
 import type { VoiceProfile } from './voice-profile';
+import type { AgentEvent, AgentMode, AgentStartResponse, AgentTask } from './agent';
 
 export interface PublicAppState {
   settings: AppSettings;
@@ -72,7 +73,22 @@ export interface ChatMessage {
 export interface StartChatRequest {
   message: string;
   history: ChatMessage[];
+  mode?: AgentMode;
 }
+
+export interface AgentApproveRequest {
+  taskId: string;
+  requestId: string;
+  approved: boolean;
+}
+
+export interface AgentRespondRequest {
+  taskId: string;
+  requestId: string;
+  value: string;
+}
+
+export type { AgentEvent, AgentMode, AgentStartResponse, AgentTask };
 
 export interface Live2DInspectRequest {
   path: string;
