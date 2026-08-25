@@ -7,6 +7,7 @@ import { DEFAULT_MODEL_VIEWPORT, type ModelViewportSettings } from '../../shared
 import { CharacterStateResolver } from '../../shared/character-state';
 import { canvasViewport, composeAbsoluteModelTransform } from '../../shared/window-contract';
 import { CursorFollowGate } from './cursor-follow-gate';
+import { DialogueFocusGate } from './dialogue-focus';
 import { IdleGazeController } from './idle-gaze';
 import { dispatchCubismRuntimeCommand } from './cubism-runtime-dispatch';
 
@@ -19,6 +20,7 @@ interface RuntimeModule {
 
 interface Live2DCanvasProps {
   event: PresentationEvent;
+  dialogueEvent?: Extract<PresentationEvent, { type: 'dialogue' }>;
   live2d: Live2DModelState;
   modelViewport?: ModelViewportSettings;
   cursor?: CursorUpdate | null;
@@ -51,7 +53,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, runtimeCommand = null, onRuntimeResult, onFitFrame, onModelHitChange, onRuntimeReady, onRuntimeFailure }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, runtimeCommand = null, onRuntimeResult, onFitFrame, onModelHitChange, onRuntimeReady, onRuntimeFailure }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -64,10 +66,12 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
   const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number; screenX: number; screenY: number } | null>(null);
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
+  const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
 
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
+    if (dialogueFocusGateRef.current.shouldIgnoreCursor()) return;
     const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);
     if (decision.release) {
       idleGazeRef.current.reset();
@@ -261,6 +265,26 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   }, [cursor, modelViewport.modelOffsetX, modelViewport.modelOffsetY, modelViewport.modelScale, runtimeRef]);
 
   useEffect(() => {
+    if (!dialogueEvent) return;
+    const decision = dialogueFocusGateRef.current.transition(dialogueEvent.phase);
+    const runtime = runtimeRef.current;
+    if (!runtime) return;
+    if (dialogueEvent.phase !== 'end') {
+      runtime.controller.releaseFocus();
+      if (dialogueEvent.phase === 'start' || dialogueEvent.phase === 'listening') {
+        void runtime.controller.playSemanticExpression('caring_smile');
+        void runtime.controller.playAction('lean_forward', true);
+      }
+      return;
+    }
+    if (!decision.resume) return;
+    cursorFollowGateRef.current.reset();
+    idleGazeRef.current.reset();
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (rect && cursor) applyCursorFollow(runtime, cursor, rect);
+  }, [cursor, dialogueEvent, runtimeReadyEpoch, runtimeRef]);
+
+  useEffect(() => {
     const runtime = runtimeRef.current;
     if (runtime && tapPoint) {
       runtime.controller.tap(tapPoint.x, tapPoint.y);
@@ -270,13 +294,14 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
   useEffect(() => {
     const runtime = runtimeRef.current;
     if (!runtime || !ready) return;
-    if (event.type === 'speech') return;
+    if (event.type === 'speech' || event.type === 'dialogue') return;
     if (event.type === 'control' && event.name === 'neutral') {
       characterStateRef.apply(event);
       lastActionRef.current = null;
       lastExpressionRef.current = 'neutral';
       runtime.controller.neutral();
       runtime.controller.releaseFocus();
+      if (dialogueFocusGateRef.current.transition('end').resume) cursorFollowGateRef.current.reset();
       return;
     }
     characterStateRef.apply(event);
@@ -357,6 +382,8 @@ export function Live2DCanvas({ event, live2d, modelViewport = DEFAULT_MODEL_VIEW
 
   const eventLabel = event.type === 'speech'
     ? event.speaking ? '语音：说话中' : '语音：停止'
+    : event.type === 'dialogue'
+    ? `对话：${event.phase}`
     : event.type === 'expression'
     ? `表情：${event.name}`
     : event.type === 'action'

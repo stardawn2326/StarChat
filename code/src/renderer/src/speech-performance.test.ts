@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
+  PhraseCueScheduler,
   StreamingSentenceBuffer,
   splitRealtimePresentation,
   mouthFormAtProgress
@@ -61,6 +62,17 @@ describe('streaming speech performance', () => {
     expect(gate.flush(2500)).toBeNull();
     expect(gate.flush(2600)).toBe('angry');
     expect(gate.flush(4000)).toBeNull();
+  });
+
+  it('schedules one phrase cue with configurable lead, cooldown, and cancellation', () => {
+    const scheduler = new PhraseCueScheduler({ leadMs: 420, cooldownMs: 650 });
+    const first = scheduler.enqueue({ expression: 'caring_smile', action: 'nod' }, 1000);
+    expect(first).toMatchObject({ emitAt: 1420, expression: 'caring_smile', action: 'nod' });
+    expect(scheduler.enqueue({ expression: 'surprised', action: 'shake_head' }, 1200)).toBeNull();
+    expect(scheduler.isCurrent(first!.id)).toBe(true);
+    scheduler.cancel(first!.id);
+    expect(scheduler.isCurrent(first!.id)).toBe(false);
+    expect(scheduler.enqueue({ expression: 'surprised', action: 'shake_head' }, 1700)).toMatchObject({ emitAt: 2120 });
   });
 
   it('separates completed-sentence emotion from playback actions for immediate expression updates', () => {

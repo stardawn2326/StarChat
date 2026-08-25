@@ -1633,6 +1633,11 @@ function isSafePresentationEvent(value: unknown): value is PresentationEvent {
       && (mouthForm === undefined || (Number.isFinite(mouthForm) && mouthForm >= -1 && mouthForm <= 1))
       && (timestamp === undefined || Number.isFinite(timestamp));
   }
+  if (event.type === 'dialogue') {
+    return event.source === 'system'
+      && ['start', 'listening', 'replying', 'end'].includes(event.phase as string)
+      && (event.timestamp === undefined || Number.isFinite(event.timestamp));
+  }
   if (event.source !== 'system' && event.source !== 'assistant') {
     return false;
   }

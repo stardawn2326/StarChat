@@ -6,6 +6,7 @@ import { presentationForAssistantText } from '../../shared/companion';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
+  PhraseCueScheduler,
   StreamingSentenceBuffer,
   splitRealtimePresentation,
   mouthFormAtProgress,
@@ -27,6 +28,15 @@ function emitSpeech(speaking: boolean, mouthOpen = 0, mouthForm = 0): void {
   });
 }
 
+function emitDialogue(phase: 'start' | 'listening' | 'replying' | 'end'): void {
+  window.baoyin.presentation.emit({
+    type: 'dialogue',
+    phase,
+    source: 'system',
+    timestamp: Date.now()
+  });
+}
+
 function emitNeutralPresentation(): void {
   window.baoyin.presentation.emit({
     type: 'control',
@@ -39,6 +49,7 @@ function emitNeutralPresentation(): void {
 function finishDialoguePresentation(): void {
   emitSpeech(false);
   emitNeutralPresentation();
+  emitDialogue('end');
 }
 
 async function playAnalyzedSpeech(
@@ -62,6 +73,7 @@ async function playAnalyzedSpeech(
 
   await new Promise<void>((resolve, reject) => {
     let animationFrame = 0;
+    let timeout = 0;
     let finished = false;
     let lastSampleAt = performance.now();
     let lastEmitAt = Number.NEGATIVE_INFINITY;
@@ -70,6 +82,7 @@ async function playAnalyzedSpeech(
       if (finished) return;
       finished = true;
       window.cancelAnimationFrame(animationFrame);
+      window.clearTimeout(timeout);
       audio.pause();
       emitSpeech(false);
       registerCancel(null);
@@ -96,6 +109,7 @@ async function playAnalyzedSpeech(
 
     audio.onended = () => finish();
     audio.onerror = () => finish(new Error('语音音频播放失败'));
+    timeout = window.setTimeout(() => finish(new Error('语音音频播放超时')), 45000);
     registerCancel(() => finish());
     void context.resume()
       .then(() => audio.play())
@@ -146,6 +160,9 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
   // Motions are emitted at the audio boundary. De-duplicate identical motion
   // names, but never hold a later sentence's motion behind an emotion hold.
   const actionGateRef = useRef(new EmotionCueGate(0));
+  const phraseCueSchedulerRef = useRef(new PhraseCueScheduler({ leadMs: 420, cooldownMs: 650 }));
+  const cancelCueLeadRef = useRef<CancelPlayback>(null);
+  const replyStartedRef = useRef(false);
   settingsRef.current = state.settings;
   mappingsRef.current = state.role.presentation.semanticMappings;
 
@@ -182,10 +199,14 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     clearEmotionFlushTimer();
     cancelPlaybackRef.current?.();
     cancelPlaybackRef.current = null;
+    cancelCueLeadRef.current?.();
+    cancelCueLeadRef.current = null;
     synthesisTailRef.current = Promise.resolve();
     playbackTailRef.current = Promise.resolve();
     expressionGateRef.current.reset();
     actionGateRef.current.reset();
+    phraseCueSchedulerRef.current.reset();
+    replyStartedRef.current = false;
     finishDialoguePresentation();
   };
 
@@ -206,10 +227,37 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     const playback = playbackTailRef.current.then(async () => {
       const source = await sourcePromise;
       if (!source || generation !== speechGenerationRef.current) return;
-      emitPresentationEvents(presentation.playback, actionGateRef.current);
-      await playAnalyzedSpeech(segment, source, settingsRef.current, (cancel) => {
+      const registerCancel = (cancel: CancelPlayback): void => {
         if (generation === speechGenerationRef.current) cancelPlaybackRef.current = cancel;
-      });
+      };
+      const actionEvent = presentation.playback.find((event) => event.type === 'action');
+      const cue = phraseCueSchedulerRef.current.enqueue({
+        action: actionEvent?.type === 'action' ? actionEvent.name : null
+      }, Date.now());
+      if (cue) {
+        const leadMs = Math.max(0, cue.emitAt - Date.now());
+        const leadCompleted = await new Promise<boolean>((resolve) => {
+          let settled = false;
+          const finish = (completed: boolean): void => {
+            if (settled) return;
+            settled = true;
+            cancelCueLeadRef.current = null;
+            registerCancel(null);
+            resolve(completed);
+          };
+          const timer = window.setTimeout(() => finish(true), leadMs);
+          const cancel = (): void => {
+            window.clearTimeout(timer);
+            finish(false);
+          };
+          cancelCueLeadRef.current = cancel;
+          registerCancel(cancel);
+        });
+        if (!leadCompleted || generation !== speechGenerationRef.current || !phraseCueSchedulerRef.current.isCurrent(cue.id)) return;
+        emitPresentationEvents(presentation.playback, actionGateRef.current);
+        phraseCueSchedulerRef.current.cancel(cue.id);
+      }
+      await playAnalyzedSpeech(segment, source, settingsRef.current, registerCancel);
     });
     playbackTailRef.current = playback.catch((reason: unknown) => {
       if (generation !== speechGenerationRef.current) return;
@@ -226,6 +274,10 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
       if (event.requestId !== activeId.current) return;
       if (event.type === 'delta') {
         assistantText.current += event.delta;
+        if (!replyStartedRef.current) {
+          replyStartedRef.current = true;
+          emitDialogue('replying');
+        }
         for (const sentence of sentenceBufferRef.current.push(event.delta)) enqueueSpeech(sentence);
         setMessages((current) => {
           const next = [...current];
@@ -267,6 +319,8 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
     const message = draft.trim();
     if (!message || requestId) return;
     cancelSpeech();
+    emitDialogue('start');
+    emitDialogue('listening');
     setError(null);
     setDraft('');
     assistantText.current = '';
@@ -277,6 +331,7 @@ export function CompanionChat({ state }: CompanionChatProps): JSX.Element {
       activeId.current = id;
       setRequestId(id);
     } catch (reason) {
+      cancelSpeech();
       setError(reason instanceof Error ? reason.message : '无法开始对话');
     }
   };

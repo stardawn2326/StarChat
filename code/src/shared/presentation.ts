@@ -11,6 +11,7 @@ export type PresentationLayer =
   | 'breathing_blink';
 
 export type PresentationControlName = 'stop_action' | 'stop_expression' | 'neutral';
+export type DialoguePhase = 'start' | 'listening' | 'replying' | 'end';
 
 export type PresentationEvent =
   | { type: 'expression'; name: ExpressionName; source: 'system' | 'assistant'; layer?: PresentationLayer }
@@ -23,6 +24,7 @@ export type PresentationEvent =
       mouthForm?: number;
       timestamp?: number;
     }
+  | { type: 'dialogue'; phase: DialoguePhase; source: 'system'; timestamp?: number }
   | { type: 'control'; name: PresentationControlName; source: 'system'; layer: 'manual' | 'safety' };
 
 export class PresentationBus {

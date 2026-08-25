@@ -133,7 +133,7 @@ const FALLBACK_PRESENTATION: Record<string, RoleSemanticMapping> = {
   sleepy: { expression: 'sleepy' },
   angry: { expression: 'annoyed' },
   sad: { expression: 'worried' },
-  confused: { expression: 'confused_blank', action: 'thinking' }
+  confused: { expression: 'confused_blank', action: 'tilt_confused' }
 };
 
 export function presentationForAssistantText(text: string, mappings: Readonly<Record<string, RoleSemanticMapping>>): PresentationEvent[] {

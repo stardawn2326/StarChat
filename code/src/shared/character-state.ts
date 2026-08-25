@@ -31,7 +31,7 @@ const actionPriority: Record<PresentationLayer, number> = {
 };
 
 function defaultLayer(event: PresentationEvent): PresentationLayer {
-  if (event.type === 'speech') return 'reply_state';
+  if (event.type === 'speech' || event.type === 'dialogue') return 'reply_state';
   if (event.layer) return event.layer;
   if (event.type === 'action') return 'special_action';
   return event.source === 'assistant' ? 'dialogue_emotion' : 'reply_state';
@@ -46,7 +46,7 @@ export class CharacterStateResolver {
   }
 
   apply(event: PresentationEvent): void {
-    if (event.type === 'speech') return;
+    if (event.type === 'speech' || event.type === 'dialogue') return;
     const layer = defaultLayer(event);
     if (event.type === 'control') {
       if (event.name === 'neutral') {

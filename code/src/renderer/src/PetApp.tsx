@@ -19,6 +19,7 @@ import { createPetDragScheduler, latestPointerScreenPoint, type PetDragScheduler
 import { createPetResizeScheduler, type PetResizeScheduler } from './resize-scheduler';
 
 const neutralEvent: PresentationEvent = { type: 'expression', name: 'neutral', source: 'system' };
+const neutralDialogueEvent: Extract<PresentationEvent, { type: 'dialogue' }> = { type: 'dialogue', phase: 'end', source: 'system' };
 
 interface ActivePointer {
   operation: PetPointerOperation;
@@ -33,6 +34,7 @@ interface ActivePointer {
 function PetApp(): JSX.Element {
   const [appState, setAppState] = useState<PublicAppState | null>(null);
   const [presentation, setPresentation] = useState<PresentationEvent>(neutralEvent);
+  const [dialogueEvent, setDialogueEvent] = useState<Extract<PresentationEvent, { type: 'dialogue' }>>(neutralDialogueEvent);
   const [cursor, setCursor] = useState<CursorUpdate | null>(null);
   const [tapPoint, setTapPoint] = useState<{ x: number; y: number } | null>(null);
   const [debugCommand, setDebugCommand] = useState<CubismDebugCommand | null>(null);
@@ -214,7 +216,10 @@ function PetApp(): JSX.Element {
     };
     void window.baoyin.state.get().then(applyPetState);
     const unsubscribeState = window.baoyin.state.onChange(applyPetState);
-    const unsubscribePresentation = window.baoyin.presentation.onEvent(setPresentation);
+    const unsubscribePresentation = window.baoyin.presentation.onEvent((event) => {
+      setPresentation(event);
+      if (event.type === 'dialogue') setDialogueEvent(event);
+    });
     const unsubscribeCursor = window.baoyin.cursor.onUpdate((update) => {
       cursorRef.current = update;
       inputRecoveryPendingRef.current = false;
@@ -561,6 +566,7 @@ function PetApp(): JSX.Element {
       {modelReady ? (
         <Live2DCanvas
           event={presentation}
+          dialogueEvent={dialogueEvent}
           live2d={appState.live2d}
           modelViewport={{ ...modelViewport, modelOpacity: displayedModelOpacity }}
           cursor={cursor}

@@ -42,6 +42,14 @@ describe('runtime asset registration', () => {
     expect(settings.expressions).toEqual([{ Name: 'face', File: 'face.exp3.json' }]);
   });
 
+  it('does not crash when an external model has no motion manager at all', () => {
+    const settings: { expressions?: Array<Record<string, unknown>>; motions?: Record<string, Array<Record<string, unknown>>> } = {};
+    expect(registerRuntimeAssets({ settings }, {
+      expressions: [{ fileName: 'face.exp3.json', parseStatus: 'ok' }],
+      motions: [{ fileName: 'nod.motion3.json', parseStatus: 'ok' }]
+    })).toEqual({ expressionsAdded: 0, motionsAdded: 0, needsExpressionManager: false });
+  });
+
   it('registers scanned assets before binding runtime controls and creates a missing expression manager', () => {
     const registration = runtimeSource.indexOf('registerRuntimeAssets(candidateModel.internalModel');
     const bind = runtimeSource.indexOf('candidateControl.bind(candidateModel');

@@ -7,6 +7,8 @@ import { ExpressionMotionAdapter } from './expression-motion-adapter.ts';
 import { CubismRuntimeControl } from './cubism-runtime-control.ts';
 import { installPhysicsGate } from './cubism-physics-gate.ts';
 import { registerRuntimeAssets } from './runtime-asset-registration.ts';
+import { buildLive2DCapabilityManifest, clampRuntimeParameter } from './live2d-capability-manifest.ts';
+import { ProceduralGestureTimeline, sampleProceduralGesture } from './procedural-gesture.ts';
 import { localPointForScreenAnchor, screenPointForLocalPoint } from './screen-space-anchor.ts';
 
 const MIN_USER_SCALE = 0.55;
@@ -81,6 +83,10 @@ let motionFinishHandler = null;
 let persistentWatermarkEffect = null;
 let gazeEnabled = true;
 let gazeConfig = null;
+let runtimeManifest = null;
+let fallbackGestureHandler = null;
+let fallbackGestureUpdater = null;
+const fallbackGestureTimeline = new ProceduralGestureTimeline();
 
 function finite(value, fallback) {
   return Number.isFinite(value) ? value : fallback;
@@ -165,6 +171,74 @@ function resetMetrics() {
     transform: null,
     deltaTimeSeconds: null
   });
+}
+
+function runtimeParameterDescriptors(coreModel) {
+  const count = Number(coreModel?.getParameterCount?.());
+  if (!Number.isFinite(count) || count <= 0) return [];
+  const ids = typeof coreModel.getParameterIds === 'function' ? coreModel.getParameterIds() : null;
+  const descriptors = [];
+  for (let index = 0; index < count; index += 1) {
+    const id = coreModel.getParameterId?.(index) ?? ids?.[index];
+    if (typeof id !== 'string' || !id) continue;
+    descriptors.push({
+      id,
+      min: finite(coreModel.getParameterMinimumValue?.(index), -1),
+      max: finite(coreModel.getParameterMaximumValue?.(index), 1),
+      default: finite(coreModel.getParameterDefaultValue?.(index), 0)
+    });
+  }
+  return descriptors;
+}
+
+function normalizedRuntimeValue(semantic, value, capability) {
+  const span = Math.max(0, capability.max - capability.min);
+  const normalized = finite(Number(value), 0);
+  const direct = semantic === 'mouth_open' || semantic === 'eye_open_l' || semantic === 'eye_open_r';
+  const raw = direct
+    ? capability.min + normalized * span
+    : capability.default + normalized * span * 0.5;
+  return clampRuntimeParameter(raw, capability);
+}
+
+function applyFallbackGesture(now = performance.now()) {
+  if (!model || !runtimeManifest || !fallbackGestureHandler) return;
+  const sample = fallbackGestureTimeline.sample(fallbackGestureHandler.token, now);
+  if (!sample) return;
+  const coreModel = model.internalModel?.coreModel;
+  for (const [semantic, value] of Object.entries(sample.values)) {
+    const capability = runtimeManifest.parameters[semantic];
+    if (!capability?.available || !capability.targetId) continue;
+    coreModel?.setParameterValueById?.(capability.targetId, normalizedRuntimeValue(semantic, value, capability));
+  }
+  if (sample.done) {
+    fallbackGestureTimeline.cancel();
+    fallbackGestureHandler = null;
+  }
+}
+
+function startFallbackGesture(name, durationMs = 720) {
+  if (!runtimeManifest) return false;
+  const candidates = [name, 'lean_forward', 'nod', 'tilt_confused', 'surprised', 'caring_smile'];
+  const selected = candidates.find((candidate) => Object.keys(sampleProceduralGesture(candidate, durationMs / 2, durationMs))
+    .some((semantic) => runtimeManifest.parameters[semantic]?.available));
+  if (!selected) {
+    stopFallbackGesture();
+    state.lastError = `语义动作 ${name} 缺少可用参数；已记录 capability manifest 缺失项并保持安全姿态。`;
+    return false;
+  }
+  const token = fallbackGestureTimeline.start(selected, performance.now(), durationMs);
+  fallbackGestureHandler = { token, name: selected };
+  const available = selected === name;
+  if (!available) {
+    state.lastError = `语义动作 ${name} 缺少绑定，已降级到 ${selected} 姿态。`;
+  }
+  return available;
+}
+
+function stopFallbackGesture() {
+  fallbackGestureTimeline.cancel();
+  fallbackGestureHandler = null;
 }
 
 function readViewport() {
@@ -361,6 +435,7 @@ function routeFor(name, category = 'expression') {
 
 async function applyExpressionRoute(route) {
   if (!runtimeControl || !route?.sourceFile) return false;
+  stopFallbackGesture();
   const capability = runtimeControl.findExpressionByFile(route.sourceFile);
   const result = await runtimeControl.playExpression(capability?.id ?? null);
   syncRuntimeControlState();
@@ -369,6 +444,7 @@ async function applyExpressionRoute(route) {
 }
 
 function stopPackageMotion() {
+  stopFallbackGesture();
   const result = runtimeControl?.stopMotion?.();
   if (result && !result.ok) state.lastError = result.message;
   semanticAdapter?.clearAction();
@@ -385,14 +461,22 @@ async function playPackageMotion(route, requestedName, interrupt) {
       : null;
   }
   const priority = interrupt ? 'force' : requestedName === 'idle' ? 'idle' : 'normal';
-  const result = capability
-    ? await runtimeControl.playMotion(capability.group, capability.index, priority)
-    : {
-        ok: false,
-        message: '当前模型没有可用的动作映射：' + requestedName
-      };
+  let result = null;
+  if (capability) {
+    stopFallbackGesture();
+    result = await runtimeControl.playMotion(capability.group, capability.index, priority);
+  }
+  if (!result) {
+    const available = startFallbackGesture(requestedName);
+    syncRuntimeControlState();
+    return available || Boolean(fallbackGestureHandler);
+  }
   syncRuntimeControlState();
-  if (!result.ok) state.lastError = result.message;
+  if (!result.ok) {
+    const fallback = startFallbackGesture(requestedName);
+    if (fallback || fallbackGestureHandler) return true;
+    state.lastError = result.message;
+  }
   return result.ok;
 }
 
@@ -408,6 +492,8 @@ function installModelEvents() {
   const internalModel = model?.internalModel;
   const coreModel = internalModel?.coreModel;
   mouthFormSupported = Number(coreModel?.getParameterIndex?.('ParamMouthForm')) >= 0;
+  fallbackGestureUpdater = () => applyFallbackGesture(performance.now());
+  internalModel?.on?.('beforeModelUpdate', fallbackGestureUpdater);
   lipSyncHandler = () => {
     coreModel?.setParameterValueById?.('ParamMouthOpenY', lipSyncValue);
     if (mouthFormSupported) {
@@ -538,16 +624,23 @@ export const controller = {
         app.stage.removeChild(previousModel);
         if (lipSyncHandler) previousModel.internalModel?.off?.('beforeModelUpdate', lipSyncHandler);
         if (persistentWatermarkHandler) previousModel.internalModel?.off?.('beforeModelUpdate', persistentWatermarkHandler);
+        if (fallbackGestureUpdater) previousModel.internalModel?.off?.('beforeModelUpdate', fallbackGestureUpdater);
         if (motionFinishHandler) previousModel.internalModel?.motionManager?.off?.('motionFinish', motionFinishHandler);
         previousModel.destroy?.({ children: true });
       }
       runtimeControl?.dispose?.();
+      stopFallbackGesture();
       model = candidateModel;
       candidateModel = null;
       runtimeControl = candidateControl;
       candidateControl = null;
       options = nextOptions;
       semanticAdapter = candidateAdapter;
+      runtimeManifest = buildLive2DCapabilityManifest(
+        nextOptions.modelIdentity ?? null,
+        runtimeParameterDescriptors(model.internalModel?.coreModel),
+        nextOptions.adapter ?? null
+      );
       currentTransform = { userScale: 1, userX: 0, userY: 0 };
       modelBase = candidateBase;
       model.visible = true;
@@ -588,9 +681,12 @@ export const controller = {
     }
     if (lipSyncHandler) model?.internalModel?.off?.('beforeModelUpdate', lipSyncHandler);
     if (persistentWatermarkHandler) model?.internalModel?.off?.('beforeModelUpdate', persistentWatermarkHandler);
+    if (fallbackGestureUpdater) model?.internalModel?.off?.('beforeModelUpdate', fallbackGestureUpdater);
     if (motionFinishHandler) model?.internalModel?.motionManager?.off?.('motionFinish', motionFinishHandler);
     lipSyncHandler = null;
     persistentWatermarkHandler = null;
+    fallbackGestureUpdater = null;
+    stopFallbackGesture();
     motionFinishHandler = null;
     persistentWatermarkEffect = null;
     lipSyncValue = 0;
@@ -603,6 +699,7 @@ export const controller = {
     canvas = null;
     options = null;
     semanticAdapter = null;
+    runtimeManifest = null;
     runtimeControl?.dispose?.();
     runtimeControl = null;
     modelBase = null;
@@ -647,9 +744,12 @@ export const controller = {
       if (name !== 'watermark_on' && name !== 'watermark_off') {
         this.stopExpression();
       }
-      return false;
+      return name === 'watermark_on' || name === 'watermark_off'
+        ? false
+        : Boolean(startFallbackGesture(name) || fallbackGestureHandler);
     }
-    return applyExpressionRoute(route);
+    const applied = await applyExpressionRoute(route);
+    return applied || Boolean(startFallbackGesture(name) || fallbackGestureHandler);
   },
 
   async playMotion(group, index, priority = 'normal') {
@@ -662,6 +762,7 @@ export const controller = {
   },
 
   stopExpression() {
+    stopFallbackGesture();
     const result = runtimeControl?.stopExpression?.()
       ?? { ok: false, phase: 'stop_expression', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
     semanticAdapter?.clearExpression();
@@ -684,18 +785,20 @@ export const controller = {
       ?? { ok: false, phase: 'reset', code: 'not_ready', message: 'Cubism 模型尚未初始化。' };
     semanticAdapter?.clearExpression();
     semanticAdapter?.clearAction();
+    stopFallbackGesture();
     syncRuntimeControlState();
     if (!result.ok) state.lastError = result.message;
     return result;
   },
 
   getCapabilities() {
-    return runtimeControl?.getCapabilities?.() ?? {
+    const capabilities = runtimeControl?.getCapabilities?.() ?? {
       modelIdentity: null,
       expressions: [],
       motions: [],
       idleGroup: null
     };
+    return runtimeManifest ? { ...capabilities, manifest: runtimeManifest } : capabilities;
   },
 
   getRuntimeStatus() {

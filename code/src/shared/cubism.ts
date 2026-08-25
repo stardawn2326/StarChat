@@ -1,5 +1,5 @@
 import type { ActionName, ExpressionName } from './role-package';
-import type { Live2DAdapterConfig, Live2DModelState } from './live2d';
+import type { Live2DAdapterConfig, Live2DCapabilityManifest, Live2DModelState } from './live2d';
 
 export type CubismExpressionName = ExpressionName | 'watermark_on' | 'watermark_off';
 
@@ -101,6 +101,7 @@ export interface CubismRuntimeCapabilities {
   expressions: CubismExpressionCapability[];
   motions: CubismMotionCapability[];
   idleGroup: string | null;
+  manifest?: Live2DCapabilityManifest;
 }
 
 export interface CubismRuntimeActiveMotion {

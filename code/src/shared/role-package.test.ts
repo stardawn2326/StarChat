@@ -9,7 +9,7 @@ describe('role package protocol', () => {
     expect(DEFAULT_ROLE_PACKAGE.presentation.expressions).toContain('caring_smile');
     expect(DEFAULT_ROLE_PACKAGE.presentation.actions).toContain('shake_head');
     expect(DEFAULT_ROLE_PACKAGE.presentation.expressions).toHaveLength(12);
-    expect(DEFAULT_ROLE_PACKAGE.presentation.actions).toHaveLength(8);
+    expect(DEFAULT_ROLE_PACKAGE.presentation.actions).toHaveLength(11);
     expect(DEFAULT_ROLE_PACKAGE.presentation.expressions).toContain('bright_smile');
     expect(DEFAULT_ROLE_PACKAGE.presentation.actions).toContain('thinking');
     expect(DEFAULT_ROLE_PACKAGE.visual.modelAsset).toBeNull();

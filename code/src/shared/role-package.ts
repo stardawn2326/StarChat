@@ -19,7 +19,10 @@ export const SEMANTIC_ACTIONS = [
   'look_away',
   'lean_forward',
   'nod',
+  'nod_twice',
   'shake_head',
+  'tilt_confused',
+  'emphasis',
   'thinking',
   'stretch'
 ] as const;

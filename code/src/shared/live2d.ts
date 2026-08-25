@@ -108,8 +108,26 @@ export interface Live2DParameterBinding {
   semantic: Live2DParameterSemantic;
   targetId: string;
   available: boolean;
+  aliases: string[];
   recommendedRange: { min: number; max: number; default: number };
   source: 'model-cdi3' | 'missing';
+}
+
+export interface Live2DParameterCapability {
+  semantic: Live2DParameterSemantic;
+  targetId: string;
+  aliases: string[];
+  available: boolean;
+  min: number;
+  max: number;
+  default: number;
+  source: 'runtime' | 'adapter' | 'missing';
+}
+
+export interface Live2DCapabilityManifest {
+  modelIdentity: string | null;
+  parameters: Record<Live2DParameterSemantic, Live2DParameterCapability>;
+  missing: Live2DParameterSemantic[];
 }
 
 export interface Live2DParameterEffect {
@@ -238,19 +256,42 @@ export type Live2DParameterState = Record<string, number>;
 export function createParameterBindings(
   availableParameters: readonly Live2DParameterInfo[]
 ): Record<Live2DParameterSemantic, Live2DParameterBinding> {
-  const availableIds = new Set(availableParameters.map((parameter) => parameter.id));
+  const normalize = (value: string): string => value.toLocaleLowerCase().replace(/[\s_\-:./\\]/gu, '');
+  const aliases: Record<Live2DParameterSemantic, string[]> = {
+    head_x: ['AngleX', 'HeadX', 'HeadAngleX', '头部X', '角度X', '头部角度X'],
+    head_y: ['AngleY', 'HeadY', 'HeadAngleY', '头部Y', '角度Y', '头部角度Y'],
+    head_z: ['AngleZ', 'HeadZ', 'HeadAngleZ', '头部Z', '角度Z', '头部角度Z'],
+    body_x: ['BodyAngleX', 'BodyX', '身体X', '身体角度X'],
+    body_y: ['BodyAngleY', 'BodyY', '身体Y', '身体角度Y'],
+    body_z: ['BodyAngleZ', 'BodyZ', '身体Z', '身体角度Z'],
+    eye_open_l: ['EyeLOpen', 'EyeOpenL', 'LeftEyeOpen', '左眼', '左眼开合'],
+    eye_open_r: ['EyeROpen', 'EyeOpenR', 'RightEyeOpen', '右眼', '右眼开合'],
+    gaze_x: ['EyeBallX', 'GazeX', '眼球X', '视线X'],
+    gaze_y: ['EyeBallY', 'GazeY', '眼球Y', '视线Y'],
+    mouth_open: ['MouthOpenY', 'MouthOpen', '嘴巴开合', '嘴张开'],
+    mouth_form: ['MouthForm', 'MouthShape', '嘴形', '嘴型'],
+    breath: ['Breath', '呼吸'],
+    hair_front: ['HairFront', '前发'],
+    hair_side: ['HairSide', '侧发'],
+    hair_back: ['HairBack', '后发']
+  };
   return Object.fromEntries(
     LIVE2D_PARAMETER_SEMANTICS.map((semantic) => [
-      semantic,
-      {
-        semantic,
-        targetId: REQUIRED_LIVE2D_PARAMETER_BINDINGS[semantic],
-        available: availableIds.has(REQUIRED_LIVE2D_PARAMETER_BINDINGS[semantic]),
-        recommendedRange: LIVE2D_RECOMMENDED_RANGES[semantic],
-        source: availableIds.has(REQUIRED_LIVE2D_PARAMETER_BINDINGS[semantic])
+      semantic, (() => {
+        const standardId = REQUIRED_LIVE2D_PARAMETER_BINDINGS[semantic];
+        const candidates = [standardId, ...aliases[semantic]].map(normalize);
+        const match = availableParameters.find((parameter) => candidates.includes(normalize(parameter.id)) || candidates.includes(normalize(parameter.name)));
+        return {
+          semantic,
+          targetId: match?.id ?? standardId,
+          aliases: [...new Set([standardId, ...aliases[semantic], match?.id ?? '', match?.name ?? ''].filter(Boolean))],
+          available: Boolean(match),
+          recommendedRange: LIVE2D_RECOMMENDED_RANGES[semantic],
+          source: match
           ? 'model-cdi3'
           : 'missing'
-      }
+        };
+      })()
     ])
   ) as Record<Live2DParameterSemantic, Live2DParameterBinding>;
 }

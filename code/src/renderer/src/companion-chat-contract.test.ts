@@ -14,6 +14,10 @@ describe('conversation presentation contracts', () => {
     expect(send).toContain('cancelSpeech()');
     expect(chatSource).toContain("type: 'control'");
     expect(chatSource).toContain("name: 'neutral'");
+    expect(chatSource).toContain("type: 'dialogue'");
+    expect(chatSource).toContain("phase: 'start'");
+    expect(canvasSource).toContain('DialogueFocusGate');
+    expect(canvasSource).toContain('dialogueFocusGateRef.current.shouldIgnoreCursor()');
     expect(chatSource).toContain("source: 'system'");
     expect(canvasSource).toContain("event.type === 'control'");
     expect(canvasSource).toContain('runtime.controller.neutral()');
@@ -26,6 +30,7 @@ describe('conversation presentation contracts', () => {
     expect(chatSource).toContain("type: 'control'");
     expect(chatSource).toContain("name: 'neutral'");
     expect(chatSource).toContain('playbackTailRef.current = playback.catch');
+    expect(chatSource).toContain('语音音频播放超时');
   });
 
   it('keeps completed-sentence expression emission independent from TTS synthesis', () => {
@@ -34,5 +39,6 @@ describe('conversation presentation contracts', () => {
     expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeLessThan(enqueue.indexOf('window.baoyin.tts.synthesize'));
     expect(enqueue.indexOf('emitPresentationEvents(presentation.playback')).toBeLessThan(enqueue.indexOf('await playAnalyzedSpeech'));
     expect(chatSource).toContain('const actionGateRef = useRef(new EmotionCueGate(0));');
+    expect(chatSource).toContain('leadMs: 420');
   });
 });

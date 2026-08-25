@@ -144,6 +144,57 @@ export class EmotionCueGate {
   }
 }
 
+export interface PhraseCue {
+  expression?: string | null;
+  action?: string | null;
+}
+
+export interface ScheduledPhraseCue {
+  id: number;
+  emitAt: number;
+  expression: string | null;
+  action: string | null;
+}
+
+export class PhraseCueScheduler {
+  private nextId = 0;
+  private currentId: number | null = null;
+  private lastEnqueuedAt = Number.NEGATIVE_INFINITY;
+
+  constructor(private readonly options: { leadMs?: number; cooldownMs?: number } = {}) {}
+
+  enqueue(cue: PhraseCue, timestamp: number): ScheduledPhraseCue | null {
+    const expression = cue.expression || null;
+    const action = cue.action || null;
+    if (!expression && !action) return null;
+    const now = Number.isFinite(timestamp) ? timestamp : Date.now();
+    const cooldownMs = Math.max(0, this.options.cooldownMs ?? 650);
+    if (now - this.lastEnqueuedAt < cooldownMs) return null;
+    this.lastEnqueuedAt = now;
+    const result = {
+      id: ++this.nextId,
+      emitAt: now + Math.max(0, this.options.leadMs ?? 420),
+      expression,
+      action
+    };
+    this.currentId = result.id;
+    return result;
+  }
+
+  isCurrent(id: number): boolean {
+    return this.currentId === id;
+  }
+
+  cancel(id?: number): void {
+    if (id === undefined || this.currentId === id) this.currentId = null;
+  }
+
+  reset(): void {
+    this.currentId = null;
+    this.lastEnqueuedAt = Number.NEGATIVE_INFINITY;
+  }
+}
+
 export function timeDomainRms(samples: Uint8Array): number {
   if (samples.length === 0) return 0;
   let sum = 0;
