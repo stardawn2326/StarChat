@@ -98,7 +98,6 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     if (!dialogueIdleArbiterRef.current.resume().restartIdleAction) return;
     void runtime.controller.playAction('idle', false);
   };
-
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     if (dialogueFocusGateRef.current.shouldIgnoreCursor()) return;
     const decision = cursorFollowGateRef.current.update(update.moving, update.timestamp);

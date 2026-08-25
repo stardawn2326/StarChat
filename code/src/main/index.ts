@@ -863,11 +863,17 @@ function stopCursorPolling(): void {
   lastCursorPoint = null;
 }
 
-function toggleSettings(): void {
+function showSettingsWindow(): void {
   if (!settingsWindow || settingsWindow.isDestroyed()) {
     createSettingsWindow();
-    settingsWindow?.show();
-    settingsWindow?.focus();
+  }
+  settingsWindow?.show();
+  settingsWindow?.focus();
+}
+
+function toggleSettings(): void {
+  if (!settingsWindow || settingsWindow.isDestroyed()) {
+    showSettingsWindow();
     return;
   }
   if (settingsWindow.isVisible()) {
@@ -884,11 +890,10 @@ function createTray(): void {
   tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
-      { label: '开启/关闭桌宠交互', click: togglePetInteractionMode },
-      { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
-      { type: 'separator' },
-      { label: '退出白音', click: () => app.quit() }
+      { label: '打开设置', click: showSettingsWindow },
+      { label: '调整窗口', click: togglePetModelEditMode },
+      { label: '显示桌宠', click: showPetWindowInactive },
+      { label: '退出应用', click: () => app.quit() }
     ])
   );
   tray.on('double-click', toggleSettings);
@@ -917,12 +922,12 @@ function showPetContextMenu(): void {
     return;
   }
   const locked = !petInteractionEnabled(getStore().readSettings());
+  const visible = petWindow.isVisible();
   Menu.buildFromTemplate([
-    { label: '打开设置', click: () => { settingsWindow?.show(); settingsWindow?.focus(); } },
-    { label: locked ? '开启桌宠交互' : '关闭交互并锁定', click: togglePetInteractionMode },
-    { label: '显示/隐藏桌宠', click: () => petWindow?.isVisible() ? petWindow.hide() : showPetWindowInactive() },
-    { type: 'separator' },
-    { label: '退出白音', click: () => app.quit() }
+    { label: '打开设置', click: showSettingsWindow },
+    { label: locked ? '解锁窗口' : '锁定窗口', click: togglePetLock },
+    { label: visible ? '隐藏桌宠' : '显示桌宠', click: () => visible ? petWindow?.hide() : showPetWindowInactive() },
+    { label: '退出应用', click: () => app.quit() }
   // Do not make the transparent pet HWND the native menu owner: owner activation
   // is the second trigger for the Windows inactive non-client artifact.
   ]).popup();
