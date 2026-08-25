@@ -10,6 +10,7 @@ import { CursorFollowGate } from './cursor-follow-gate';
 import { DialogueFocusGate } from './dialogue-focus';
 import { IdleGazeController } from './idle-gaze';
 import { dispatchCubismRuntimeCommand } from './cubism-runtime-dispatch';
+import { createViewportSyncCoordinator, type ViewportFrame } from './viewport-sync';
 
 interface RuntimeModule {
   controller: CubismRuntimeController;
@@ -64,7 +65,6 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   const lastExpressionRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
-  const lastSyncedViewportRef = useRef<{ width: number; height: number; renderScale: number; screenX: number; screenY: number } | null>(null);
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
   const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
@@ -226,33 +226,43 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const syncViewport = (windowOrigin: { x: number; y: number } = { x: window.screenX, y: window.screenY }): void => {
+    const coordinator = createViewportSyncCoordinator((next: ViewportFrame) => {
+      runtimeRef.current?.controller.setViewport(next.width, next.height, next.renderScale, next.screenX, next.screenY);
+    });
+    let frameHandle: number | null = null;
+    const flushViewport = (): void => {
+      frameHandle = null;
+      coordinator.flush();
+    };
+    const scheduleViewportFlush = (): void => {
+      if (frameHandle === null) {
+        frameHandle = window.requestAnimationFrame(flushViewport);
+      }
+    };
+    const syncViewport = (source: 'initial' | 'resize-observer' | 'window-resize' | 'bounds', windowOrigin: { x: number; y: number } = { x: window.screenX, y: window.screenY }): void => {
       const rect = canvas.getBoundingClientRect();
       const next = canvasViewport({ width: rect.width, height: rect.height }, window.devicePixelRatio || 1);
       const renderScale = next.renderScale;
       viewportRef.current = { width: next.width, height: next.height, renderScale };
       canvas.dataset.viewportCss = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
       canvas.dataset.renderScale = String(renderScale);
-      const previous = lastSyncedViewportRef.current;
-      if (previous && previous.width === next.width && previous.height === next.height && previous.renderScale === renderScale && previous.screenX === windowOrigin.x && previous.screenY === windowOrigin.y) {
-        return;
-      }
-      lastSyncedViewportRef.current = { width: next.width, height: next.height, renderScale, screenX: windowOrigin.x, screenY: windowOrigin.y };
-      runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale, windowOrigin.x, windowOrigin.y);
-      // ResizeObserver and window resize can both report the same CSS viewport
-      // during a drag or a cross-display move. The renderer owns backing pixels;
-      // this observer only forwards a changed CSS viewport/DPR/origin tuple.
+      coordinator.submit(source, { width: next.width, height: next.height, renderScale, screenX: windowOrigin.x, screenY: windowOrigin.y });
+      scheduleViewportFlush();
     };
-    syncViewport();
-    const syncViewportFromWindow = (): void => syncViewport();
-    const observer = new ResizeObserver(() => syncViewport());
+    syncViewport('initial');
+    const syncViewportFromWindow = (): void => syncViewport('window-resize');
+    const observer = new ResizeObserver(() => syncViewport('resize-observer'));
     observer.observe(canvas);
     window.addEventListener('resize', syncViewportFromWindow);
-    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((bounds) => syncViewport({ x: bounds.x, y: bounds.y }));
+    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((bounds) => syncViewport('bounds', { x: bounds.x, y: bounds.y }));
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', syncViewportFromWindow);
       unsubscribeBounds();
+      if (frameHandle !== null) {
+        window.cancelAnimationFrame(frameHandle);
+      }
+      coordinator.cancel();
     };
   }, []);
 
