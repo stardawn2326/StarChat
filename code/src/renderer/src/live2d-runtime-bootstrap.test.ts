@@ -20,7 +20,7 @@ describe('Live2D renderer bootstrap contracts', () => {
 
     expect(viewportPath).toContain('const sizeChanged =');
     expect(viewportPath).toContain('const originChanged =');
-    expect(viewportPath).toContain('if ((sizeChanged || originChanged) && model && modelScreenAnchor)');
+    expect(viewportPath).toContain('if (preserveModelScreenAnchor && (sizeChanged || originChanged) && model && modelScreenAnchor)');
     expect(transformPath).not.toContain('sizeChanged');
     expect(transformPath).not.toContain('nextViewport');
   });

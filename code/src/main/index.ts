@@ -43,7 +43,7 @@ import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, validateRolePackage } from '../
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimePhase, CubismRuntimeResult, CubismRuntimeStatus } from '../shared/cubism';
 import { isSafeCubismRuntimeCommand } from '../shared/cubism-runtime-command';
 import type { PresentationEvent, PresentationLayer } from '../shared/presentation';
-import { clampPetWindowBounds, nextPetResizeBounds, sameWindowBounds, type WindowBounds } from '../shared/window-contract';
+import { clampPetWindowBounds, nextPetResizeBounds, sameWindowBounds, type PetBoundsChange, type PetPointerOperation, type WindowBounds } from '../shared/window-contract';
 import { petInteractionEnabled, petInteractionSettingsForEnabled } from '../shared/pet-interaction';
 import { streamChatCompletion, testChatConnection } from './api/openai-compatible';
 import { SettingsStore } from './settings-store';
@@ -400,9 +400,15 @@ function sendPetBoundsChanged(): void {
     return;
   }
   const bounds = petWindow.getBounds();
+  const operation: PetPointerOperation | null = petDragStart
+    ? 'window-and-model-drag'
+    : petResizeStart
+      ? 'window-resize'
+      : null;
+  const change: PetBoundsChange = { bounds, operation };
   for (const window of [petWindow, settingsWindow]) {
     if (window && !window.isDestroyed()) {
-      window.webContents.send('pet:bounds-changed', bounds);
+      window.webContents.send('pet:bounds-changed', change);
     }
   }
 }

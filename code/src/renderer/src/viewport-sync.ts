@@ -4,6 +4,7 @@ export interface ViewportFrame {
   renderScale: number;
   screenX: number;
   screenY: number;
+  preserveModelScreenAnchor: boolean;
 }
 
 export type ViewportFrameSource = 'initial' | 'resize-observer' | 'window-resize' | 'bounds';
@@ -18,7 +19,8 @@ function sameFrame(left: ViewportFrame | null, right: ViewportFrame): boolean {
     && left.height === right.height
     && left.renderScale === right.renderScale
     && left.screenX === right.screenX
-    && left.screenY === right.screenY);
+    && left.screenY === right.screenY
+    && left.preserveModelScreenAnchor === right.preserveModelScreenAnchor);
 }
 
 /**
@@ -32,18 +34,25 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
   cancel(): void;
 } {
   let latestOrigin = { x: 0, y: 0 };
+  let preserveModelScreenAnchor = true;
   let originAuthority: 'initial' | 'window-resize' | 'bounds' = 'initial';
   let pending: ViewportFrame | null = null;
   let applied: ViewportFrame | null = null;
 
   const queue = (frame: ViewportFrame): void => {
-    pending = { ...frame, screenX: latestOrigin.x, screenY: latestOrigin.y };
+    pending = {
+      ...frame,
+      screenX: latestOrigin.x,
+      screenY: latestOrigin.y,
+      preserveModelScreenAnchor
+    };
   };
 
   return {
     submit(source, frame) {
       if (source === 'initial') {
         latestOrigin = { x: frame.screenX, y: frame.screenY };
+        preserveModelScreenAnchor = frame.preserveModelScreenAnchor;
         originAuthority = 'initial';
         queue(frame);
         return;
@@ -58,6 +67,7 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
           return;
         }
         latestOrigin = { x: frame.screenX, y: frame.screenY };
+        preserveModelScreenAnchor = frame.preserveModelScreenAnchor;
         originAuthority = 'bounds';
         queue(frame);
         return;
@@ -70,6 +80,7 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
         const sizeChanged = !sameSize(applied, frame);
         if (originAuthority !== 'bounds' || sizeChanged) {
           latestOrigin = { x: frame.screenX, y: frame.screenY };
+          preserveModelScreenAnchor = frame.preserveModelScreenAnchor;
           originAuthority = 'window-resize';
         }
         queue(frame);

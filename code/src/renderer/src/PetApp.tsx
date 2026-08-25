@@ -41,6 +41,7 @@ function PetApp(): JSX.Element {
   const [runtimeCommand, setRuntimeCommand] = useState<CubismRuntimeCommandRequest | null>(null);
   const [hintVisible, setHintVisible] = useState(false);
   const [modelEditMode, setModelEditMode] = useState(false);
+  const [windowAndModelDragActive, setWindowAndModelDragActive] = useState(false);
   const [modelViewport, setModelViewport] = useState<ModelViewportSettings>(DEFAULT_MODEL_VIEWPORT);
   const [presentationSettings, setPresentationSettings] = useState<PresentationSettings | null>(null);
   const [settingsPreview, setSettingsPreview] = useState<Partial<AppSettings>>({});
@@ -48,6 +49,7 @@ function PetApp(): JSX.Element {
   const [runtimeReady, setRuntimeReady] = useState(false);
   const inputMode = useRef<'interactive' | 'passthrough'>('interactive');
   const activePointer = useRef<ActivePointer | null>(null);
+  const windowAndModelDragActiveRef = useRef(false);
   const cursorRef = useRef<CursorUpdate | null>(null);
   const modelHitRef = useRef(false);
   const inputRecoveryPendingRef = useRef(false);
@@ -58,6 +60,10 @@ function PetApp(): JSX.Element {
   const dragSchedulerRef = useRef<PetDragScheduler | null>(null);
   const resizeSchedulerRef = useRef<PetResizeScheduler | null>(null);
   const locked = useRef(false);
+  const markWindowAndModelDrag = (active: boolean): void => {
+    windowAndModelDragActiveRef.current = active;
+    setWindowAndModelDragActive(active);
+  };
   const hitRegion: PetHitRegion = cursor?.insideWindow
     ? classifyPetHit(
       cursor.localX * cursor.windowWidth,
@@ -352,6 +358,7 @@ function PetApp(): JSX.Element {
       // A new left-button gesture is the authoritative recovery point. This
       // clears a renderer/main-process transaction whose ending event was lost.
       window.baoyin.pet.pointerCancel();
+      markWindowAndModelDrag(false);
       restoreInputMode(true);
       const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
       if (event.altKey) {
@@ -365,6 +372,7 @@ function PetApp(): JSX.Element {
           captureTarget,
           pointerCaptured
         };
+        markWindowAndModelDrag(true);
         window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
         event.preventDefault();
         return;
@@ -459,6 +467,7 @@ function PetApp(): JSX.Element {
         }
         event?.preventDefault();
         restoreInputMode(true);
+        markWindowAndModelDrag(false);
         if (event && !cancelled && Math.hypot(event.screenX - gesture.screenX, event.screenY - gesture.screenY) < 5 && !locked.current) {
           const width = Math.max(1, window.innerWidth);
           const height = Math.max(1, window.innerHeight);
@@ -569,6 +578,7 @@ function PetApp(): JSX.Element {
           dialogueEvent={dialogueEvent}
           live2d={appState.live2d}
           modelViewport={{ ...modelViewport, modelOpacity: displayedModelOpacity }}
+          windowAndModelDragActive={windowAndModelDragActive}
           cursor={cursor}
           gazeConfig={{
             enabled: effectiveSettings.cursorTrackingEnabled,

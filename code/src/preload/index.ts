@@ -25,7 +25,7 @@ import type {
 } from '../shared/ipc';
 import type { Live2DModelState } from '../shared/live2d';
 import type { PresentationEvent } from '../shared/presentation';
-import type { WindowBounds } from '../shared/window-contract';
+import type { PetBoundsChange, WindowBounds } from '../shared/window-contract';
 
 const bridge = {
   app: {
@@ -157,8 +157,8 @@ const bridge = {
     center: (): void => ipcRenderer.send('pet:center'),
     bounds: (): Promise<WindowBounds | null> => ipcRenderer.invoke('pet:bounds'),
     previewBounds: (bounds: WindowBounds): void => ipcRenderer.send('pet:preview-bounds', bounds),
-    onBoundsChange: (callback: (bounds: WindowBounds) => void): (() => void) => {
-      const listener = (_event: IpcRendererEvent, bounds: WindowBounds): void => callback(bounds);
+    onBoundsChange: (callback: (change: PetBoundsChange) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, change: PetBoundsChange): void => callback(change);
       ipcRenderer.on('pet:bounds-changed', listener);
       return () => ipcRenderer.removeListener('pet:bounds-changed', listener);
     },

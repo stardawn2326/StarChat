@@ -10,6 +10,8 @@ const testDirectory = dirname(fileURLToPath(import.meta.url));
 const canvasSource = readFileSync(resolve(testDirectory, 'Live2DCanvas.tsx'), 'utf8');
 const petSource = readFileSync(resolve(testDirectory, 'PetApp.tsx'), 'utf8');
 const runtimeSource = readFileSync(resolve(testDirectory, 'live2d-runtime.js'), 'utf8');
+const preloadSource = readFileSync(resolve(testDirectory, '../../preload/index.ts'), 'utf8');
+const mainSource = readFileSync(resolve(testDirectory, '../../main/index.ts'), 'utf8');
 
 const edges: PetResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
@@ -19,7 +21,7 @@ describe('PetWindow absolute model screen-anchor contract', () => {
     expect(canvasSource).toContain('screenX: window.screenX');
     expect(canvasSource).toContain('screenY: window.screenY');
     expect(runtimeSource).toContain('const originChanged =');
-    expect(runtimeSource).toContain('if ((sizeChanged || originChanged) && model && modelScreenAnchor)');
+    expect(runtimeSource).toContain('if (preserveModelScreenAnchor && (sizeChanged || originChanged) && model && modelScreenAnchor)');
   });
 
   it('keeps one model screen anchor fixed for every resize edge and corner', () => {
@@ -57,5 +59,26 @@ describe('PetWindow absolute model screen-anchor contract', () => {
     expect(petSource).toContain('updateModelViewport({');
     expect(petSource).toContain('modelOffsetX: gesture.viewport.modelOffsetX + event.screenX - gesture.screenX');
     expect(petSource).toContain('persistModelViewport(viewportRef.current);');
+  });
+
+  it('carries the active pointer operation through bounds-changed into runtime anchor compensation', () => {
+    expect(preloadSource).toContain('PetBoundsChange');
+    expect(mainSource).toContain("? 'window-and-model-drag'");
+    expect(canvasSource).toContain('petPointerOperationContract');
+    expect(canvasSource).toContain('change.operation');
+    expect(runtimeSource).toContain('preserveModelScreenAnchor');
+    expect(runtimeSource).toContain('if (preserveModelScreenAnchor && (sizeChanged || originChanged) && model && modelScreenAnchor)');
+  });
+
+  it('bypasses the reverse screen-anchor write only for Alt whole-window drag', () => {
+    const viewportPath = runtimeSource.slice(runtimeSource.indexOf('function applyRendererViewport'), runtimeSource.indexOf('function applyTransformTo'));
+    expect(viewportPath).toContain('preserveModelScreenAnchor');
+    expect(viewportPath).toContain('modelScreenAnchor = screenPointForLocalPoint');
+    expect(viewportPath).toContain('model.position.set');
+    expect(petSource).toContain("operation: 'window-and-model-drag'");
+    expect(petSource).toContain("window.baoyin.pet.dragStart");
+    const altFinish = petSource.slice(petSource.indexOf("if (gesture.operation === 'window-and-model-drag')"), petSource.indexOf("if (gesture.operation === 'window-resize')"));
+    expect(altFinish).not.toContain('updateModelViewport');
+    expect(altFinish).not.toContain('persistModelViewport');
   });
 });

@@ -282,7 +282,7 @@ function createPixiApplication(nextViewport) {
   canvas.dataset.renderScale = String(nextViewport.renderScale);
 }
 
-function applyRendererViewport(nextViewport) {
+function applyRendererViewport(nextViewport, preserveModelScreenAnchor = true) {
   const sizeChanged = viewport.width !== nextViewport.width || viewport.height !== nextViewport.height;
   const originChanged = viewport.screenX !== nextViewport.screenX || viewport.screenY !== nextViewport.screenY;
   viewport = { ...nextViewport };
@@ -300,11 +300,16 @@ function applyRendererViewport(nextViewport) {
     canvas.dataset.viewportCss = `${Math.round(nextViewport.width)}x${Math.round(nextViewport.height)}`;
     canvas.dataset.renderScale = String(nextViewport.renderScale);
   }
-  // do not call applyModelTransform here: keep the model's screen-space anchor
-  // stable while the window moves/resizes or the renderer DPR changes. This is
-  // a runtime-only local-position update; it does not write back model
-  // settings or change the user's model transform.
-  if ((sizeChanged || originChanged) && model && modelScreenAnchor) {
+  // Ordinary window resize/origin changes keep the model's screen-space anchor
+  // stable with a runtime-only local-position update. Alt whole-window drag is
+  // the exception: keep model.position unchanged and advance only the anchor
+  // metadata so the next ordinary resize starts from the current screen point.
+  if (!preserveModelScreenAnchor && model && modelScreenAnchor) {
+    modelScreenAnchor = screenPointForLocalPoint(
+      { x: model.position.x, y: model.position.y },
+      { x: nextViewport.screenX, y: nextViewport.screenY }
+    );
+  } else if (preserveModelScreenAnchor && (sizeChanged || originChanged) && model && modelScreenAnchor) {
     const local = localPointForScreenAnchor(modelScreenAnchor, {
       x: nextViewport.screenX,
       y: nextViewport.screenY
@@ -837,14 +842,14 @@ export const controller = {
     applyModelTransform(next);
   },
 
-  setViewport(width, height, renderScale, screenX, screenY) {
+  setViewport(width, height, renderScale, screenX, screenY, preserveModelScreenAnchor = true) {
     applyRendererViewport({
       width: Math.max(1, finite(Number(width), viewport.width)),
       height: Math.max(1, finite(Number(height), viewport.height)),
       renderScale: clamp(finite(Number(renderScale), viewport.renderScale), 0.5, 4),
       screenX: finite(Number(screenX), viewport.screenX),
       screenY: finite(Number(screenY), viewport.screenY)
-    });
+    }, preserveModelScreenAnchor);
   },
 
   configureGaze(config) {

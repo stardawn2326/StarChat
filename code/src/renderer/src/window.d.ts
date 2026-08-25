@@ -8,6 +8,7 @@ import type {
   CubismRuntimeCommandRequest,
   CursorUpdate,
   DisplaySummary,
+  PetBoundsChange,
   PetDragPoint,
   PetResizeStart,
   PetInputMode,
@@ -100,7 +101,7 @@ declare global {
         show(): void;
         center(): void;
         bounds(): Promise<{ x: number; y: number; width: number; height: number } | null>;
-        onBoundsChange(callback: (bounds: { x: number; y: number; width: number; height: number }) => void): () => void;
+        onBoundsChange(callback: (change: PetBoundsChange) => void): () => void;
         dragStart(point: PetDragPoint): void;
         dragMove(point: PetDragPoint): void;
         dragEnd(): void;

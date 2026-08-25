@@ -93,7 +93,7 @@ describe('AIRI production Live2D architecture gates', () => {
     expect(runtimeSource).toContain('model.anchor.set(0.5, 0.5)');
     expect(runtimeSource).not.toContain('model.scale.set(userScale');
     expect(runtimeSource).not.toContain('model.position.set(userX');
-    expect(runtimeSource).toContain('do not call applyModelTransform here');
+    expect(runtimeSource).toContain('keep model.position unchanged');
   });
 
   it('keeps the model-provided watermark switch persistent across expressions and reloads', () => {

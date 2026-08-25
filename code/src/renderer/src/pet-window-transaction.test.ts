@@ -62,6 +62,32 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(rendererSource).toContain("gesture.operation === 'window-and-model-drag'");
   });
 
+  it('covers the Alt transaction through pointerdown, move, up, cancel, blur, and lost capture', () => {
+    for (const eventName of [
+      "window.addEventListener('pointerdown'",
+      "window.addEventListener('pointermove'",
+      "window.addEventListener('pointerup'",
+      "window.addEventListener('pointercancel'",
+      "window.addEventListener('blur'",
+      "window.addEventListener('lostpointercapture'"
+    ]) {
+      expect(rendererSource).toContain(eventName);
+    }
+    expect(rendererSource).toContain('windowAndModelDragActive');
+    expect(rendererSource).toContain('windowAndModelDragActiveRef');
+    expect(rendererSource).toContain('restoreInputMode(true)');
+    expect(rendererSource).toContain('markWindowAndModelDrag(false)');
+  });
+
+  it('keeps ordinary resize anchor compensation enabled while Alt drag bypasses it', () => {
+    const runtimePath = rendererSource.replace(/\s+/g, ' ');
+    expect(runtimePath).toContain("operation: 'window-and-model-drag'");
+    expect(runtimePath).toContain("operation: 'window-resize'");
+    expect(mainSource).toContain("? 'window-resize'");
+    expect(rendererSource).toContain('resizeStart');
+    expect(rendererSource).toContain('resizeEnd');
+  });
+
   it('makes the main-process drag transaction exclude every resize move and clears stale resize state', () => {
     const dragStart = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:drag-start'"), mainSource.indexOf("ipcMain.on('pet:drag-move'"));
     const resizeMove = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:resize-move'"), mainSource.indexOf("ipcMain.on('pet:resize-end'"));

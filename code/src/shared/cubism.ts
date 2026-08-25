@@ -168,7 +168,7 @@ export interface CubismRuntimeController {
   stopAction(): void;
   interruptAction(name: ActionName): void;
   setTransform(transform: CubismTransform): void;
-  setViewport(width: number, height: number, renderScale: number, screenX: number, screenY: number): void;
+  setViewport(width: number, height: number, renderScale: number, screenX: number, screenY: number, preserveModelScreenAnchor?: boolean): void;
   configureGaze(config: CubismGazeConfig): void;
   setFocusFromScreenCursor(point: { screenX: number; screenY: number; canvasScreenRect: { left: number; top: number } }, moving?: boolean): void;
   releaseFocus(): void;

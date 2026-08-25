@@ -5,7 +5,7 @@ import type { PresentationEvent } from '../../shared/presentation';
 import type { CubismGazeConfig, CubismRuntimeController, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import { DEFAULT_MODEL_VIEWPORT, type ModelViewportSettings } from '../../shared/settings';
 import { CharacterStateResolver } from '../../shared/character-state';
-import { canvasViewport, composeAbsoluteModelTransform } from '../../shared/window-contract';
+import { canvasViewport, composeAbsoluteModelTransform, petPointerOperationContract, type PetPointerOperation } from '../../shared/window-contract';
 import { CursorFollowGate } from './cursor-follow-gate';
 import { DialogueFocusGate } from './dialogue-focus';
 import { IdleGazeController } from './idle-gaze';
@@ -24,6 +24,7 @@ interface Live2DCanvasProps {
   dialogueEvent?: Extract<PresentationEvent, { type: 'dialogue' }>;
   live2d: Live2DModelState;
   modelViewport?: ModelViewportSettings;
+  windowAndModelDragActive?: boolean;
   cursor?: CursorUpdate | null;
   gazeConfig?: CubismGazeConfig;
   tapPoint?: { x: number; y: number } | null;
@@ -54,7 +55,7 @@ function entryFileName(entryPath: string | null): string | null {
   return parts.at(-1) ?? null;
 }
 
-export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, runtimeCommand = null, onRuntimeResult, onFitFrame, onModelHitChange, onRuntimeReady, onRuntimeFailure }: Live2DCanvasProps): JSX.Element {
+export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEFAULT_MODEL_VIEWPORT, windowAndModelDragActive = false, cursor = null, gazeConfig, tapPoint = null, showWatermark = true, debugCommand = null, runtimeCommand = null, onRuntimeResult, onFitFrame, onModelHitChange, onRuntimeReady, onRuntimeFailure }: Live2DCanvasProps): JSX.Element {
   const [runtimeStatus, setRuntimeStatus] = useState('准备启动真实 Cubism WebGL');
   const [runtimeMetrics, setRuntimeMetrics] = useState<CubismRuntimeMetrics | null>(null);
   const modelJsonName = useMemo(() => entryFileName(live2d.entryPath), [live2d.entryPath]);
@@ -64,11 +65,14 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
   const lastActionRef = useRef<string | null>(null);
   const lastExpressionRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const windowAndModelDragActiveRef = useRef(windowAndModelDragActive);
   const viewportRef = useRef({ width: 432, height: 600, renderScale: 1 });
   const cursorFollowGateRef = useRef(new CursorFollowGate(3000));
   const dialogueFocusGateRef = useRef(new DialogueFocusGate());
   const idleGazeRef = useRef(new IdleGazeController());
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
+
+  windowAndModelDragActiveRef.current = windowAndModelDragActive;
 
   const applyCursorFollow = (runtime: RuntimeModule, update: CursorUpdate, canvasRect: DOMRect): void => {
     if (dialogueFocusGateRef.current.shouldIgnoreCursor()) return;
@@ -227,7 +231,14 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     const canvas = canvasRef.current;
     if (!canvas) return;
     const coordinator = createViewportSyncCoordinator((next: ViewportFrame) => {
-      runtimeRef.current?.controller.setViewport(next.width, next.height, next.renderScale, next.screenX, next.screenY);
+      runtimeRef.current?.controller.setViewport(
+        next.width,
+        next.height,
+        next.renderScale,
+        next.screenX,
+        next.screenY,
+        next.preserveModelScreenAnchor
+      );
     });
     let frameHandle: number | null = null;
     const flushViewport = (): void => {
@@ -239,14 +250,25 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
         frameHandle = window.requestAnimationFrame(flushViewport);
       }
     };
-    const syncViewport = (source: 'initial' | 'resize-observer' | 'window-resize' | 'bounds', windowOrigin: { x: number; y: number } = { x: window.screenX, y: window.screenY }): void => {
+    const syncViewport = (
+      source: 'initial' | 'resize-observer' | 'window-resize' | 'bounds',
+      windowOrigin: { x: number; y: number } = { x: window.screenX, y: window.screenY },
+      preserveModelScreenAnchor = !windowAndModelDragActiveRef.current
+    ): void => {
       const rect = canvas.getBoundingClientRect();
       const next = canvasViewport({ width: rect.width, height: rect.height }, window.devicePixelRatio || 1);
       const renderScale = next.renderScale;
       viewportRef.current = { width: next.width, height: next.height, renderScale };
       canvas.dataset.viewportCss = `${Math.round(rect.width)}x${Math.round(rect.height)}`;
       canvas.dataset.renderScale = String(renderScale);
-      coordinator.submit(source, { width: next.width, height: next.height, renderScale, screenX: windowOrigin.x, screenY: windowOrigin.y });
+      coordinator.submit(source, {
+        width: next.width,
+        height: next.height,
+        renderScale,
+        screenX: windowOrigin.x,
+        screenY: windowOrigin.y,
+        preserveModelScreenAnchor
+      });
       scheduleViewportFlush();
     };
     syncViewport('initial');
@@ -254,7 +276,12 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     const observer = new ResizeObserver(() => syncViewport('resize-observer'));
     observer.observe(canvas);
     window.addEventListener('resize', syncViewportFromWindow);
-    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((bounds) => syncViewport('bounds', { x: bounds.x, y: bounds.y }));
+    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((change) => {
+      const preserveModelScreenAnchor = change.operation
+        ? petPointerOperationContract(change.operation as PetPointerOperation).compensateModelScreenAnchor
+        : !windowAndModelDragActiveRef.current;
+      syncViewport('bounds', { x: change.bounds.x, y: change.bounds.y }, preserveModelScreenAnchor);
+    });
     return () => {
       observer.disconnect();
       window.removeEventListener('resize', syncViewportFromWindow);

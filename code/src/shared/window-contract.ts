@@ -10,8 +10,23 @@ export interface FocusGeometry { canvasScreenRect: { left: number; top: number; 
 export interface StableViewportProjection extends CanvasCssSize { referenceHeight: number; viewScale: number; cssPixelsPerWorldUnit: number; }
 export interface ModelBounds { left: number; right: number; top: number; bottom: number; }
 export type PetPointerOperation = 'model-transform' | 'window-and-model-drag' | 'window-resize';
+export interface PetBoundsChange { bounds: WindowBounds; operation: PetPointerOperation | null; }
 export type PetResizeEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 export const PET_RESIZE_EDGE_PX = 8;
+
+export function petPointerOperationContract(operation: PetPointerOperation): {
+  changesModelTransform: boolean;
+  changesWindowBounds: boolean;
+  compensateModelScreenAnchor: boolean;
+} {
+  if (operation === 'model-transform') {
+    return { changesModelTransform: true, changesWindowBounds: false, compensateModelScreenAnchor: false };
+  }
+  if (operation === 'window-and-model-drag') {
+    return { changesModelTransform: false, changesWindowBounds: true, compensateModelScreenAnchor: false };
+  }
+  return { changesModelTransform: false, changesWindowBounds: true, compensateModelScreenAnchor: true };
+}
 
 export function isPetResizeEdge(localX: number, localY: number, width: number, height: number, edge = PET_RESIZE_EDGE_PX): boolean {
   if (![localX, localY, width, height, edge].every(Number.isFinite) || width <= 0 || height <= 0) return false;

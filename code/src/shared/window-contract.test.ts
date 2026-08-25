@@ -1,8 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import { nextPetDragBounds } from '../main/window-drag';
-import { canvasViewport, compensateModelViewportForWindowOrigin, composeAbsoluteModelTransform, composeAbsoluteModelMatrix, featureDistance, focusGeometryFromModelBounds, focusPointForScreenCursor, preserveModelTransformOnWindowResize, projectModelFeature, stableViewportProjection } from './window-contract';
+import { canvasViewport, compensateModelViewportForWindowOrigin, composeAbsoluteModelTransform, composeAbsoluteModelMatrix, featureDistance, focusGeometryFromModelBounds, focusPointForScreenCursor, petPointerOperationContract, preserveModelTransformOnWindowResize, projectModelFeature, stableViewportProjection, type PetPointerOperation } from './window-contract';
 
 describe('absolute window/model coordinate contract', () => {
+  it('keeps model transform, whole-window drag, and resize as mutually exclusive operations', () => {
+    const operations: PetPointerOperation[] = ['model-transform', 'window-and-model-drag', 'window-resize'];
+    expect(operations.map(petPointerOperationContract)).toEqual([
+      { changesModelTransform: true, changesWindowBounds: false, compensateModelScreenAnchor: false },
+      { changesModelTransform: false, changesWindowBounds: true, compensateModelScreenAnchor: false },
+      { changesModelTransform: false, changesWindowBounds: true, compensateModelScreenAnchor: true }
+    ]);
+  });
+
   it('keeps model transform and pixel size identical across three viewport sizes', () => {
     const user = { userScale: 1.35, userX: 42, userY: -17 };
     const values = [{ width: 320, height: 420 }, { width: 640, height: 720 }, { width: 1000, height: 1100 }].map((viewport) => composeAbsoluteModelTransform(user, viewport));

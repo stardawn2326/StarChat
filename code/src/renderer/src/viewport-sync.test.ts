@@ -12,13 +12,14 @@ const petSource = readFileSync(resolve(testDirectory, 'PetApp.tsx'), 'utf8');
 
 const edges: PetResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
-function frame(bounds: { x: number; y: number; width: number; height: number }): ViewportFrame {
+function frame(bounds: { x: number; y: number; width: number; height: number }, preserveModelScreenAnchor = true): ViewportFrame {
   return {
     width: bounds.width,
     height: bounds.height,
     renderScale: 1,
     screenX: bounds.x,
-    screenY: bounds.y
+    screenY: bounds.y,
+    preserveModelScreenAnchor
   };
 }
 
@@ -116,5 +117,22 @@ describe('PetWindow continuous viewport synchronization contract', () => {
     expect(petSource).toContain('finalizeActivePointer(null, true)');
     expect(canvasSource).toContain('createViewportSyncCoordinator');
     expect(canvasSource).not.toContain('runtimeRef.current?.controller.setViewport(rect.width, rect.height, renderScale, windowOrigin.x, windowOrigin.y);');
+  });
+
+  it('keeps an authoritative Alt whole-window drag frame uncompensated through later observer notifications', () => {
+    const applied: ViewportFrame[] = [];
+    const coordinator = createViewportSyncCoordinator((next) => applied.push(next));
+    const start = { x: 800, y: 300, width: 432, height: 600 };
+    const moved = { ...start, x: 880, y: 340 };
+    coordinator.submit('initial', frame(start));
+    coordinator.flush();
+    applied.length = 0;
+
+    coordinator.submit('bounds', frame(moved, false));
+    coordinator.submit('resize-observer', frame(moved, true));
+    coordinator.submit('window-resize', frame(moved, true));
+    coordinator.flush();
+
+    expect(applied).toEqual([frame(moved, false)]);
   });
 });
