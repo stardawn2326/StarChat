@@ -79,7 +79,7 @@ describe('StarChat Agent workbench shell', () => {
 
     expect(markup).not.toContain('工作区资源');
     expect(markup).not.toContain('文件与源码只读');
-    expect(markup).not.toContain('受控验证');
+    expect(markup).toContain('受控验证日志');
     expect(markup).toContain('任务管理');
     expect(markup).toContain('侧边聊天');
     expect(markup).not.toContain('任意终端');
@@ -88,7 +88,7 @@ describe('StarChat Agent workbench shell', () => {
     expect(markup).toContain('data-capability-state="disabled"');
     expect(markup).toContain('data-agent-ui="capabilities"');
     expect(markup).not.toMatch(/<button[^>]+data-capability-id="(?:terminal|browser|git-write)"/);
-    expect(markup).not.toContain('检查项目状态');
+    expect(markup).toContain('检查项目状态');
     expect(markup).not.toContain('task-1');
   });
 

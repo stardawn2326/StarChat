@@ -71,6 +71,9 @@ export interface SettingsDetailsV2Props {
   agentTasks?: readonly AgentTask[];
   agentEvent?: AgentEvent | null;
   onBack: () => void;
+  conversationKey?: string;
+  onNewConversation?: () => void;
+  onMessageSent?: (message: string) => void;
   onResetPage: () => void;
   onSettingsChange: (patch: Partial<AppSettings>, persist?: boolean) => void;
   onPresentationChange: (patch: Partial<PresentationSettings>, persist?: boolean) => void;
@@ -213,7 +216,7 @@ function BehaviorDetails(props: SettingsDetailsV2Props): JSX.Element {
 }
 
 function ChatDetails(props: SettingsDetailsV2Props): JSX.Element {
-  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat state={props.state} agentTasks={props.agentTasks ?? []} agentEvent={props.agentEvent ?? null} onModeChange={(mode) => props.onSettingsChange({ assistantMode: mode })} /></div>;
+  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat key={props.conversationKey} state={props.state} agentTasks={props.agentTasks ?? []} agentEvent={props.agentEvent ?? null} onModeChange={(mode) => props.onSettingsChange({ assistantMode: mode })} onNewConversation={props.onNewConversation} onMessageSent={props.onMessageSent} /></div>;
 }
 
 export function SettingsDetailsV2(props: SettingsDetailsV2Props): JSX.Element {

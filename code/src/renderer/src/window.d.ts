@@ -30,6 +30,7 @@ declare global {
       app: {
         minimize(): void;
         close(): void;
+        toggleMaximize(): Promise<boolean>;
         showSettings(): void;
         hideSettings(): void;
         toggleSettings(): void;
@@ -48,6 +49,10 @@ declare global {
       state: {
         get(): Promise<PublicAppState>;
         onChange(callback: (state: PublicAppState) => void): () => void;
+      };
+      workbench: {
+        inspect(request: import('../../shared/ipc').WorkbenchInspectRequest): Promise<import('../../shared/ipc').WorkbenchInspectionResponse>;
+        share(): Promise<import('../../shared/ipc').WorkbenchShareResponse>;
       };
       settings: {
         save(request: SaveSettingsRequest): Promise<PublicAppState>;

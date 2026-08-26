@@ -8,9 +8,10 @@ interface SettingsHomeProps {
   state: PublicAppState;
   presentation: PresentationSettings;
   onOpen: (page: SettingsPageId) => void;
+  onBack?: () => void;
 }
 
-export function SettingsHome({ state, presentation, onOpen }: SettingsHomeProps): JSX.Element {
+export function SettingsHome({ state, presentation, onOpen, onBack }: SettingsHomeProps): JSX.Element {
   const context = {
     roleName: state.role.displayName,
     modelPath: state.live2d.entryPath,
@@ -21,6 +22,7 @@ export function SettingsHome({ state, presentation, onOpen }: SettingsHomeProps)
   return (
     <section className="settings-home" aria-labelledby="settings-home-title">
       <div className="settings-home-intro">
+        <button type="button" className="back-button" onClick={onBack}>← 返回工作台</button>
         <span className="eyebrow">STARCHAT / AGENT WORKSPACE</span>
         <h1 id="settings-home-title">StarChat Agent 工作台</h1>
         <p>从桌宠陪伴出发，集中管理角色、视觉、语音与连接。现有配置会继续兼容并保留。</p>

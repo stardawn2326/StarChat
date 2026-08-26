@@ -14,6 +14,8 @@ import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type Prese
 import { applyThemeToDocument } from '../../shared/theme';
 import { syncPetBoundsIntoSettings } from './settings-state';
 import { AgentWorkbench, type WorkbenchPage } from './AgentWorkbench';
+import type { WorkbenchInspection, WorkbenchInspectionKind } from '../../shared/workbench';
+import type { WorkbenchToolAction } from './AgentWorkbench';
 import { AgentConsole } from './AgentConsole';
 
 function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): boolean {
@@ -35,6 +37,11 @@ function useThemePreference(preference: AppSettings['themePreference']): void {
   }, [preference]);
 }
 
+function pathLabel(path: string | null | undefined): string {
+  const value = path?.replaceAll('\\', '/').split('/').filter(Boolean).at(-1);
+  return value || '本地工作区';
+}
+
 function App(): JSX.Element {
   const [appState, setAppState] = useState<PublicAppState | null>(null);
   const [settingsDraft, setSettingsDraft] = useState<AppSettings | null>(null);
@@ -46,7 +53,15 @@ function App(): JSX.Element {
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
   const [displays, setDisplays] = useState<Awaited<ReturnType<typeof window.baoyin.display.list>>>([]);
   const [page, setPage] = useState<WorkbenchPage>(null);
-  const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(() => {
+    try { return window.localStorage.getItem('starchat.bottom-panel.open') !== 'false'; } catch { return true; }
+  });
+  const [conversationKey, setConversationKey] = useState(() => `conversation.${crypto.randomUUID()}`);
+  const [sessionTitle, setSessionTitle] = useState('新对话');
+  const [sessionMessageCount, setSessionMessageCount] = useState(0);
+  const [workbenchInspection, setWorkbenchInspection] = useState<WorkbenchInspection | null>(null);
+  const [activeWorkbenchTool, setActiveWorkbenchTool] = useState<WorkbenchInspectionKind | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [error, setError] = useState('');
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [presentationDraft, setPresentationDraft] = useState<PresentationSettings>(DEFAULT_PRESENTATION_SETTINGS);
@@ -110,6 +125,7 @@ function App(): JSX.Element {
       if (modelIdentity && currentIdentity && modelIdentity !== currentIdentity) return;
       setRuntimeReadyEpoch((epoch) => epoch + 1);
     });
+    void window.baoyin.workbench.inspect({ kind: 'source' }).then(setWorkbenchInspection).catch(() => undefined);
     const popstate = (): void => {
       const route = window.location.hash.slice(1);
       const settingsPageIds: readonly SettingsPageId[] = ['chat', 'personality', 'model', 'voice', 'service', 'behavior'];
@@ -128,6 +144,10 @@ function App(): JSX.Element {
       if (presentationTimer.current) window.clearTimeout(presentationTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    try { window.localStorage.setItem('starchat.bottom-panel.open', String(bottomPanelOpen)); } catch { /* browser storage can be unavailable */ }
+  }, [bottomPanelOpen]);
 
   useEffect(() => {
     let disposed = false;
@@ -258,6 +278,54 @@ function App(): JSX.Element {
       return;
     }
     openPage(nextPage);
+  };
+
+  const startNewConversation = (): void => {
+    setConversationKey(`conversation.${crypto.randomUUID()}`);
+    setSessionTitle('新对话');
+    setSessionMessageCount(0);
+    setAgentEvent(null);
+    setActiveWorkbenchTool(null);
+    window.history.pushState({ settingsPage: null }, '', '#home');
+    setPage(null);
+  };
+
+  const onMessageSent = (message: string): void => {
+    setSessionMessageCount((count) => count + 1);
+    setSessionTitle((current) => current === '新对话' ? message.slice(0, 32) : current);
+  };
+
+  const inspectWorkbench = async (kind: WorkbenchInspectionKind): Promise<void> => {
+    try {
+      setWorkbenchInspection(await window.baoyin.workbench.inspect({ kind }));
+      setError('');
+    } catch (inspectError) {
+      setError(inspectError instanceof Error ? inspectError.message : '工作区检查失败');
+    }
+  };
+
+  const handleToolAction = (action: WorkbenchToolAction): void => {
+    if (action === 'chat') {
+      navigateWorkbench(null);
+      return;
+    }
+    if (action === 'tasks' || action === 'terminal') {
+      setActiveWorkbenchTool(null);
+      setBottomPanelOpen(true);
+      return;
+    }
+    setActiveWorkbenchTool(action);
+    void inspectWorkbench(action);
+  };
+
+  const shareEnvironment = async (): Promise<string> => {
+    const result = await window.baoyin.workbench.share();
+    return `环境摘要已复制到剪贴板（${result.text.split('\n').length} 行）`;
+  };
+
+  const toggleMaximize = async (): Promise<void> => {
+    try { setIsMaximized(await window.baoyin.app.toggleMaximize()); }
+    catch (maximizeError) { setError(maximizeError instanceof Error ? maximizeError.message : '窗口大小切换失败'); }
   };
 
   const backToSettingsHome = (): void => {
@@ -417,14 +485,14 @@ function App(): JSX.Element {
   if (!appState || !roleDraft) return <div className="loading-card">正在唤醒 StarChat 工作台…</div>;
 
   const workbenchContent = page === null
-    ? <AgentConsole state={appState} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} />
-    : page === 'settings'
-      ? <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />
-      : <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
+      ? <AgentConsole key={conversationKey} state={appState} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} onNewConversation={startNewConversation} onMessageSent={onMessageSent} />
+      : page === 'settings'
+      ? <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} onBack={() => navigateWorkbench(null)} />
+      : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={startNewConversation} onMessageSent={onMessageSent} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
 
     return <main className="app-shell settings-center-shell">
-      <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>
-  </main>;
+      <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onNewConversation={startNewConversation} sessionTitle={sessionTitle} sessionMessageCount={sessionMessageCount} workspaceLabel={pathLabel(workbenchInspection?.environment.gitRoot ?? workbenchInspection?.environment.workspaceRoot)} environment={workbenchInspection?.environment ?? null} inspection={workbenchInspection} activeTool={activeWorkbenchTool} onToolAction={handleToolAction} onRefreshInspection={() => activeWorkbenchTool && void inspectWorkbench(activeWorkbenchTool)} onShare={shareEnvironment} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()} onMaximize={() => void toggleMaximize()} isMaximized={isMaximized}>{workbenchContent}</AgentWorkbench>
+    </main>;
 }
 
 export default App;

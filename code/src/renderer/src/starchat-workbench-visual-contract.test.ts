@@ -50,7 +50,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
     }
     expect(markup).not.toContain('data-workbench="environment-popover"');
     expect(markup).toContain('data-workbench="environment-trigger"');
-    expect(markup).toContain('data-workbench="terminal-panel"');
+    expect(markup).toContain('data-workbench-terminal="verification-log"');
     expect(workbenchSource).toContain('工作树');
   });
 
@@ -94,7 +94,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(markup).not.toContain('模型窗口交互');
     expect(markup).not.toContain('刚刚');
     expect(markup).not.toContain('7天');
-    expect(markup).toContain('Project-008 Agent 工作流');
+    expect(markup).toContain('当前会话');
     expect(workbenchSource).toContain('sessionTitle');
   });
 

@@ -30,8 +30,9 @@ describe('StarChat final reference polish contract', () => {
     expect(stylesheet).toContain('[data-theme="light"] .wb-character-art img { opacity: .58;');
     expect(stylesheet).toContain('.wb-trajectory p { max-width: 330px;');
     expect(stylesheet).toContain('.agent-composer { min-height: 210px;');
-    expect(chatSource).toContain('agent-attachment-code-preview');
-    expect(chatSource).toContain('分销45秒');
+    expect(chatSource).toContain('agent-attachment-empty');
+    expect(chatSource).not.toContain('agent-attachment-code-preview');
+    expect(chatSource).not.toContain('分销45秒');
     expect(chatSource).toContain('contextUsageOverride');
     expect(screenshotSource).toContain('contextUsageOverride={32}');
     expect(chatSource).toContain('剩余上下文');
