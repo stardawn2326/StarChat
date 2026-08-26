@@ -25,7 +25,7 @@ export function SettingsHome({ state, presentation, onOpen }: SettingsHomeProps)
         <p>从桌宠陪伴出发，集中管理角色、视觉、语音与连接。现有配置会继续兼容并保留。</p>
       </div>
       <div className="settings-card-grid">
-        {SETTINGS_CARDS.map((card, index) => <button className="settings-category-card" type="button" key={card.id} onClick={() => onOpen(card.id)} aria-label={`${card.title}：${card.description}`}>
+        {SETTINGS_CARDS.map((card, index) => <button className="settings-category-card" type="button" key={card.id} data-settings-page={card.id} data-workbench-entry="settings" onClick={() => onOpen(card.id)} aria-label={`${card.title}：${card.description}`}>
           <span className="settings-category-index" aria-hidden="true">0{index + 1}</span>
           <span className="settings-category-icon" aria-hidden="true">{card.icon}</span>
           <span className="settings-category-copy">

@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { AgentTask } from '../../shared/agent';
 import { AgentWorkbench } from './AgentWorkbench';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -46,5 +47,56 @@ describe('StarChat Agent workbench shell', () => {
     expect(petSource).not.toContain('data-workbench');
     expect(petStyles).toContain('.pet-shell');
     expect(petStyles).toContain('background: transparent;');
+  });
+
+  it('renders real capability states and current Agent tasks in the right and bottom workbench slots', () => {
+    const task = {
+      id: 'task-1',
+      sessionId: 'baoyin.default:default',
+      roleId: 'baoyin.default',
+      message: '检查项目状态',
+      mode: 'agent',
+      route: { route: 'agent', method: 'deterministic', explain: '项目检查' },
+      status: 'running',
+      createdAt: 1,
+      updatedAt: 2,
+      currentStep: 1,
+      steps: [],
+      invocations: []
+    } as AgentTask;
+    const markup = renderToStaticMarkup(createElement(AgentWorkbench, {
+      activePage: 'chat',
+      roleName: '白音',
+      modelLabel: '未配置外部模型',
+      themeLabel: '浅色晨星',
+      agentAvailable: true,
+      agentTasks: [task],
+      onNavigate: () => undefined,
+      onToggleBottomPanel: () => undefined,
+      onCancelTask: () => undefined,
+      children: createElement('div', null, '真实页面插槽')
+    }));
+
+    expect(markup).toContain('工作区资源');
+    expect(markup).toContain('文件与源码只读');
+    expect(markup).toContain('受控验证');
+    expect(markup).toContain('任务管理');
+    expect(markup).toContain('侧边对话');
+    expect(markup).toContain('任意终端');
+    expect(markup).toContain('浏览器');
+    expect(markup).toContain('Git 写入');
+    expect(markup).toContain('data-capability-state="disabled"');
+    expect(markup).toContain('data-agent-ui="capabilities"');
+    expect(markup).not.toMatch(/<button[^>]+data-capability-id="(?:terminal|browser|git-write)"/);
+    expect(markup).toContain('检查项目状态');
+    expect(markup).toContain('task-1');
+  });
+
+  it('keeps the sidebar and capability rail available in the narrow-window layout', () => {
+    const narrowBlock = css.slice(css.lastIndexOf('@media (max-width: 700px)'));
+    expect(narrowBlock).toContain('.workbench-sidebar { display: flex;');
+    expect(narrowBlock).toContain('.workbench-right-rail { display: flex;');
+    expect(narrowBlock).not.toContain('.workbench-sidebar { display: none;');
+    expect(narrowBlock).not.toContain('.workbench-right-rail { display: none;');
   });
 });

@@ -13,7 +13,7 @@ import { formatSemanticMappings, parseSemanticMappings, runtimeExpressionCommand
 import { SettingsDetailsV2 } from './SettingsDetailsV2';
 import { isWindowIntent } from './settings-preview';
 import { syncPetBoundsIntoSettings } from './settings-state';
-import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
+import { getWorkbenchCapabilities, SETTINGS_CARDS, WORKBENCH_NAVIGATION_ITEMS, type SettingsPageId } from './settings-schema';
 import { THEME_TOKEN_KEYS, THEME_TOKENS } from '../../shared/theme';
 
 const testDirectory = dirname(fileURLToPath(import.meta.url));
@@ -120,6 +120,18 @@ describe('settings center components', () => {
     ]);
   });
 
+  it('keeps every settings page reachable from the canonical StarChat workbench navigation', () => {
+    expect(WORKBENCH_NAVIGATION_ITEMS.filter((item) => item.id !== null).map((item) => item.id)).toEqual(SETTINGS_CARDS.map((card) => card.id));
+    expect(WORKBENCH_NAVIGATION_ITEMS.filter((item) => item.group === 'settings').map((item) => item.label)).toEqual([
+      '陪伴对话',
+      '人格与记忆',
+      '角色模型',
+      '语音',
+      '服务与连接',
+      '应用行为'
+    ]);
+  });
+
   it('renders the category-card home without a legacy menu or low-value controls', () => {
     const markup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS, onOpen: () => undefined }));
     expect(markup).toContain('aria-labelledby="settings-home-title"');
@@ -127,6 +139,30 @@ describe('settings center components', () => {
     expect(markup).not.toContain('模型构图');
     expect(markup).not.toContain('窗口与交互');
     expect(markup).not.toContain('<nav');
+    for (const card of SETTINGS_CARDS) expect(markup).toContain(`data-settings-page="${card.id}"`);
+  });
+
+  it('exposes real behavior controls without moving model viewport controls into the window settings page', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps('behavior')));
+    for (const label of ['窗口透明度', '悬停边框透明度', '悬停显示延迟', '悬停淡出时长', '跟随最大步长', '水平跟随范围', '垂直跟随范围']) {
+      expect(markup).toContain(label);
+    }
+    expect(markup).not.toContain('模型缩放');
+    expect(markup).not.toContain('模型 X 偏移');
+  });
+
+  it('describes Agent capability availability from real bridge state and never upgrades denied tools', () => {
+    const ready = getWorkbenchCapabilities({ agentAvailable: true, activeTaskCount: 2, hasModel: true });
+    expect(ready.find((item) => item.id === 'resources')).toMatchObject({ state: 'available' });
+    expect(ready.find((item) => item.id === 'tasks')).toMatchObject({ state: 'available', statusLabel: '2 个活动任务' });
+    expect(ready.find((item) => item.id === 'verification')).toMatchObject({ state: 'available' });
+    expect(ready.find((item) => item.id === 'source')).toMatchObject({ state: 'available' });
+    expect(ready.find((item) => item.id === 'terminal')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
+    expect(ready.find((item) => item.id === 'browser')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
+    expect(ready.find((item) => item.id === 'git-write')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
+    expect(settingsAppSource).toContain('window.baoyin.agent.list()');
+    expect(settingsAppSource).toContain('agentAvailable={agentTasks !== null}');
+    expect(settingsAppSource).toContain('onCancelTask');
   });
 
   it('keeps necessary model actions while hiding removed sliders and license confirmation', () => {

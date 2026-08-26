@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CubismDebugCommand, CubismRuntimeCommand, PublicAppState } from '../../shared/ipc';
+import type { AgentTask } from '../../shared/agent';
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
@@ -48,6 +49,7 @@ function App(): JSX.Element {
   const [error, setError] = useState('');
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [presentationDraft, setPresentationDraft] = useState<PresentationSettings>(DEFAULT_PRESENTATION_SETTINGS);
+  const [agentTasks, setAgentTasks] = useState<AgentTask[] | null>(null);
   const settingsDirty = useRef(false);
   const roleDirty = useRef(false);
   const settingsTimer = useRef<number | null>(null);
@@ -119,6 +121,27 @@ function App(): JSX.Element {
       if (settingsTimer.current) window.clearTimeout(settingsTimer.current);
       if (presentationTimer.current) window.clearTimeout(presentationTimer.current);
     };
+  }, []);
+
+  useEffect(() => {
+    let disposed = false;
+    const mergeTask = (task: AgentTask): void => {
+      if (disposed) return;
+      setAgentTasks((current) => [...(current ?? []).filter((item) => item.id !== task.id), task].sort((a, b) => b.updatedAt - a.updatedAt));
+    };
+    void window.baoyin.agent.list().then((tasks) => {
+      if (!disposed) setAgentTasks([...tasks].sort((a, b) => b.updatedAt - a.updatedAt));
+    }).catch(() => {
+      if (!disposed) setAgentTasks(null);
+    });
+    const unsubscribe = window.baoyin.agent.onEvent((event) => {
+      if (event.type === 'task') {
+        mergeTask(event.task);
+        return;
+      }
+      void window.baoyin.agent.get(event.taskId).then((task) => { if (task) mergeTask(task); }).catch(() => undefined);
+    });
+    return () => { disposed = true; unsubscribe(); };
   }, []);
 
   useEffect(() => {
@@ -247,7 +270,7 @@ function App(): JSX.Element {
       return;
     }
     if (page === 'behavior') {
-      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut, themePreference: DEFAULT_APP_SETTINGS.themePreference });
+      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorEyeWeight: DEFAULT_APP_SETTINGS.cursorEyeWeight, cursorHeadWeight: DEFAULT_APP_SETTINGS.cursorHeadWeight, cursorBodyWeight: DEFAULT_APP_SETTINGS.cursorBodyWeight, cursorSmoothing: DEFAULT_APP_SETTINGS.cursorSmoothing, cursorMaxStep: DEFAULT_APP_SETTINGS.cursorMaxStep, cursorRangeX: DEFAULT_APP_SETTINGS.cursorRangeX, cursorRangeY: DEFAULT_APP_SETTINGS.cursorRangeY, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petWindowOpacity: DEFAULT_APP_SETTINGS.petWindowOpacity, petHoverBorderOpacity: DEFAULT_APP_SETTINGS.petHoverBorderOpacity, petHoverShowDelayMs: DEFAULT_APP_SETTINGS.petHoverShowDelayMs, petHoverFadeMs: DEFAULT_APP_SETTINGS.petHoverFadeMs, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut, themePreference: DEFAULT_APP_SETTINGS.themePreference });
       return;
     }
     if (page === 'service') {
@@ -315,6 +338,16 @@ function App(): JSX.Element {
     }
   };
 
+  const cancelAgentTask = async (taskId: string): Promise<void> => {
+    try {
+      await window.baoyin.agent.cancel(taskId);
+      const task = await window.baoyin.agent.get(taskId);
+      if (task) setAgentTasks((current) => [...(current ?? []).filter((item) => item.id !== task.id), task].sort((a, b) => b.updatedAt - a.updatedAt));
+    } catch (cancelError) {
+      setError(cancelError instanceof Error ? cancelError.message : 'Agent 任务取消失败');
+    }
+  };
+
   useEffect(() => {
     if (page !== 'model' || !settings.live2dModelPath) return;
     void runRuntimeCommand({ type: 'capabilities' });
@@ -376,7 +409,7 @@ function App(): JSX.Element {
     : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />;
 
   return <main className="app-shell settings-center-shell">
-    <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} themeLabel={settings.themePreference === 'system' ? '跟随系统' : settings.themePreference === 'light' ? '浅色晨星' : '深色星夜'} bottomPanelOpen={bottomPanelOpen} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onShowPet={() => window.baoyin.app.showPet()} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>
+    <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} themeLabel={settings.themePreference === 'system' ? '跟随系统' : settings.themePreference === 'light' ? '浅色晨星' : '深色星夜'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onShowPet={() => window.baoyin.app.showPet()} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>
   </main>;
 }
 
