@@ -35,7 +35,7 @@ describe('StarChat Agent workbench integration boundary', () => {
   });
 
   it('returns keyboard focus to the GlassSelect trigger when Tab closes its listbox', () => {
-    expect(glassSelectSource).toContain("if (event.key === 'Tab') {\n      closeMenu(true);");
+    expect(glassSelectSource).toMatch(/if \(event\.key === 'Tab'\) \{\s+closeMenu\(true\);/u);
   });
 
   it('keeps retired configuration-center selectors out of the shared PetWindow stylesheet', () => {
