@@ -49,7 +49,7 @@ describe('StarChat Agent workbench shell', () => {
     expect(petStyles).toContain('background: transparent;');
   });
 
-  it('renders real capability states and current Agent tasks in the right and bottom workbench slots', () => {
+  it('renders real capability states while keeping the bottom slot terminal-only', () => {
     const task = {
       id: 'task-1',
       sessionId: 'baoyin.default:default',
@@ -77,19 +77,19 @@ describe('StarChat Agent workbench shell', () => {
       children: createElement('div', null, '真实页面插槽')
     }));
 
-    expect(markup).toContain('工作区资源');
-    expect(markup).toContain('文件与源码只读');
-    expect(markup).toContain('受控验证');
+    expect(markup).not.toContain('工作区资源');
+    expect(markup).not.toContain('文件与源码只读');
+    expect(markup).not.toContain('受控验证');
     expect(markup).toContain('任务管理');
-    expect(markup).toContain('侧边对话');
-    expect(markup).toContain('任意终端');
+    expect(markup).toContain('侧边聊天');
+    expect(markup).not.toContain('任意终端');
     expect(markup).toContain('浏览器');
-    expect(markup).toContain('Git 写入');
+    expect(markup).not.toContain('Git 写入');
     expect(markup).toContain('data-capability-state="disabled"');
     expect(markup).toContain('data-agent-ui="capabilities"');
     expect(markup).not.toMatch(/<button[^>]+data-capability-id="(?:terminal|browser|git-write)"/);
-    expect(markup).toContain('检查项目状态');
-    expect(markup).toContain('task-1');
+    expect(markup).not.toContain('检查项目状态');
+    expect(markup).not.toContain('task-1');
   });
 
   it('keeps the sidebar and capability rail available in the narrow-window layout', () => {

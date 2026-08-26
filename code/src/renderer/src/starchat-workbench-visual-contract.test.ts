@@ -7,9 +7,13 @@ import { AgentWorkbench } from './AgentWorkbench';
 
 const rendererDirectory = resolve(import.meta.dirname);
 const workbenchSource = readFileSync(resolve(rendererDirectory, 'AgentWorkbench.tsx'), 'utf8');
+const consoleSource = readFileSync(resolve(rendererDirectory, 'AgentConsole.tsx'), 'utf8');
+const chatSource = readFileSync(resolve(rendererDirectory, 'CompanionChat.tsx'), 'utf8');
 const iconSource = readFileSync(resolve(rendererDirectory, 'WorkbenchIcon.tsx'), 'utf8');
 const appSource = readFileSync(resolve(rendererDirectory, 'App.tsx'), 'utf8');
+const mainSource = readFileSync(resolve(rendererDirectory, 'main.tsx'), 'utf8');
 const stylesheet = readFileSync(resolve(rendererDirectory, 'settings-center.css'), 'utf8');
+const rebuiltStylesheet = readFileSync(resolve(rendererDirectory, 'workbench/workbench.css'), 'utf8');
 const petSource = readFileSync(resolve(rendererDirectory, 'PetApp.tsx'), 'utf8');
 const screenshotHelper = resolve(rendererDirectory, '../../../tools/render-workbench-screenshots.mjs');
 
@@ -66,6 +70,23 @@ describe('StarChat 参考图工作台视觉契约', () => {
     for (const placeholder of ['✦', '▱', '⌁', '⌘', '◎', '›_']) expect(workbenchSource).not.toContain(placeholder);
   });
 
+  it('uses the rebuilt five-region workbench tree instead of the legacy settings-center workbench selectors', () => {
+    expect(workbenchSource).toContain("./workbench/workbench.css");
+    expect(workbenchSource).not.toContain("./settings-center.css");
+    expect(workbenchSource).toContain('data-workbench-region="topbar"');
+    expect(workbenchSource).toContain('data-workbench-region="sidebar"');
+    expect(workbenchSource).toContain('data-workbench-region="center"');
+    expect(workbenchSource).toContain('data-workbench-region="right"');
+    expect(workbenchSource).toContain('data-workbench-region="bottom"');
+    expect(consoleSource).not.toContain('agent-character-caption');
+    expect(chatSource).toContain('向 StarChat 发送消息');
+    expect(chatSource).toContain('agent-attachment-slots');
+    expect(chatSource).toContain('agent-composer-control');
+    expect(workbenchSource).not.toContain('workbench-terminal-status');
+    expect(workbenchSource).not.toContain('Agent Runtime ·');
+    expect(workbenchSource).not.toContain('暂无活动 Agent 任务');
+  });
+
   it('uses a real Agent conversation title and non-demo session labels', () => {
     const markup = renderWorkbench();
 
@@ -107,6 +128,12 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(source).toContain('dark');
     expect(source).toContain('capturePage');
     expect(source).toContain('diff');
+    expect(source).toContain('loadFile');
+    expect(source).toContain('executeJavaScript');
+    expect(source).toContain('geometry');
+    expect(source).toContain('regions');
+    expect(source).not.toContain('staticHarnessHtml');
+    expect(mainSource).toContain('workbench-screenshot');
   });
 
   it('uses one theme-agnostic layout structure for both light and dark reference themes', () => {
@@ -124,16 +151,28 @@ describe('StarChat 参考图工作台视觉契约', () => {
   it('pins the reference baseline proportions and key panel dimensions', () => {
     for (const dimension of [
       'grid-template-rows: 55px minmax(0, 1fr) 174px',
-      'grid-template-columns: 266px minmax(0, 1fr) 356px',
+      'grid-template-columns: var(--wb-sidebar-width) minmax(0, 1fr)',
       'gap: 10px',
-      'height: 62px',
+      'flex: 0 0 62px',
       'width: 265px',
-      'min-height: 620px',
+      'min-width: 620px',
       'min-height: 174px',
       'border-radius: 14px'
     ]) {
-      expect(stylesheet).toContain(dimension);
+      expect(rebuiltStylesheet).toContain(dimension);
     }
+    expect(rebuiltStylesheet).toContain('1622x969');
+    expect(rebuiltStylesheet).toContain('titlebar\n  is 55px');
+    expect(rebuiltStylesheet).toContain('--wb-sidebar-open-width: 266px');
+  });
+
+  it('keeps the first-layer Codex composition free of an inset sidebar card', () => {
+    expect(rebuiltStylesheet).toContain('/* First-layer Codex composition */');
+    expect(rebuiltStylesheet).toContain('padding: 0 14px 14px 0');
+    expect(rebuiltStylesheet).toContain('grid-template-columns: var(--wb-sidebar-width) minmax(0, 1fr)');
+    expect(rebuiltStylesheet).toContain('background: transparent; border: 0; border-radius: 0; box-shadow: none;');
+    expect(rebuiltStylesheet).toContain('.wb-topbar {');
+    expect(rebuiltStylesheet).toContain('border-bottom: 1px solid var(--theme-titlebar-border)');
   });
 
   it('does not move workbench presentation concerns into the transparent PetWindow boundary', () => {

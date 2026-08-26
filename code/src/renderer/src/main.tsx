@@ -32,10 +32,24 @@ async function boot(): Promise<void> {
   if (!root) {
     return;
   }
-  const role = new URLSearchParams(window.location.search).get('window') === 'pet' ? 'pet' : 'settings';
+  const params = new URLSearchParams(window.location.search);
+  const screenshotWorkbench = params.get('window') === 'workbench-screenshot';
+  const role = params.get('window') === 'pet' ? 'pet' : 'settings';
   document.documentElement.dataset.baoyinWindow = role;
   document.body.dataset.window = role;
   document.title = role === 'pet' ? '' : 'StarChat';
+  if (screenshotWorkbench) {
+    try {
+      const { WorkbenchScreenshot } = await import('./WorkbenchScreenshot');
+      createRoot(root).render(<WorkbenchScreenshot />);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '工作台截图入口启动失败';
+      document.body.dataset.bootError = message;
+      console.error(`[workbench-screenshot-boot] ${message}`, error);
+      root.textContent = message;
+    }
+    return;
+  }
   if (role === 'settings') {
     setSettingsWindowActiveState(false);
     window.baoyin.app.onWindowFocusState(setSettingsWindowActiveState);

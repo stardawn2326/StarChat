@@ -7,6 +7,7 @@ import { AGENT_MODE_OPTIONS, type AgentEvent, type AgentMode, type AgentTask } f
 import { GlassSelect } from './GlassSelect';
 import { AgentTaskPanel } from './AgentTaskPanel';
 import { estimateContextUsage } from './agent-ui-model';
+import { WorkbenchIcon } from './WorkbenchIcon';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
@@ -22,6 +23,7 @@ interface CompanionChatProps {
   agentTasks: readonly AgentTask[];
   agentEvent: AgentEvent | null;
   onModeChange?: (mode: AgentMode) => void;
+  showRouteControl?: boolean;
 }
 
 type CancelPlayback = (() => void) | null;
@@ -150,7 +152,7 @@ function segmentPresentation(
   return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
-export function CompanionChat({ state, agentTasks, agentEvent, onModeChange }: CompanionChatProps): JSX.Element {
+export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, showRouteControl = true }: CompanionChatProps): JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -433,19 +435,17 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange }: C
       <span>互动<strong>{state.companion.interactionCount}</strong></span>
       <span>记忆<strong>{state.companion.memoryCount}</strong></span>
     </div>
-    <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div>
+    {showRouteControl ? <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div> : null}
     <div className="companion-messages" data-agent-ui="messages" aria-live="polite" aria-label="对话消息">
-      {messages.length === 0 ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
+      {messages.length === 0 && showRouteControl ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
       {messages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
     </div>
     {error ? <p className="error-banner">{error}</p> : null}
     {agentTask ? <div aria-label="当前步骤"><AgentTaskPanel task={agentTask} onApprove={(approved) => void handleAgentApprove(approved)} onRespond={(value) => void handleAgentRespond(value)} onCancel={hasActiveTask ? stop : undefined} /></div> : null}
     <div className="companion-composer agent-composer" data-agent-ui="composer">
-      <div className="agent-composer-tools">
-        <div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件槽位"><span className="agent-attachment-slot">附件</span><span className="agent-attachment-slot is-empty">暂未接入文件 IPC</span></div>
-        <span className="agent-context-usage" role="status">上下文占用 · 本地估算 {contextUsage.percent}%（{contextUsage.characters} 字符）</span>
-      </div>
-      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><div className="agent-compose-actions"><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送消息</button>{requestId ? <button className="secondary-button" type="button" onClick={stop}>停止</button> : null}</div></div>
+      <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件缩略槽"><button className="agent-composer-control" type="button" aria-label="添加附件"><WorkbenchIcon name="plus" size={16} /></button><span className="agent-attachment-slot"><span className="agent-attachment-thumb"><WorkbenchIcon name="file" size={14} /></span><span>附件槽</span></span></div><span className="agent-context-usage" role="status" aria-label="上下文占用">上下文 {contextUsage.percent}%</span></div>
+      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} placeholder="向 StarChat 发送消息" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="send" size={18} /></button></div>
+      <div className="agent-composer-footer"><button className="agent-composer-control" type="button" aria-label="添加工具"><WorkbenchIcon name="plus" size={15} /></button><button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" disabled={!waitingForApproval} onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />帮我批准</button><button className="agent-composer-control is-context" type="button" data-agent-composer-control="context"><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextUsage.percent)}%</button><button className="agent-composer-control" type="button" data-agent-composer-control="model"><WorkbenchIcon name="model" size={14} />默认模型</button><button className="agent-composer-control" type="button" data-agent-composer-control="strength"><WorkbenchIcon name="strength" size={14} />轻度</button><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入"><WorkbenchIcon name="mic" size={15} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
     </div>
     <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p>
   </div>;

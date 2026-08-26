@@ -2,6 +2,8 @@
 code/node_modules/
 code/out/
 code/artifacts/workbench-visual/
+code/artifacts/video-analysis-new/
+code/artifacts/video-analysis/
 outputs/
 .pnpm-store/
 
