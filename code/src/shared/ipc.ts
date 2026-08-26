@@ -7,6 +7,7 @@ import type { PresentationSettings } from './presentation-contract';
 import type { CompanionSummary } from './companion';
 import type { VoiceProfile } from './voice-profile';
 import type { AgentEvent, AgentMode, AgentStartResponse, AgentTask } from './agent';
+import type { WorkbenchInspection, WorkbenchInspectionKind, WorkbenchShareResult } from './workbench';
 
 export interface PublicAppState {
   settings: AppSettings;
@@ -39,6 +40,15 @@ export interface ConnectionTestResult {
 export interface TtsSynthesizeRequest {
   text: string;
 }
+
+export interface WorkbenchInspectRequest {
+  kind: WorkbenchInspectionKind;
+}
+
+export type WorkbenchInspectionResponse = WorkbenchInspection;
+export type WorkbenchShareResponse = WorkbenchShareResult;
+
+export type { WorkbenchEnvironment, WorkbenchGitStatus, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from './workbench';
 
 export type SettingsPreviewDetail =
   | { domain: 'window'; patch: Partial<Pick<AppSettings, 'petBounds' | 'petWindowOpacity' | 'petHoverBorderOpacity' | 'petHoverShowDelayMs' | 'petHoverFadeMs'>> }

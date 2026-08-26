@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   globalShortcut,
   ipcMain,
@@ -63,10 +64,14 @@ import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
+import { formatWorkbenchShare, inspectWorkbench } from './workbench-service';
+import { toggleWindowState } from './window-state';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
+let settingsWindowMaximized = false;
+let settingsWindowRestoreBounds: Electron.Rectangle | null = null;
 let clickTargetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settingsStore: SettingsStore;
@@ -680,6 +685,8 @@ function createSettingsWindow(): void {
   });
   settingsWindow.on('closed', () => {
     settingsWindow = null;
+    settingsWindowMaximized = false;
+    settingsWindowRestoreBounds = null;
   });
 }
 
@@ -1201,6 +1208,33 @@ function flushPendingCubismRuntimeCommands(): void {
 
 function registerIpc(): void {
   ipcMain.handle('state:get', () => getPublicState());
+  ipcMain.handle('workbench:inspect', (event, request: { kind?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以读取工作区状态');
+    const kind = request?.kind === 'resources' || request?.kind === 'source' ? request.kind : null;
+    if (!kind) throw new Error('工作区检查类型无效');
+    return inspectWorkbench(agentWorkspaceRoot(), kind);
+  });
+  ipcMain.handle('workbench:share', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以分享环境摘要');
+    const summary = formatWorkbenchShare(inspectWorkbench(agentWorkspaceRoot(), 'source'));
+    clipboard.writeText(summary.text);
+    return summary;
+  });
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以切换最大化');
+    const currentBounds = targetWindow.getBounds();
+    const transition = toggleWindowState(
+      { maximized: settingsWindowMaximized, restoreBounds: settingsWindowRestoreBounds },
+      currentBounds,
+      screen.getDisplayMatching(currentBounds).workArea
+    );
+    targetWindow.unmaximize();
+    targetWindow.setBounds(transition.bounds);
+    settingsWindowMaximized = transition.state.maximized;
+    settingsWindowRestoreBounds = transition.state.restoreBounds;
+    return transition.state.maximized;
+  });
   ipcMain.handle('api:test-connection', async (event, request: ConnectionTestRequest): Promise<ConnectionTestResult> => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以测试服务连接');
     const apiKey = typeof request?.apiKey === 'string' && request.apiKey.trim() ? request.apiKey.trim() : getStore().readSecrets().apiKey;

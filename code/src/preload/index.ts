@@ -23,7 +23,10 @@ import type {
   RoleSaveRequest,
   SaveSettingsRequest,
   SettingsPreviewDetail,
-  StartChatRequest
+  StartChatRequest,
+  WorkbenchInspectRequest,
+  WorkbenchInspectionResponse,
+  WorkbenchShareResponse
 } from '../shared/ipc';
 import type { AgentEvent, AgentStartRequest, AgentTask } from '../shared/agent';
 import type { Live2DModelState } from '../shared/live2d';
@@ -34,6 +37,7 @@ const bridge = {
   app: {
     minimize: (): void => ipcRenderer.send('window:minimize'),
     close: (): void => ipcRenderer.send('window:close'),
+    toggleMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize'),
     showSettings: (): void => ipcRenderer.send('settings:show'),
     hideSettings: (): void => ipcRenderer.send('settings:hide'),
     toggleSettings: (): void => ipcRenderer.send('settings:toggle'),
@@ -65,6 +69,10 @@ const bridge = {
       ipcRenderer.on('state:changed', listener);
       return () => ipcRenderer.removeListener('state:changed', listener);
     }
+  },
+  workbench: {
+    inspect: (request: WorkbenchInspectRequest): Promise<WorkbenchInspectionResponse> => ipcRenderer.invoke('workbench:inspect', request),
+    share: (): Promise<WorkbenchShareResponse> => ipcRenderer.invoke('workbench:share')
   },
   settings: {
     save: (request: SaveSettingsRequest): Promise<PublicAppState> => {
