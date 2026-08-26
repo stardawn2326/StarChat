@@ -37,6 +37,21 @@ describe('StarChat final reference polish contract', () => {
     expect(chatSource).toContain('剩余上下文');
   });
 
+  it('keeps the character art covering the panel from its top edge', () => {
+    expect(stylesheet).toContain('.wb-character-art { position: absolute; inset: 0;');
+    expect(stylesheet).toContain('.wb-character-actions { position: absolute; top: 11px; right: 11px; z-index: 4;');
+    expect(stylesheet).toContain('.wb-character-art img { position: relative; top: 0;');
+    expect(stylesheet).not.toContain('top: 120px;');
+  });
+
+  it('publishes character panel/art rectangles in the real screenshot geometry contract', () => {
+    const screenshotHelper = readFileSync(resolve(rendererDirectory, '../../../tools/render-workbench-screenshots.mjs'), 'utf8');
+    expect(screenshotHelper).toContain('characterPanel:');
+    expect(screenshotHelper).toContain('characterArt:');
+    expect(screenshotHelper).toContain("characterPanel: '[data-workbench-region=\"character\"]'");
+    expect(screenshotHelper).toContain("characterArt: '.wb-character-art'");
+  });
+
   it('keeps the rail and terminal glass layers legible without changing the passed animation contract', () => {
     expect(stylesheet).toContain('.wb-tool-card.is-disabled { cursor: not-allowed; opacity: .72;');
     expect(stylesheet).toContain('.wb-tool-card { display: flex; min-width: 0; min-height: 174px;');

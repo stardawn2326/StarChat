@@ -25,7 +25,9 @@ const expectedGeometry = {
   sidebar: { x: 0, y: 55, width: 266, height: 900 },
   center: { x: 280, y: 55, width: 964, height: 718 },
   right: { x: 1254, y: 55, width: 354, height: 718 },
-  bottom: { x: 280, y: 781, width: 1328, height: 174 }
+  bottom: { x: 280, y: 781, width: 1328, height: 174 },
+  characterPanel: { x: 297, y: 132, width: 325.5, height: 624 },
+  characterArt: { x: 298, y: 133, width: 323.5, height: 622 }
 };
 
 const preloadSource = `
@@ -77,7 +79,9 @@ async function readGeometry(window) {
       sidebar: '[data-workbench-region="sidebar"]',
       center: '[data-workbench-region="center"]',
       right: '[data-workbench-region="right"]',
-      bottom: '[data-workbench-region="bottom"]'
+      bottom: '[data-workbench-region="bottom"]',
+      characterPanel: '[data-workbench-region="character"]',
+      characterArt: '.wb-character-art'
     };
     const regions = Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
       const node = document.querySelector(selector);
