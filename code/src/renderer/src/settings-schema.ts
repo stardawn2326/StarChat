@@ -6,7 +6,8 @@ export type SettingsPageId =
   | 'service'
   | 'behavior';
 
-export type WorkbenchPage = SettingsPageId | null;
+/** The workbench keeps the complete settings catalog behind one lower-left entry. */
+export type WorkbenchPage = SettingsPageId | 'settings' | null;
 
 import type { PresentationSettings } from '../../shared/presentation-contract';
 
