@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { useState } from 'react';
 import type { CubismRuntimeCommand, DisplaySummary, CubismDebugCommand, PublicAppState } from '../../shared/ipc';
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import type { Live2DModelState } from '../../shared/live2d';
@@ -9,6 +9,7 @@ import { THEME_PREFERENCES, sanitizeThemePreference, type ThemePreference } from
 import { PRESENTATION_SLIDERS, type PresentationSettings } from '../../shared/presentation-contract';
 import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
 import { CompanionChat } from './CompanionChat';
+import { GlassSelect } from './GlassSelect';
 import { classifyRuntimeAsset, type RuntimeAssetState } from './cubism-runtime-capability-state';
 
 const live2dStatusLabels: Record<Live2DModelState['status'], string> = {
@@ -107,99 +108,6 @@ function TextField({ label, value, onChange, rows = 2, placeholder, password = f
 
 function ToggleField({ label, checked, onChange, description, disabled = false }: { label: string; checked: boolean; onChange: (checked: boolean) => void; description?: string; disabled?: boolean }): JSX.Element {
   return <label className="toggle-field"><span><strong>{label}</strong>{description ? <small>{description}</small> : null}</span><input aria-label={label} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /></label>;
-}
-
-interface GlassSelectOption {
-  value: string;
-  label: string;
-}
-
-function GlassSelect({ value, options, onChange, ariaLabel, placeholder = '请选择', disabled = false }: { value: string; options: GlassSelectOption[]; onChange: (value: string) => void; ariaLabel: string; placeholder?: string; disabled?: boolean }): JSX.Element {
-  const [open, setOpen] = useState(false);
-  const selectedIndex = options.findIndex((option) => option.value === value);
-  const [activeIndex, setActiveIndex] = useState(Math.max(0, selectedIndex));
-  const rootRef = useRef<HTMLDivElement>(null);
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const listboxRef = useRef<HTMLDivElement>(null);
-  const id = useId();
-  const menuId = `glass-select-menu-${id}`;
-  const selectedOption = selectedIndex >= 0 ? options[selectedIndex] : undefined;
-
-  useEffect(() => {
-    if (!open) setActiveIndex(Math.max(0, selectedIndex));
-  }, [open, selectedIndex]);
-
-  useEffect(() => {
-    if (!open) return;
-    listboxRef.current?.focus({ preventScroll: true });
-    const onPointerDown = (event: PointerEvent): void => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    window.addEventListener('pointerdown', onPointerDown);
-    return () => window.removeEventListener('pointerdown', onPointerDown);
-  }, [open]);
-
-  const openMenu = (): void => {
-    if (disabled) return;
-    setActiveIndex(Math.max(0, selectedIndex));
-    setOpen(true);
-  };
-
-  const closeMenu = (restoreFocus = false): void => {
-    setOpen(false);
-    if (restoreFocus) triggerRef.current?.focus();
-  };
-
-  const choose = (index: number): void => {
-    const option = options[index];
-    if (!option) return;
-    onChange(option.value);
-    closeMenu(true);
-  };
-
-  const handleTriggerKeyDown = (event: KeyboardEvent<HTMLButtonElement>): void => {
-    if (event.key === 'Enter' || event.key === ' ' || event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      openMenu();
-    }
-  };
-
-  const handleListboxKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault();
-      closeMenu(true);
-      return;
-    }
-    if (event.key === 'Tab') {
-      closeMenu();
-      return;
-    }
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault();
-      if (options.length === 0) return;
-      const direction = event.key === 'ArrowDown' ? 1 : -1;
-      setActiveIndex((index) => (index + direction + options.length) % options.length);
-      return;
-    }
-    if (event.key === 'Home' || event.key === 'End') {
-      event.preventDefault();
-      setActiveIndex(event.key === 'Home' ? 0 : Math.max(0, options.length - 1));
-      return;
-    }
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      choose(activeIndex);
-    }
-  };
-
-  return <div ref={rootRef} className={`glass-select${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}>
-    <button ref={triggerRef} type="button" className="glass-select-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => (open ? closeMenu() : openMenu())} onKeyDown={handleTriggerKeyDown}>
-      <span>{selectedOption?.label ?? placeholder}</span><span className="glass-select-chevron" aria-hidden="true">⌄</span>
-    </button>
-    {open ? <div ref={listboxRef} id={menuId} className="glass-select-menu" role="listbox" aria-label={ariaLabel} tabIndex={-1} onKeyDown={handleListboxKeyDown}>
-      {options.length > 0 ? options.map((option, index) => <div id={`${menuId}-option-${index}`} key={option.value} className={`glass-select-option${index === activeIndex ? ' is-active' : ''}${option.value === value ? ' is-selected' : ''}`} role="option" aria-selected={option.value === value} onClick={() => choose(index)} onMouseEnter={() => setActiveIndex(index)}>{option.label}</div>) : <div className="glass-select-empty">暂无可选项</div>}
-    </div> : null}
-  </div>;
 }
 
 function DetailHeader({ page, onBack, onReset }: { page: SettingsPageId; onBack: () => void; onReset: () => void }): JSX.Element {

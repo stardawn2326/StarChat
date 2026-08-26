@@ -4,6 +4,7 @@ import type { ExpressionName, RoleSemanticMapping } from '../../shared/role-pack
 import type { AppSettings } from '../../shared/settings';
 import { presentationForAssistantText } from '../../shared/companion';
 import { AGENT_MODE_OPTIONS, type AgentMode, type AgentTask } from '../../shared/agent';
+import { GlassSelect } from './GlassSelect';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
@@ -435,7 +436,7 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
       <span>互动<strong>{state.companion.interactionCount}</strong></span>
       <span>记忆<strong>{state.companion.memoryCount}</strong></span>
     </div>
-    <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><select id="assistant-mode" aria-label="对话路由模式" value={state.settings.assistantMode} onChange={(event) => onModeChange?.(event.target.value as AgentMode)}>{AGENT_MODE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div>
+    <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div>
     <div className="companion-messages" aria-live="polite">
       {messages.length === 0 ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
       {messages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
