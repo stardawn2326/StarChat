@@ -26,7 +26,7 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(mainSource).toContain("title: ''");
     expect(mainSource).toContain("petWindow?.setTitle('')");
     expect(rendererHtml).toContain('<title></title>');
-    expect(mainSourceText).toContain("document.title = role === 'pet' ? '' : '白音 AI 助手'");
+    expect(mainSourceText).toContain("document.title = role === 'pet' ? '' : 'StarChat'");
     expect(stylesSource).toMatch(/\.pet-shell\.pet-hovered\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-shell\.pet-model-editing\s*\{\s*outline:\s*none/s);
     expect(stylesSource).toMatch(/\.pet-resize-frame\s*\{[^}]*inset:\s*0[^}]*box-sizing:\s*border-box[^}]*pointer-events:\s*none/s);

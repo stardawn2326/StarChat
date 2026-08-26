@@ -112,7 +112,7 @@ function ToggleField({ label, checked, onChange, description, disabled = false }
 
 function DetailHeader({ page, onBack, onReset }: { page: SettingsPageId; onBack: () => void; onReset: () => void }): JSX.Element {
   const card = SETTINGS_CARDS.find((item) => item.id === page) ?? SETTINGS_CARDS[0];
-  return <div className="detail-header"><button type="button" className="back-button" onClick={onBack}>← 返回</button><div><span className="eyebrow">{card.icon} / SETTINGS</span><h1>{card.title}</h1><p>{card.description}</p></div><button type="button" className="secondary-button" onClick={onReset}>恢复本页默认</button></div>;
+  return <div className="detail-header"><button type="button" className="back-button" onClick={onBack}>← 返回工作台</button><div><span className="eyebrow">STARCHAT / {card.icon}</span><h1>{card.title}</h1><p>{card.description}</p></div><button type="button" className="secondary-button" onClick={onReset}>恢复本页默认</button></div>;
 }
 
 function PersonalityDetails(props: SettingsDetailsV2Props): JSX.Element {

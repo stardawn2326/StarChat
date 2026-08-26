@@ -35,7 +35,7 @@ async function boot(): Promise<void> {
   const role = new URLSearchParams(window.location.search).get('window') === 'pet' ? 'pet' : 'settings';
   document.documentElement.dataset.baoyinWindow = role;
   document.body.dataset.window = role;
-  document.title = role === 'pet' ? '' : '白音 AI 助手';
+  document.title = role === 'pet' ? '' : 'StarChat';
   if (role === 'settings') {
     setSettingsWindowActiveState(false);
     window.baoyin.app.onWindowFocusState(setSettingsWindowActiveState);

@@ -119,7 +119,7 @@ describe('Windows transparent pet shell', () => {
     const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
     const menu = source.slice(source.indexOf('function buildPetMenu'), source.indexOf('function registerSettingsShortcut'));
     const labels = [...menu.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
-    expect(labels).toEqual(['展开应用', '解锁/锁定桌宠', '显示/隐藏桌宠', '退出应用']);
+    expect(labels).toEqual(['打开 StarChat 工作台', '解锁/锁定桌宠', '显示/隐藏桌宠', '退出应用']);
     expect(menu.match(/type: 'separator'/g)).toHaveLength(1);
     expect(menu).toContain('tray.setContextMenu(buildPetMenu())');
     expect(source).toContain('function togglePetMenuLock()');

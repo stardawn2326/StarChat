@@ -1,8 +1,8 @@
 {
-  "name": "baoyin-ai-assistant",
+  "name": "starchat",
   "version": "0.2.1",
   "private": true,
-  "description": "Project-008 白音 AI 助手的 Windows 桌宠首阶段工程。",
+  "description": "StarChat 的 Windows 桌宠 Agent 工作台。",
   "type": "module",
   "main": "out/main/index.js",
   "scripts": {
@@ -46,7 +46,7 @@
   },
   "build": {
     "appId": "com.baoyin.aiassistant",
-    "productName": "白音 AI 助手",
+    "productName": "StarChat",
     "directories": {
       "output": "../outputs"
     },

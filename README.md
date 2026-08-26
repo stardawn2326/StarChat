@@ -1,8 +1,8 @@
-# Project-008-白音AI助手
+# StarChat · Project-008-白音AI助手
 
 - 创建日期：2026-08-20
 - 项目编号：008
-- 目标：开发人格、声音、表演和外部形象可替换的 Windows AI 桌宠，未来扩展移动端。
+- 目标：开发人格、声音、表演和外部形象可替换的 StarChat Windows AI 桌宠，未来扩展移动端。
 - 技术栈：Electron、React、TypeScript、electron-vite、OpenAI-compatible HTTP API。
 - 当前进度：第一阶段桌宠窗口、在线流式对话、角色包、外部 Live2D 模型只读导入/诊断/适配骨架已完成。
 - 角色策略：白音是默认人格与视觉参考，不绑定白音专属 PSD、Cubism 工程或分层模型；同一人格可切换到任意合法的外部 Live2D 模型。

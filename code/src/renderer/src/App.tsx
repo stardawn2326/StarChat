@@ -12,6 +12,7 @@ import { emitSettingsPreview, isWindowIntent } from './settings-preview';
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
 import { applyThemeToDocument } from '../../shared/theme';
 import { syncPetBoundsIntoSettings } from './settings-state';
+import { AgentWorkbench, type WorkbenchPage } from './AgentWorkbench';
 
 function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -43,6 +44,7 @@ function App(): JSX.Element {
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
   const [displays, setDisplays] = useState<Awaited<ReturnType<typeof window.baoyin.display.list>>>([]);
   const [page, setPage] = useState<SettingsPageId | null>(null);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(true);
   const [error, setError] = useState('');
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [presentationDraft, setPresentationDraft] = useState<PresentationSettings>(DEFAULT_PRESENTATION_SETTINGS);
@@ -219,6 +221,15 @@ function App(): JSX.Element {
     setPage(nextPage);
   };
 
+  const navigateWorkbench = (nextPage: WorkbenchPage): void => {
+    if (nextPage === null) {
+      window.history.pushState({ settingsPage: null }, '', '#home');
+      setPage(null);
+      return;
+    }
+    openPage(nextPage);
+  };
+
   const resetPage = (): void => {
     if (page === 'personality' && appState) {
       roleDirty.current = false;
@@ -358,11 +369,14 @@ function App(): JSX.Element {
     }
   };
 
-  if (!appState || !roleDraft) return <div className="loading-card">正在唤醒白音配置中心…</div>;
+  if (!appState || !roleDraft) return <div className="loading-card">正在唤醒 StarChat 工作台…</div>;
+
+  const workbenchContent = page
+    ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />
+    : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />;
 
   return <main className="app-shell settings-center-shell">
-    <header className="titlebar"><div className="drag-region"><span className="status-dot" /><span>白音 AI 助手 · 配置中心</span></div><div className="window-actions"><button aria-label="显示桌宠" type="button" onClick={() => window.baoyin.app.showPet()}>⌂</button><button aria-label="最小化" type="button" onClick={() => window.baoyin.app.minimize()}>－</button><button aria-label="隐藏设置" type="button" onClick={() => window.baoyin.app.hideSettings()}>×</button></div></header>
-    {page ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} /> : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />}
+    <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} themeLabel={settings.themePreference === 'system' ? '跟随系统' : settings.themePreference === 'light' ? '浅色晨星' : '深色星夜'} bottomPanelOpen={bottomPanelOpen} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onShowPet={() => window.baoyin.app.showPet()} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>
   </main>;
 }
 

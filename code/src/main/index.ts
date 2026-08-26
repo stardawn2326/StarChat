@@ -962,7 +962,7 @@ function togglePetMenuVisibility(): void {
 
 function buildPetMenu(): Menu {
   return Menu.buildFromTemplate([
-    { label: '展开应用', click: showSettingsWindow },
+    { label: '打开 StarChat 工作台', click: showSettingsWindow },
     { label: '解锁/锁定桌宠', click: togglePetMenuLock },
     { label: '显示/隐藏桌宠', click: togglePetMenuVisibility },
     { type: 'separator' },
@@ -994,7 +994,7 @@ function toggleSettings(): void {
 function createTray(): void {
   const iconPath = trayIconPath();
   tray = new Tray(nativeImage.createFromPath(iconPath));
-  tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
+  tray.setToolTip('StarChat · 外部 Live2D 桌宠');
   tray.setContextMenu(buildPetMenu());
   tray.on('double-click', toggleSettings);
 }
