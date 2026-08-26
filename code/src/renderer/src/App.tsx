@@ -236,7 +236,7 @@ function App(): JSX.Element {
       return;
     }
     if (page === 'behavior') {
-      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, petLocked: DEFAULT_APP_SETTINGS.petLocked, petInteractionMode: DEFAULT_APP_SETTINGS.petInteractionMode, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut, themePreference: DEFAULT_APP_SETTINGS.themePreference });
+      onSettingsChange({ alwaysOnTop: DEFAULT_APP_SETTINGS.alwaysOnTop, cursorTrackingEnabled: DEFAULT_APP_SETTINGS.cursorTrackingEnabled, cursorIdleMotion: DEFAULT_APP_SETTINGS.cursorIdleMotion, petDisplayId: DEFAULT_APP_SETTINGS.petDisplayId, settingsShortcut: DEFAULT_APP_SETTINGS.settingsShortcut, themePreference: DEFAULT_APP_SETTINGS.themePreference });
       return;
     }
     if (page === 'service') {

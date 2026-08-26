@@ -865,6 +865,24 @@ function togglePetInteractionMode(): void {
   togglePetLock();
 }
 
+function unlockPetWindowForAdjustment(): void {
+  const settings = getStore().readSettings();
+  if (!petInteractionEnabled(settings)) {
+    getStore().save(petInteractionSettingsForEnabled(true));
+  }
+  setPetModelEditMode(true);
+  sendStateChanged();
+}
+
+function lockPetWindow(): void {
+  const settings = getStore().readSettings();
+  if (petInteractionEnabled(settings)) {
+    getStore().save(petInteractionSettingsForEnabled(false));
+  }
+  setPetModelEditMode(false);
+  sendStateChanged();
+}
+
 function startCursorPolling(): void {
   if (cursorTimer) {
     return;
@@ -927,9 +945,10 @@ function createTray(): void {
   tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
   tray.setContextMenu(
     Menu.buildFromTemplate([
-      { label: '打开设置', click: showSettingsWindow },
-      { label: '调整窗口', click: togglePetModelEditMode },
+      { label: '展开应用', click: showSettingsWindow },
+      { label: '解锁桌宠窗口', click: unlockPetWindowForAdjustment },
       { label: '显示桌宠', click: showPetWindowInactive },
+      { type: 'separator' },
       { label: '退出应用', click: () => app.quit() }
     ])
   );
@@ -958,12 +977,11 @@ function showPetContextMenu(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-  const locked = !petInteractionEnabled(getStore().readSettings());
-  const visible = petWindow.isVisible();
   Menu.buildFromTemplate([
-    { label: '打开设置', click: showSettingsWindow },
-    { label: locked ? '解锁窗口' : '锁定窗口', click: togglePetLock },
-    { label: visible ? '隐藏桌宠' : '显示桌宠', click: () => visible ? petWindow?.hide() : showPetWindowInactive() },
+    { label: '展开应用', click: showSettingsWindow },
+    { label: '锁定桌宠窗口', click: lockPetWindow },
+    { label: '隐藏桌宠', click: () => petWindow?.hide() },
+    { type: 'separator' },
     { label: '退出应用', click: () => app.quit() }
   // Do not make the transparent pet HWND the native menu owner: owner activation
   // is the second trigger for the Windows inactive non-client artifact.

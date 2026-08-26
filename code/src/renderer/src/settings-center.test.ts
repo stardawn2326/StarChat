@@ -226,8 +226,11 @@ describe('settings center components', () => {
 
   it('keeps the lock-to-adjust chain and Alt whole-window drag semantics intact', () => {
     const behaviorMarkup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps('behavior')));
-    expect(behaviorMarkup).toContain('锁定桌宠窗口');
+    const behaviorReset = settingsAppSource.slice(settingsAppSource.indexOf("if (page === 'behavior')"), settingsAppSource.indexOf("if (page === 'service')"));
+    expect(behaviorMarkup).not.toContain('锁定桌宠窗口');
     expect(behaviorMarkup).toContain('桌宠状态');
+    expect(behaviorReset).not.toContain('petLocked');
+    expect(behaviorReset).not.toContain('petInteractionMode');
     expect(mainProcessSource).toContain('if (next.petLocked && petModelEditMode)');
     expect(mainProcessSource).toContain('setPetModelEditMode(false);');
     expect(mainProcessSource).toContain('function togglePetModelEditMode()');

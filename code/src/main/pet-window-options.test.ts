@@ -109,33 +109,48 @@ describe('Windows transparent pet shell', () => {
     expect(petMenu).not.toContain('桌宠回中');
   });
 
-  it('keeps the pet visibility action available from the model context menu', () => {
+  it('keeps the hide action available from the visible model context menu', () => {
     const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
-    expect(petMenu).toContain("visible ? '隐藏桌宠' : '显示桌宠'");
+    expect(petMenu).toContain("{ label: '隐藏桌宠'");
+    expect(petMenu).not.toContain("visible ? '隐藏桌宠' : '显示桌宠'");
   });
 
   it('keeps the tray menu limited to the four requested actions', () => {
     const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
-    expect(tray).toContain("{ label: '打开设置'");
-    expect(tray).toContain("{ label: '调整窗口'");
-    expect(tray).toContain("{ label: '显示桌宠'");
-    expect(tray).toContain("{ label: '退出应用'");
+    const labels = [...tray.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
+    expect(labels).toEqual(['展开应用', '解锁桌宠窗口', '显示桌宠', '退出应用']);
+    expect(tray.match(/type: 'separator'/g)).toHaveLength(1);
     expect(tray).not.toContain('开启/关闭桌宠交互');
     expect(tray).not.toContain('显示/隐藏桌宠');
     expect(tray).not.toContain('退出白音');
-    expect(tray).not.toContain("type: 'separator'");
+    expect(tray.indexOf("type: 'separator'")).toBeLessThan(tray.indexOf("label: '退出应用'"));
   });
 
   it('keeps the pet context menu on the requested lock, visibility, and exit actions', () => {
     const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
-    expect(petMenu).toContain("locked ? '解锁窗口' : '锁定窗口'");
-    expect(petMenu).toContain("visible ? '隐藏桌宠' : '显示桌宠'");
-    expect(petMenu).toContain("{ label: '退出应用'");
+    const labels = [...petMenu.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
+    expect(labels).toEqual(['展开应用', '锁定桌宠窗口', '隐藏桌宠', '退出应用']);
+    expect(petMenu.match(/type: 'separator'/g)).toHaveLength(1);
     expect(petMenu).not.toContain('开启桌宠交互');
     expect(petMenu).not.toContain('关闭交互并锁定');
     expect(petMenu).not.toContain('显示/隐藏桌宠');
     expect(petMenu).not.toContain('退出白音');
-    expect(petMenu).not.toContain("type: 'separator'");
+    expect(petMenu.indexOf("type: 'separator'")).toBeLessThan(petMenu.indexOf("label: '退出应用'"));
+  });
+
+  it('keeps unlock and lock menu actions one-way', () => {
+    const unlockAction = source.slice(source.indexOf('function unlockPetWindowForAdjustment'), source.indexOf('function lockPetWindow'));
+    const lockAction = source.slice(source.indexOf('function lockPetWindow'), source.indexOf('function startCursorPolling'));
+    const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
+    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
+    expect(unlockAction).toContain('getStore().save(petInteractionSettingsForEnabled(true));');
+    expect(unlockAction).toContain('setPetModelEditMode(true);');
+    expect(unlockAction).not.toContain('togglePet');
+    expect(lockAction).toContain('getStore().save(petInteractionSettingsForEnabled(false));');
+    expect(lockAction).toContain('setPetModelEditMode(false);');
+    expect(lockAction).not.toContain('togglePet');
+    expect(tray).toContain('click: unlockPetWindowForAdjustment');
+    expect(petMenu).toContain('click: lockPetWindow');
   });
 
   it('does not opt the transparent pet into Electron toolbar appearance', () => {
