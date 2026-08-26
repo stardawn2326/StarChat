@@ -162,7 +162,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
       expect(rebuiltStylesheet).toContain(dimension);
     }
     expect(rebuiltStylesheet).toContain('1622x969');
-    expect(rebuiltStylesheet).toContain('titlebar\n  is 55px');
+    expect(rebuiltStylesheet).toMatch(/titlebar\s+is 55px/u);
     expect(rebuiltStylesheet).toContain('--wb-sidebar-open-width: 266px');
   });
 
