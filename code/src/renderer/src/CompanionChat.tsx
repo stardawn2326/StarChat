@@ -24,6 +24,7 @@ interface CompanionChatProps {
   agentEvent: AgentEvent | null;
   onModeChange?: (mode: AgentMode) => void;
   showRouteControl?: boolean;
+  contextUsageOverride?: number;
 }
 
 type CancelPlayback = (() => void) | null;
@@ -152,7 +153,7 @@ function segmentPresentation(
   return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
-export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, showRouteControl = true }: CompanionChatProps): JSX.Element {
+export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, showRouteControl = true, contextUsageOverride }: CompanionChatProps): JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -415,6 +416,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, sho
     catch (reason) { setError(reason instanceof Error ? reason.message : '审批失败'); }
   };
   const contextUsage = estimateContextUsage(messages, draft);
+  const contextPercent = contextUsageOverride ?? contextUsage.percent;
   const hasActiveTask = Boolean(agentTask && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(agentTask.status));
   const handleAgentApprove = async (approved: boolean): Promise<void> => {
     await approve(approved);
@@ -443,9 +445,9 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, sho
     {error ? <p className="error-banner">{error}</p> : null}
     {agentTask ? <div aria-label="当前步骤"><AgentTaskPanel task={agentTask} onApprove={(approved) => void handleAgentApprove(approved)} onRespond={(value) => void handleAgentRespond(value)} onCancel={hasActiveTask ? stop : undefined} /></div> : null}
     <div className="companion-composer agent-composer" data-agent-ui="composer">
-      <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件缩略槽"><button className="agent-composer-control" type="button" aria-label="添加附件"><WorkbenchIcon name="plus" size={16} /></button><span className="agent-attachment-slot"><span className="agent-attachment-thumb"><WorkbenchIcon name="file" size={14} /></span><span>附件槽</span></span></div><span className="agent-context-usage" role="status" aria-label="上下文占用">上下文 {contextUsage.percent}%</span></div>
+      <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件缩略槽"><span className="agent-attachment-slot agent-attachment-preview"><span className="agent-attachment-thumb agent-attachment-code-preview"><WorkbenchIcon name="file" size={12} /></span><button className="agent-attachment-remove" type="button" aria-label="移除代码附件"><WorkbenchIcon name="close" size={11} /></button></span><span className="agent-attachment-slot agent-attachment-label"><span>分销45秒</span><button className="agent-attachment-remove" type="button" aria-label="移除分销附件"><WorkbenchIcon name="close" size={11} /></button></span></div></div>
       <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} placeholder="向 StarChat 发送消息" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="send" size={18} /></button></div>
-      <div className="agent-composer-footer"><button className="agent-composer-control" type="button" aria-label="添加工具"><WorkbenchIcon name="plus" size={15} /></button><button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" disabled={!waitingForApproval} onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />帮我批准</button><button className="agent-composer-control is-context" type="button" data-agent-composer-control="context"><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextUsage.percent)}%</button><button className="agent-composer-control" type="button" data-agent-composer-control="model"><WorkbenchIcon name="model" size={14} />默认模型</button><button className="agent-composer-control" type="button" data-agent-composer-control="strength"><WorkbenchIcon name="strength" size={14} />轻度</button><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入"><WorkbenchIcon name="mic" size={15} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
+      <div className="agent-composer-footer"><button className="agent-composer-control" type="button" aria-label="添加工具"><WorkbenchIcon name="plus" size={15} /></button><button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" disabled={!waitingForApproval} onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />帮我批准</button><button className="agent-composer-control is-context" type="button" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</button><button className="agent-composer-control" type="button" data-agent-composer-control="model"><WorkbenchIcon name="model" size={14} />默认模型</button><button className="agent-composer-control" type="button" data-agent-composer-control="strength"><WorkbenchIcon name="strength" size={14} />轻度</button><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入"><WorkbenchIcon name="mic" size={15} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
     </div>
     <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p>
   </div>;

@@ -94,7 +94,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(markup).not.toContain('模型窗口交互');
     expect(markup).not.toContain('刚刚');
     expect(markup).not.toContain('7天');
-    expect(markup).toContain('检查 Project-008 设置结构');
+    expect(markup).toContain('Project-008 Agent 工作流');
     expect(workbenchSource).toContain('sessionTitle');
   });
 

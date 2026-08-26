@@ -65,7 +65,7 @@ export function Sidebar({ activePage, onNavigate, collapsed }: SidebarProps): JS
     <div className="wb-sidebar-heading"><strong>工作区</strong><span><WorkbenchIcon name="search" size={15} /><WorkbenchIcon name="menu" size={15} /><WorkbenchIcon name="file" size={15} /></span></div>
     <div className="wb-project-tree">
       <SidebarProjectRow label="Project-008" collapsed={collapsed} active={activePage === null} onClick={() => onNavigate(null)} />
-      <SidebarSessionRow label="检查 Project-008 设置结构" collapsed={collapsed} meta="进行中" active={activePage === null} onClick={() => onNavigate(null)} />
+      <SidebarSessionRow label="Project-008 Agent 工作流" collapsed={collapsed} meta="进行中" active={activePage === null} onClick={() => onNavigate(null)} />
       <SidebarProjectRow label="StarChat" collapsed={collapsed} onClick={() => onNavigate(null)} />
       <SidebarSessionRow label="窗口交互回归" collapsed={collapsed} meta="最近" onClick={() => onNavigate(null)} />
     </div>
@@ -123,7 +123,7 @@ function EnvironmentPopover({ onClose }: EnvironmentPopoverProps): JSX.Element {
 interface CenterFrameProps { activePage: WorkbenchPage; children: ReactNode; initialEnvironmentOpen?: boolean; }
 
 function CenterFrame({ activePage, children, initialEnvironmentOpen = false }: CenterFrameProps): JSX.Element {
-  const sessionTitle = '检查 Project-008 设置结构';
+  const sessionTitle = 'Project-008 Agent 工作流';
   const [environmentOpen, setEnvironmentOpen] = useState(initialEnvironmentOpen);
   const environmentTriggerRef = useRef<HTMLButtonElement>(null);
   const environmentPopoverRef = useRef<HTMLDivElement>(null);

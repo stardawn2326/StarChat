@@ -35,7 +35,7 @@ export function WorkbenchScreenshot(): JSX.Element {
   }, [theme]);
   return <main className="app-shell settings-center-shell">
     <AgentWorkbench activePage={null} roleName={state.role.displayName} modelLabel="默认模型" bottomPanelOpen agentAvailable agentTasks={[]} initialEnvironmentOpen onNavigate={() => undefined} onToggleBottomPanel={() => undefined} onMinimize={() => undefined} onClose={() => undefined}>
-      <AgentConsole state={state} agentTasks={[]} agentEvent={null} onModeChange={() => undefined} />
+      <AgentConsole state={state} agentTasks={[]} agentEvent={null} onModeChange={() => undefined} contextUsageOverride={32} />
     </AgentWorkbench>
   </main>;
 }
