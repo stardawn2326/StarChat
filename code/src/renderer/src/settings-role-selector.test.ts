@@ -21,7 +21,8 @@ describe('role selector overlay contract', () => {
     const ruleStart = stylesheet.indexOf('body[data-window="settings"] .glass-select-menu {');
     expect(ruleStart).toBeGreaterThanOrEqual(0);
     const rule = stylesheet.slice(ruleStart, stylesheet.indexOf('}', ruleStart) + 1);
-    expect(rule).toContain('background: #0b1322;');
+    expect(rule).toContain('background: var(--theme-menu-surface);');
+    expect(rule).not.toContain('background: #0b1322;');
     expect(rule).not.toContain('background: rgba(');
   });
 });

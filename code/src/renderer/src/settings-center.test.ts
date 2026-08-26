@@ -301,9 +301,9 @@ describe('settings center components', () => {
     expect(settingsCenterCss).toContain('body[data-window="settings"] .app-shell.settings-center-shell');
     expect(settingsCenterCss).toContain('body[data-window-active="true"] .app-shell.settings-center-shell');
     expect(settingsCenterCss).toContain('body[data-window-active="false"] .app-shell.settings-center-shell');
-    expect(settingsCenterCss).toContain('inset 0 0 0 1px rgba(124, 156, 196, .52)');
+    expect(settingsCenterCss).toContain('inset 0 0 0 1px var(--theme-border-strong)');
     expect(settingsCenterCss).toContain('border-radius: 22px');
-    expect(settingsCenterCss).toContain('inset 0 0 0 1px rgba(124, 156, 196, .78)');
+    expect(settingsCenterCss).toContain('inset 0 0 0 1px var(--theme-border-strong)');
     expect(settingsCenterCss).not.toContain(':focus-within');
   });
 

@@ -3,7 +3,7 @@ import type { ChatMessage, PublicAppState } from '../../shared/ipc';
 import type { ExpressionName, RoleSemanticMapping } from '../../shared/role-package';
 import type { AppSettings } from '../../shared/settings';
 import { presentationForAssistantText } from '../../shared/companion';
-import { AGENT_MODE_OPTIONS, type AgentMode, type AgentTask } from '../../shared/agent';
+import { AGENT_MODE_OPTIONS, type AgentEvent, type AgentMode, type AgentTask } from '../../shared/agent';
 import { GlassSelect } from './GlassSelect';
 import { AgentTaskPanel } from './AgentTaskPanel';
 import { estimateContextUsage } from './agent-ui-model';
@@ -17,7 +17,12 @@ import {
   timeDomainRms
 } from './speech-performance';
 
-interface CompanionChatProps { state: PublicAppState; onModeChange?: (mode: AgentMode) => void }
+interface CompanionChatProps {
+  state: PublicAppState;
+  agentTasks: readonly AgentTask[];
+  agentEvent: AgentEvent | null;
+  onModeChange?: (mode: AgentMode) => void;
+}
 
 type CancelPlayback = (() => void) | null;
 
@@ -145,12 +150,13 @@ function segmentPresentation(
   return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
-export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.Element {
+export function CompanionChat({ state, agentTasks, agentEvent, onModeChange }: CompanionChatProps): JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [agentTask, setAgentTask] = useState<AgentTask | null>(null);
+  const [selectedAgentTaskId, setSelectedAgentTaskId] = useState<string | null>(null);
+  const [hideHistoricalAgentTask, setHideHistoricalAgentTask] = useState(false);
   const activeId = useRef<string | null>(null);
   const assistantText = useRef('');
   const settingsRef = useRef(state.settings);
@@ -168,8 +174,14 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
   const phraseCueSchedulerRef = useRef(new PhraseCueScheduler({ leadMs: 420, cooldownMs: 650 }));
   const cancelCueLeadRef = useRef<CancelPlayback>(null);
   const replyStartedRef = useRef(false);
+  const lastAgentEventRef = useRef<AgentEvent | null>(null);
   settingsRef.current = state.settings;
   mappingsRef.current = state.role.presentation.semanticMappings;
+
+  const latestAgentTask = agentTasks.find((task) => task.roleId === state.role.id) ?? null;
+  const agentTask = selectedAgentTaskId
+    ? agentTasks.find((task) => task.id === selectedAgentTaskId) ?? null
+    : hideHistoricalAgentTask ? null : latestAgentTask;
 
   const clearEmotionFlushTimer = (): void => {
     if (emotionFlushTimerRef.current === null) return;
@@ -321,57 +333,42 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
   }, []);
 
   useEffect(() => {
-    let disposed = false;
-    void window.baoyin.agent.list().then((tasks) => {
-      const latest = tasks.find((task) => task.roleId === state.role.id);
-      if (!disposed && latest) setAgentTask(latest);
-    }).catch(() => undefined);
-    const unsubscribe = window.baoyin.agent.onEvent((event) => {
-      if (disposed || event.taskId !== activeId.current) return;
-      if (event.type === 'task') {
-        setAgentTask(event.task);
-        if (event.task.status === 'running') {
-          setMessages((current) => {
-            const next = [...current];
-            if (next.at(-1)?.role === 'assistant' && !next.at(-1)?.content) next[next.length - 1] = { role: 'assistant', content: '我接手了，先在后台处理，完成后告诉你。' };
-            return next;
-          });
-        }
-      } else if (event.type === 'step') {
-        setAgentTask((current) => {
-          if (!current) return current;
-          const steps = [...current.steps];
-          const existing = steps.findIndex((step) => step.id === event.step.id);
-          if (existing >= 0) steps[existing] = event.step;
-          else steps.push(event.step);
-          return { ...current, steps, currentStep: event.step.index, updatedAt: event.timestamp };
-        });
-      } else if (event.type === 'approval') {
-        setAgentTask((current) => current ? { ...current, status: 'waiting_for_approval', approval: event.request } : current);
-      } else if (event.type === 'input') {
-        setAgentTask((current) => current ? { ...current, status: 'waiting_for_input', input: event.request } : current);
-      } else if (event.type === 'complete') {
-        setAgentTask((current) => current ? { ...current, status: 'completed', result: event.result } : current);
+    if (!agentEvent || agentEvent === lastAgentEventRef.current) return;
+    lastAgentEventRef.current = agentEvent;
+    if (agentEvent.type === 'task') {
+      if (agentEvent.task.roleId !== state.role.id || (activeId.current && agentEvent.task.id !== activeId.current)) return;
+      setSelectedAgentTaskId(agentEvent.task.id);
+      setHideHistoricalAgentTask(false);
+      if (agentEvent.task.status === 'running') {
         setMessages((current) => {
           const next = [...current];
-          if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: event.result.summary };
-          else next.push({ role: 'assistant', content: event.result.summary });
-          return next.slice(-20);
+          if (next.at(-1)?.role === 'assistant' && !next.at(-1)?.content) next[next.length - 1] = { role: 'assistant', content: '我接手了，先在后台处理，完成后告诉你。' };
+          return next;
         });
-        enqueueSpeech(event.result.summary);
-        void playbackTailRef.current.then(() => finishDialoguePresentation());
-        activeId.current = null;
-        setRequestId(null);
-      } else if (event.type === 'error') {
-        setAgentTask((current) => current ? { ...current, error: current.error ?? event.message } : current);
-        setError(event.message);
-        cancelSpeech();
-        activeId.current = null;
-        setRequestId(null);
       }
-    });
-    return () => { disposed = true; unsubscribe(); };
-  }, [state.role.id]);
+      return;
+    }
+    if (agentEvent.taskId !== activeId.current) return;
+    setSelectedAgentTaskId(agentEvent.taskId);
+    setHideHistoricalAgentTask(false);
+    if (agentEvent.type === 'complete') {
+      setMessages((current) => {
+        const next = [...current];
+        if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: agentEvent.result.summary };
+        else next.push({ role: 'assistant', content: agentEvent.result.summary });
+        return next.slice(-20);
+      });
+      enqueueSpeech(agentEvent.result.summary);
+      void playbackTailRef.current.then(() => finishDialoguePresentation());
+      activeId.current = null;
+      setRequestId(null);
+    } else if (agentEvent.type === 'error') {
+      setError(agentEvent.message);
+      cancelSpeech();
+      activeId.current = null;
+      setRequestId(null);
+    }
+  }, [agentEvent, state.role.id]);
 
   const send = async (): Promise<void> => {
     const message = draft.trim();
@@ -381,35 +378,16 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
     emitDialogue('listening');
     setError(null);
     setDraft('');
-    setAgentTask(null);
+    setSelectedAgentTaskId(null);
+    setHideHistoricalAgentTask(true);
     assistantText.current = '';
     const history = messages.filter((item) => item.content.trim()).slice(-18);
     setMessages((current) => [...current, { role: 'user', content: message }, { role: 'assistant', content: '' }]);
     try {
       const id = await window.baoyin.chat.start({ message, history, mode: state.settings.assistantMode });
       activeId.current = id;
+      setSelectedAgentTaskId(id);
       setRequestId(id);
-      if (state.settings.assistantMode !== 'companion') {
-        void window.baoyin.agent.get(id).then((task) => {
-          if (!task || activeId.current !== id) return;
-          setAgentTask(task);
-          if (task.status === 'failed' && task.error) {
-            setError(task.error);
-            activeId.current = null;
-            setRequestId(null);
-          }
-          if (task.status === 'completed' && task.result) {
-            setMessages((current) => {
-              const next = [...current];
-              if (next.at(-1)?.role === 'assistant') next[next.length - 1] = { role: 'assistant', content: task.result!.summary };
-              return next.slice(-20);
-            });
-            enqueueSpeech(task.result.summary);
-            activeId.current = null;
-            setRequestId(null);
-          }
-        }).catch(() => undefined);
-      }
     } catch (reason) {
       cancelSpeech();
       setError(reason instanceof Error ? reason.message : '无法开始对话');

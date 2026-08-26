@@ -63,7 +63,7 @@ export function GlassSelect({ id, value, options, onChange, ariaLabel, placehold
       return;
     }
     if (event.key === 'Tab') {
-      closeMenu();
+      closeMenu(true);
       return;
     }
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {

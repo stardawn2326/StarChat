@@ -60,7 +60,7 @@ async function boot(): Promise<void> {
     panel.className = 'boot-error-panel';
     panel.setAttribute('role', 'alert');
     const heading = document.createElement('strong');
-    heading.textContent = role === 'pet' ? '白音模型启动失败' : '白音界面启动失败';
+    heading.textContent = role === 'pet' ? 'StarChat 桌宠模型启动失败' : 'StarChat 界面启动失败';
     const detail = document.createElement('span');
     detail.textContent = message;
     const hint = document.createElement('small');

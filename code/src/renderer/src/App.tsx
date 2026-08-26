@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CubismDebugCommand, CubismRuntimeCommand, PublicAppState } from '../../shared/ipc';
-import type { AgentTask } from '../../shared/agent';
+import type { AgentEvent, AgentTask } from '../../shared/agent';
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
@@ -51,6 +51,7 @@ function App(): JSX.Element {
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [presentationDraft, setPresentationDraft] = useState<PresentationSettings>(DEFAULT_PRESENTATION_SETTINGS);
   const [agentTasks, setAgentTasks] = useState<AgentTask[] | null>(null);
+  const [agentEvent, setAgentEvent] = useState<AgentEvent | null>(null);
   const settingsDirty = useRef(false);
   const roleDirty = useRef(false);
   const settingsTimer = useRef<number | null>(null);
@@ -136,6 +137,7 @@ function App(): JSX.Element {
       if (!disposed) setAgentTasks(null);
     });
     const unsubscribe = window.baoyin.agent.onEvent((event) => {
+      setAgentEvent(event);
       if (event.type === 'task') {
         mergeTask(event.task);
         return;
@@ -406,8 +408,8 @@ function App(): JSX.Element {
   if (!appState || !roleDraft) return <div className="loading-card">正在唤醒 StarChat 工作台…</div>;
 
   const workbenchContent = page
-    ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />
-    : <AgentConsole state={appState} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} />;
+    ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />
+    : <AgentConsole state={appState} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} />;
 
   return <main className="app-shell settings-center-shell">
     <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} themeLabel={settings.themePreference === 'system' ? '跟随系统' : settings.themePreference === 'light' ? '浅色晨星' : '深色星夜'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onShowPet={() => window.baoyin.app.showPet()} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>

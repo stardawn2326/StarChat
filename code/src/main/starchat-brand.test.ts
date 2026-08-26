@@ -39,4 +39,10 @@ describe('StarChat visible brand boundary', () => {
     expect(appSource).toContain('window.baoyin');
     expect(appSource).toContain("role.id === 'baoyin.default'");
   });
+
+  it('keeps startup failure copy on the StarChat brand while preserving role identity elsewhere', () => {
+    expect(rendererSource).toContain("role === 'pet' ? 'StarChat 桌宠模型启动失败' : 'StarChat 界面启动失败'");
+    expect(rendererSource).not.toContain('白音模型启动失败');
+    expect(rendererSource).not.toContain('白音界面启动失败');
+  });
 });

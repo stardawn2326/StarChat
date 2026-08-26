@@ -3,6 +3,7 @@ import type { CubismRuntimeCommand, DisplaySummary, CubismDebugCommand, PublicAp
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
 import type { Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
+import type { AgentEvent, AgentTask } from '../../shared/agent';
 import { SEMANTIC_ACTIONS, SEMANTIC_EXPRESSIONS, ROLE_SCALE_KEYS, type RolePackage, type RoleScaleKey } from '../../shared/role-package';
 import { DEFAULT_APP_SETTINGS, type AppSettings, type ModelViewportSettings } from '../../shared/settings';
 import { THEME_PREFERENCES, sanitizeThemePreference, type ThemePreference } from '../../shared/theme';
@@ -67,6 +68,8 @@ export interface SettingsDetailsV2Props {
   displays: DisplaySummary[];
   error: string;
   modelViewport: ModelViewportSettings;
+  agentTasks?: readonly AgentTask[];
+  agentEvent?: AgentEvent | null;
   onBack: () => void;
   onResetPage: () => void;
   onSettingsChange: (patch: Partial<AppSettings>, persist?: boolean) => void;
@@ -210,7 +213,7 @@ function BehaviorDetails(props: SettingsDetailsV2Props): JSX.Element {
 }
 
 function ChatDetails(props: SettingsDetailsV2Props): JSX.Element {
-  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat state={props.state} onModeChange={(mode) => props.onSettingsChange({ assistantMode: mode })} /></div>;
+  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">COMPANIONSHIP</span><h2>和 {props.state.role.displayName} 对话</h2></div><span className="section-status">记忆 {props.state.companion.memoryCount} 条</span></div><CompanionChat state={props.state} agentTasks={props.agentTasks ?? []} agentEvent={props.agentEvent ?? null} onModeChange={(mode) => props.onSettingsChange({ assistantMode: mode })} /></div>;
 }
 
 export function SettingsDetailsV2(props: SettingsDetailsV2Props): JSX.Element {
