@@ -109,48 +109,50 @@ describe('Windows transparent pet shell', () => {
     expect(petMenu).not.toContain('桌宠回中');
   });
 
-  it('keeps the hide action available from the visible model context menu', () => {
-    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
-    expect(petMenu).toContain("{ label: '隐藏桌宠'");
+  it('keeps the visibility toggle available from the pet context menu', () => {
+    const petMenu = source.slice(source.indexOf('function buildPetMenu'), source.indexOf('function normalizeHistory'));
+    expect(petMenu).toContain("{ label: '显示/隐藏桌宠'");
     expect(petMenu).not.toContain("visible ? '隐藏桌宠' : '显示桌宠'");
   });
 
-  it('keeps the tray menu limited to the four requested actions', () => {
+  it('keeps the tray menu identical to the pet menu with fixed slash labels', () => {
     const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
-    const labels = [...tray.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
-    expect(labels).toEqual(['展开应用', '解锁桌宠窗口', '显示桌宠', '退出应用']);
-    expect(tray.match(/type: 'separator'/g)).toHaveLength(1);
-    expect(tray).not.toContain('开启/关闭桌宠交互');
-    expect(tray).not.toContain('显示/隐藏桌宠');
-    expect(tray).not.toContain('退出白音');
-    expect(tray.indexOf("type: 'separator'")).toBeLessThan(tray.indexOf("label: '退出应用'"));
+    const menu = source.slice(source.indexOf('function buildPetMenu'), source.indexOf('function registerSettingsShortcut'));
+    const labels = [...menu.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
+    expect(labels).toEqual(['展开应用', '解锁/锁定桌宠', '显示/隐藏桌宠', '退出应用']);
+    expect(menu.match(/type: 'separator'/g)).toHaveLength(1);
+    expect(menu).toContain('tray.setContextMenu(buildPetMenu())');
+    expect(source).toContain('function togglePetMenuLock()');
+    expect(source).toContain('function togglePetMenuVisibility()');
+    expect(menu).not.toContain('解锁桌宠窗口');
+    expect(menu).not.toContain('显示桌宠');
+    expect(menu).not.toContain('退出白音');
+    expect(menu.indexOf("type: 'separator'")).toBeLessThan(menu.indexOf("label: '退出应用'"));
   });
 
-  it('keeps the pet context menu on the requested lock, visibility, and exit actions', () => {
+  it('uses the same fixed-label menu and opposite-state actions for pet right click', () => {
     const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
-    const labels = [...petMenu.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
-    expect(labels).toEqual(['展开应用', '锁定桌宠窗口', '隐藏桌宠', '退出应用']);
-    expect(petMenu.match(/type: 'separator'/g)).toHaveLength(1);
-    expect(petMenu).not.toContain('开启桌宠交互');
-    expect(petMenu).not.toContain('关闭交互并锁定');
-    expect(petMenu).not.toContain('显示/隐藏桌宠');
-    expect(petMenu).not.toContain('退出白音');
-    expect(petMenu.indexOf("type: 'separator'")).toBeLessThan(petMenu.indexOf("label: '退出应用'"));
+    expect(petMenu).toContain('const menu = buildPetMenu();');
+    expect(petMenu).toContain('menu.popup({ window: menuOwner ?? undefined });');
+    const lockToggle = source.slice(source.indexOf('function togglePetMenuLock'), source.indexOf('function togglePetMenuVisibility'));
+    const visibilityToggle = source.slice(source.indexOf('function togglePetMenuVisibility'), source.indexOf('function buildPetMenu'));
+    expect(lockToggle).toContain('if (petInteractionEnabled(getStore().readSettings()))');
+    expect(lockToggle).toContain('lockPetWindow();');
+    expect(lockToggle).toContain('unlockPetWindowForAdjustment();');
+    expect(visibilityToggle).toContain('if (petWindow?.isVisible())');
+    expect(visibilityToggle).toContain('petWindow.hide();');
+    expect(visibilityToggle).toContain('showPetWindowInactive();');
   });
 
-  it('keeps unlock and lock menu actions one-way', () => {
+  it('keeps explicit lock and visibility actions state-aware', () => {
     const unlockAction = source.slice(source.indexOf('function unlockPetWindowForAdjustment'), source.indexOf('function lockPetWindow'));
     const lockAction = source.slice(source.indexOf('function lockPetWindow'), source.indexOf('function startCursorPolling'));
-    const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
-    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
     expect(unlockAction).toContain('getStore().save(petInteractionSettingsForEnabled(true));');
     expect(unlockAction).toContain('setPetModelEditMode(true);');
     expect(unlockAction).not.toContain('togglePet');
     expect(lockAction).toContain('getStore().save(petInteractionSettingsForEnabled(false));');
     expect(lockAction).toContain('setPetModelEditMode(false);');
     expect(lockAction).not.toContain('togglePet');
-    expect(tray).toContain('click: unlockPetWindowForAdjustment');
-    expect(petMenu).toContain('click: lockPetWindow');
   });
 
   it('does not opt the transparent pet into Electron toolbar appearance', () => {
@@ -160,9 +162,29 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain('skipTaskbar: true');
   });
 
-  it('does not make the transparent pet HWND the native context-menu owner', () => {
+  it('uses a non-pet native context-menu owner for outside-click dismissal', () => {
     const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
     expect(petMenu).not.toContain('.popup({ window: petWindow })');
-    expect(petMenu).toContain('.popup()');
+    expect(petMenu).toContain('menu.popup({ window: menuOwner ?? undefined });');
+  });
+
+  it('tracks the native pet menu and closes it through its lifecycle without focusing the pet', () => {
+    const petMenu = source.slice(source.indexOf('function showPetContextMenu'), source.indexOf('function normalizeHistory'));
+    expect(source).toContain('let activePetContextMenu: { menu: Menu; owner: BrowserWindow | null } | null = null;');
+    expect(source).toContain('function closePetContextMenu(): void');
+    expect(source).toContain('active.menu.closePopup(active.owner ?? undefined);');
+    expect(petMenu).toContain("menu.once('menu-will-close'");
+    expect(petMenu).toContain('menu.popup({ window: menuOwner ?? undefined });');
+    expect(petMenu).not.toContain('window: petWindow');
+  });
+
+  it('routes window blur and app shutdown through the explicit menu close path', () => {
+    const petWindowCreation = source.slice(source.indexOf('function createPetWindow'), source.indexOf('function createSettingsWindow'));
+    const settingsWindowCreation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
+    const beforeQuit = source.slice(source.indexOf("app.on('before-quit'"));
+    expect(petWindowCreation).toContain('closePetContextMenu();');
+    expect(settingsWindowCreation).toContain('closePetContextMenu();');
+    expect(source).toContain("app.on('browser-window-blur'");
+    expect(beforeQuit).toContain('closePetContextMenu();');
   });
 });

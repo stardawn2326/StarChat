@@ -89,6 +89,7 @@ let petStartupShowPending = true;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
 let latestCubismMetrics: CubismRuntimeMetrics | null = null;
+let activePetContextMenu: { menu: Menu; owner: BrowserWindow | null } | null = null;
 interface PendingCubismRuntimeCommand {
   command: CubismRuntimeCommand;
   resolve: (result: CubismRuntimeResult) => void;
@@ -492,6 +493,15 @@ function applyPetWindowSettings(previousSettings?: ReturnType<SettingsStore['rea
   }
 }
 
+function closePetContextMenu(): void {
+  const active = activePetContextMenu;
+  activePetContextMenu = null;
+  if (!active) {
+    return;
+  }
+  active.menu.closePopup(active.owner ?? undefined);
+}
+
 function showPetWindowInactive(): void {
   if (!petWindow || petWindow.isDestroyed() || isQuitting) {
     return;
@@ -596,6 +606,7 @@ function createPetWindow(): void {
     arrangeInteractionTestWindow();
   });
   petWindow.on('blur', () => {
+    closePetContextMenu();
     cancelPetPointerTransactions();
   });
   petWindow.on('close', (event) => {
@@ -605,6 +616,7 @@ function createPetWindow(): void {
     }
   });
   petWindow.on('closed', () => {
+    closePetContextMenu();
     for (const [requestId, pending] of pendingCubismRuntimeCommands) {
       clearTimeout(pending.timer);
       if (pending.retryTimer) clearTimeout(pending.retryTimer);
@@ -650,7 +662,10 @@ function createSettingsWindow(): void {
   settingsWindow.setBackgroundColor('#00000000');
   settingsWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   settingsWindow.on('focus', () => sendSettingsWindowFocusState(true));
-  settingsWindow.on('blur', () => sendSettingsWindowFocusState(false));
+  settingsWindow.on('blur', () => {
+    closePetContextMenu();
+    sendSettingsWindowFocusState(false);
+  });
   settingsWindow.on('show', () => sendSettingsWindowFocusState(settingsWindow?.isFocused() === true));
   settingsWindow.on('hide', () => sendSettingsWindowFocusState(false));
   settingsWindow.webContents.on('did-finish-load', () => {
@@ -929,6 +944,32 @@ function stopCursorPolling(): void {
   lastCursorPoint = null;
 }
 
+function togglePetMenuLock(): void {
+  if (petInteractionEnabled(getStore().readSettings())) {
+    lockPetWindow();
+  } else {
+    unlockPetWindowForAdjustment();
+  }
+}
+
+function togglePetMenuVisibility(): void {
+  if (petWindow?.isVisible()) {
+    petWindow.hide();
+  } else {
+    showPetWindowInactive();
+  }
+}
+
+function buildPetMenu(): Menu {
+  return Menu.buildFromTemplate([
+    { label: '展开应用', click: showSettingsWindow },
+    { label: '解锁/锁定桌宠', click: togglePetMenuLock },
+    { label: '显示/隐藏桌宠', click: togglePetMenuVisibility },
+    { type: 'separator' },
+    { label: '退出应用', click: () => app.quit() }
+  ]);
+}
+
 function showSettingsWindow(): void {
   if (!settingsWindow || settingsWindow.isDestroyed()) {
     createSettingsWindow();
@@ -954,15 +995,7 @@ function createTray(): void {
   const iconPath = trayIconPath();
   tray = new Tray(nativeImage.createFromPath(iconPath));
   tray.setToolTip('白音 AI 助手 · 外部 Live2D 桌宠');
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: '展开应用', click: showSettingsWindow },
-      { label: '解锁桌宠窗口', click: unlockPetWindowForAdjustment },
-      { label: '显示桌宠', click: showPetWindowInactive },
-      { type: 'separator' },
-      { label: '退出应用', click: () => app.quit() }
-    ])
-  );
+  tray.setContextMenu(buildPetMenu());
   tray.on('double-click', toggleSettings);
 }
 
@@ -988,15 +1021,19 @@ function showPetContextMenu(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
   }
-  Menu.buildFromTemplate([
-    { label: '展开应用', click: showSettingsWindow },
-    { label: '锁定桌宠窗口', click: lockPetWindow },
-    { label: '隐藏桌宠', click: () => petWindow?.hide() },
-    { type: 'separator' },
-    { label: '退出应用', click: () => app.quit() }
-  // Do not make the transparent pet HWND the native menu owner: owner activation
-  // is the second trigger for the Windows inactive non-client artifact.
-  ]).popup();
+  closePetContextMenu();
+  const menu = buildPetMenu();
+  const menuOwner = settingsWindow && !settingsWindow.isDestroyed() ? settingsWindow : null;
+  activePetContextMenu = { menu, owner: menuOwner };
+  menu.once('menu-will-close', () => {
+    if (activePetContextMenu?.menu === menu) {
+      activePetContextMenu = null;
+    }
+  });
+  // The hidden settings window supplies a stable native owner so Windows can
+  // dismiss the popup on any outside click. Never use the transparent pet HWND:
+  // activating it reintroduces the non-client white strip and focus regression.
+  menu.popup({ window: menuOwner ?? undefined });
 }
 
 function normalizeHistory(value: unknown): ChatMessage[] {
@@ -1743,6 +1780,12 @@ if (singleInstanceLock) {
   });
 }
 
+app.on('browser-window-blur', (_event, window) => {
+  if (window === petWindow || window === settingsWindow) {
+    closePetContextMenu();
+  }
+});
+
 app.on('window-all-closed', () => {
   if (isQuitting && process.platform !== 'darwin') {
     app.quit();
@@ -1750,6 +1793,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  closePetContextMenu();
   persistPetBounds(true);
   isQuitting = true;
   stopCursorPolling();
