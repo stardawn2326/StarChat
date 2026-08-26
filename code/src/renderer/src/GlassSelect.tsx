@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent } from 'react';
+import { WorkbenchIcon } from './WorkbenchIcon';
 
 export interface GlassSelectOption {
   value: string;
@@ -86,7 +87,7 @@ export function GlassSelect({ id, value, options, onChange, ariaLabel, placehold
 
   return <div ref={rootRef} className={`glass-select${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`}>
     <button ref={triggerRef} id={id} type="button" className="glass-select-trigger" aria-label={ariaLabel} aria-haspopup="listbox" aria-expanded={open} aria-controls={menuId} disabled={disabled} onClick={() => (open ? closeMenu() : openMenu())} onKeyDown={handleTriggerKeyDown}>
-      <span>{selectedOption?.label ?? placeholder}</span><span className="glass-select-chevron" aria-hidden="true">⌄</span>
+      <span>{selectedOption?.label ?? placeholder}</span><WorkbenchIcon className="glass-select-chevron" name="chevron" size={15} />
     </button>
     {open ? <div ref={listboxRef} id={menuId} className="glass-select-menu" role="listbox" aria-label={ariaLabel} aria-activedescendant={activeOptionId} tabIndex={-1} onKeyDown={handleListboxKeyDown}>
       {options.length > 0 ? options.map((option, index) => <div id={`${menuId}-option-${index}`} key={option.value} className={`glass-select-option${index === activeIndex ? ' is-active' : ''}${option.value === value ? ' is-selected' : ''}`} role="option" aria-selected={option.value === value} onClick={() => choose(index)} onMouseEnter={() => setActiveIndex(index)}>{option.label}</div>) : <div className="glass-select-empty">暂无可选项</div>}

@@ -1,6 +1,7 @@
 # Dependencies and generated build output
 code/node_modules/
 code/out/
+code/artifacts/workbench-visual/
 outputs/
 .pnpm-store/
 

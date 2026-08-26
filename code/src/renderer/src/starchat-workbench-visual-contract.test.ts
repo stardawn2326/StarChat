@@ -1,5 +1,5 @@
 import { createElement } from 'react';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -7,9 +7,11 @@ import { AgentWorkbench } from './AgentWorkbench';
 
 const rendererDirectory = resolve(import.meta.dirname);
 const workbenchSource = readFileSync(resolve(rendererDirectory, 'AgentWorkbench.tsx'), 'utf8');
+const iconSource = readFileSync(resolve(rendererDirectory, 'WorkbenchIcon.tsx'), 'utf8');
 const appSource = readFileSync(resolve(rendererDirectory, 'App.tsx'), 'utf8');
 const stylesheet = readFileSync(resolve(rendererDirectory, 'settings-center.css'), 'utf8');
 const petSource = readFileSync(resolve(rendererDirectory, 'PetApp.tsx'), 'utf8');
+const screenshotHelper = resolve(rendererDirectory, '../../../tools/render-workbench-screenshots.mjs');
 
 function renderWorkbench(): string {
   return renderToStaticMarkup(createElement(AgentWorkbench, {
@@ -42,9 +44,69 @@ describe('StarChat 参考图工作台视觉契约', () => {
     for (const label of ['资源管理器', '源代码管理', '任务管理', '终端', '浏览器', '侧边聊天']) {
       expect(markup).toContain(label);
     }
-    expect(markup).toContain('data-workbench="environment-popover"');
+    expect(markup).not.toContain('data-workbench="environment-popover"');
+    expect(markup).toContain('data-workbench="environment-trigger"');
     expect(markup).toContain('data-workbench="terminal-panel"');
-    expect(markup).toContain('工作树');
+    expect(workbenchSource).toContain('工作树');
+  });
+
+  it('matches the reference topbar and right rail without invented surfaces', () => {
+    const markup = renderWorkbench();
+
+    expect(markup).not.toContain('workbench-theme-chip');
+    expect(markup).not.toContain('显示桌宠');
+    expect(markup).toContain('data-workbench-window-control="minimize"');
+    expect(markup).toContain('data-workbench-window-control="maximize"');
+    expect(markup).toContain('data-workbench-window-control="close"');
+    expect(markup).not.toContain('workbench-presence-card');
+    expect(markup).not.toContain('workbench-guardrail-card');
+    expect(markup).not.toContain('workbench-rail-footer');
+    expect(workbenchSource).toContain('baoyin-64.png');
+    expect(iconSource).toContain('<svg');
+    for (const placeholder of ['✦', '▱', '⌁', '⌘', '◎', '›_']) expect(workbenchSource).not.toContain(placeholder);
+  });
+
+  it('uses a real Agent conversation title and non-demo session labels', () => {
+    const markup = renderWorkbench();
+
+    expect(markup).not.toContain('设置工作台预览');
+    expect(markup).not.toContain('模型窗口交互');
+    expect(markup).not.toContain('刚刚');
+    expect(markup).not.toContain('7天');
+    expect(markup).toContain('检查 Project-008 设置结构');
+    expect(workbenchSource).toContain('sessionTitle');
+  });
+
+  it('keeps the environment popover closed until its trigger is used and closes it accessibly', () => {
+    const markup = renderWorkbench();
+
+    expect(markup).not.toContain('data-workbench="environment-popover"');
+    expect(markup).toContain('data-workbench="environment-trigger"');
+    expect(workbenchSource).toContain('setEnvironmentOpen');
+    expect(workbenchSource).toContain("event.key === 'Escape'");
+    expect(workbenchSource).toContain('focus()');
+  });
+
+  it('keeps the six settings domains and debug/import/export reachable only through the Settings route', () => {
+    const markup = renderWorkbench();
+
+    expect(markup).toContain('data-workbench="settings-entry"');
+    expect(workbenchSource).not.toMatch(/<(?:input|textarea|select)\b/);
+    expect(workbenchSource).not.toContain('settings-card');
+    expect(appSource).toContain("const settingsPageIds: readonly SettingsPageId[] = ['chat', 'personality', 'model', 'voice', 'service', 'behavior'];");
+    for (const capability of ['onImportRole', 'onExportRole', 'onDebug', 'onRuntimeCommand', 'onSaveService']) expect(appSource).toContain(capability);
+    expect(appSource).toContain("route === 'settings'");
+  });
+
+  it('provides an actual light/dark screenshot capture path at the requested viewport', () => {
+    expect(existsSync(screenshotHelper)).toBe(true);
+    const source = existsSync(screenshotHelper) ? readFileSync(screenshotHelper, 'utf8') : '';
+    expect(source).toContain('1622');
+    expect(source).toContain('969');
+    expect(source).toContain('light');
+    expect(source).toContain('dark');
+    expect(source).toContain('capturePage');
+    expect(source).toContain('diff');
   });
 
   it('uses one theme-agnostic layout structure for both light and dark reference themes', () => {

@@ -1,6 +1,7 @@
 import type { PublicAppState } from '../../shared/ipc';
 import type { AgentEvent, AgentMode, AgentTask } from '../../shared/agent';
 import { CompanionChat } from './CompanionChat';
+import { WorkbenchIcon } from './WorkbenchIcon';
 
 const BAOYIN_CHARACTER_ART = new URL('../../../../assets/character/白音-精修设定稿-v2.png', import.meta.url).href;
 
@@ -19,11 +20,11 @@ export function AgentConsole({ state, agentTasks, agentEvent, onModeChange }: Ag
     </header>
     <div className="agent-workflow-layout" data-agent-ui="workflow">
       <aside className="agent-character-panel" aria-label={`${state.role.displayName}角色预览`}>
-        <div className="agent-character-actions"><button type="button" className="agent-character-action">◉　刷出为桌宠</button><button type="button" className="agent-character-action">—　最小化</button></div>
+        <div className="agent-character-actions"><button type="button" className="agent-character-action"><WorkbenchIcon name="pet" size={15} />刷出为桌宠</button><button type="button" className="agent-character-action"><WorkbenchIcon name="minimize" size={15} />最小化</button></div>
         <div className="agent-character-art"><img src={BAOYIN_CHARACTER_ART} alt="白音角色立绘" /></div>
-        <div className="agent-character-caption"><strong>{state.role.displayName}</strong><span>在线 · 默认人格</span><small>角色画面仅为工作台预览，桌宠透明窗口保持独立。</small></div>
+        <div className="agent-character-caption"><strong>{state.role.displayName}</strong><span>在线 · 默认人格</span><small>角色画面与透明桌宠窗口保持独立。</small></div>
       </aside>
-      <div className="agent-dialogue-column"><div className="agent-dialogue-meta"><span>用时　<strong>6分45秒</strong>　⌄</span><span>●　Agent 工作流已就绪</span></div><div className="agent-plan-preview" data-agent-ui="plan"><span>◈　规则判断 · 需要工作链路</span><span>◈　轻量分类 · 项目分析</span><span>◈　上下文注入 · 项目设置</span><span>⊞　工具执行 · 检索文件结构　已完成</span><p>我已分析该项目的设置结构，主要分为全局设置、开发设置、构建设置、测试设置和部署设置五大类。</p><div className="agent-plan-actions" aria-hidden="true"><span>▣</span><span>♧</span><span>♧</span><span>⟳</span></div></div><CompanionChat state={state} agentTasks={agentTasks} agentEvent={agentEvent} onModeChange={onModeChange} /></div>
+      <div className="agent-dialogue-column"><div className="agent-dialogue-meta"><span>用时　<strong>6分45秒</strong>　<WorkbenchIcon name="chevron" size={13} /></span><span><WorkbenchIcon name="check" size={14} />Agent 工作流已就绪</span></div><div className="agent-plan-preview" data-agent-ui="plan"><span><WorkbenchIcon name="step" size={15} />规则判断 · 需要工作链路</span><span><WorkbenchIcon name="step" size={15} />轻量分类 · 项目分析</span><span><WorkbenchIcon name="step" size={15} />上下文注入 · 项目结构</span><span><WorkbenchIcon name="check" size={15} />工具执行 · 检索文件结构　已完成</span><p>我已完成项目结构扫描，工作流入口、设置入口与运行时边界保持清晰分层。</p><div className="agent-plan-actions" aria-hidden="true"><WorkbenchIcon name="copy" size={15} /><WorkbenchIcon name="thumbsUp" size={15} /><WorkbenchIcon name="thumbsDown" size={15} /><WorkbenchIcon name="refresh" size={15} /></div></div><CompanionChat state={state} agentTasks={agentTasks} agentEvent={agentEvent} onModeChange={onModeChange} /></div>
     </div>
   </section>;
 }

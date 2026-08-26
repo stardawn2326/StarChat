@@ -1,5 +1,6 @@
 import type { PublicAppState } from '../../shared/ipc';
 import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
+import { WorkbenchIcon } from './WorkbenchIcon';
 import type { PresentationSettings } from '../../shared/presentation-contract';
 import './settings-center.css';
 
@@ -33,7 +34,7 @@ export function SettingsHome({ state, presentation, onOpen }: SettingsHomeProps)
             <span>{card.description}</span>
             <small>{card.summary(context)}</small>
           </span>
-          <span className="settings-category-arrow" aria-hidden="true">↗</span>
+          <WorkbenchIcon className="settings-category-arrow" name="arrowUp" size={17} />
         </button>)}
       </div>
       <p className="settings-footnote">工作台只控制语义配置；透明桌宠窗口和 Live2D runtime 继续保持独立。</p>
