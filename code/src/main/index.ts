@@ -456,6 +456,17 @@ function sendPetBoundsChanged(): void {
   }
 }
 
+function sendPetResizeViewportChanged(): void {
+  if (!petWindow || petWindow.isDestroyed()) {
+    return;
+  }
+  // The renderer needs the exact rectangle for every custom resize frame.
+  // Keep this hot-path notification local to PetWindow: settings, persistence
+  // and the normal move/resize broadcast remain end-of-gesture concerns.
+  const change: PetBoundsChange = { bounds: petWindow.getBounds(), operation: 'window-resize' };
+  petWindow.webContents.send('pet:bounds-changed', change);
+}
+
 function syncPetWindowResizable(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
@@ -1614,6 +1625,7 @@ function registerIpc(): void {
     const safeNext = safePetBounds(next, petResizeStart.display);
     if (!sameWindowBounds(petWindow.getBounds(), safeNext)) {
       petWindow.setBounds(safeNext);
+      sendPetResizeViewportChanged();
     }
   });
   ipcMain.on('pet:resize-end', (event) => {

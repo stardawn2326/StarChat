@@ -107,6 +107,39 @@ describe('PetWindow continuous viewport synchronization contract', () => {
     expect(applied).toEqual([frame(next)]);
   });
 
+  it('keeps exact main-process bounds authoritative when stale window events follow every cardinal resize', () => {
+    const applied: ViewportFrame[] = [];
+    const coordinator = createViewportSyncCoordinator((next) => applied.push(next));
+    const start = { x: 800, y: 300, width: 432, height: 600 };
+    const cardinalEdges: PetResizeEdge[] = ['w', 'e', 'n', 's'];
+
+    for (const edge of cardinalEdges) {
+      coordinator.submit('initial', frame(start));
+      coordinator.flush();
+      for (const step of [1, 2, 3, 4]) {
+        applied.length = 0;
+        const next = nextPetResizeBounds(
+          start,
+          { screenX: start.x, screenY: start.y },
+          {
+            screenX: start.x + (edge === 'w' ? -80 : edge === 'e' ? 80 : 0) * step,
+            screenY: start.y + (edge === 'n' ? -60 : edge === 's' ? 60 : 0) * step
+          },
+          edge
+        );
+
+        // The main process supplies the exact rectangle after setBounds. Both
+        // renderer-owned notifications may still carry the previous origin.
+        coordinator.submit('bounds', frame(next));
+        coordinator.submit('resize-observer', { ...frame(next), screenX: start.x, screenY: start.y });
+        coordinator.submit('window-resize', { ...frame(next), screenX: start.x, screenY: start.y });
+        coordinator.flush();
+
+        expect(applied).toEqual([frame(next)]);
+      }
+    }
+  });
+
   it('keeps resize free of model viewport writes and restores transactions on cancel/blur/focus', () => {
     const resizePath = petSource.slice(petSource.indexOf("gesture.operation === 'window-resize'"), petSource.indexOf('const finalizeActivePointer'));
     expect(resizePath).not.toContain('updateModelViewport');

@@ -64,7 +64,7 @@ describe('PetWindow interaction and transparency boundaries', () => {
     expect(adjustmentFrameCss).toContain('position: absolute');
     expect(adjustmentFrameCss).toContain('inset: 0');
     expect(adjustmentFrameCss).toContain('box-sizing: border-box');
-    expect(adjustmentFrameCss).toContain('padding: 10px');
+    expect(adjustmentFrameCss).toContain('padding: 5px');
     expect(adjustmentFrameCss).toContain('background-position: 0% 50%');
     expect(adjustmentFrameCss).toContain('background-size: 280% 100%');
     expect(adjustmentFrameCss).toContain('-webkit-mask-composite: xor');

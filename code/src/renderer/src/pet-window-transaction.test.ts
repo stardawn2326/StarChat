@@ -173,6 +173,17 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(resizeEnd).toContain('sendPetBoundsChanged()');
   });
 
+  it('sends each applied resize rectangle to the pet renderer without widening the hot-path broadcast', () => {
+    const resizeMove = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:resize-move'"), mainSource.indexOf("ipcMain.on('pet:resize-end'"));
+    const viewportNotice = mainSource.slice(mainSource.indexOf('function sendPetResizeViewportChanged'), mainSource.indexOf('function syncPetWindowResizable'));
+    expect(resizeMove).toContain('petWindow.setBounds(safeNext);');
+    expect(resizeMove).toContain('sendPetResizeViewportChanged();');
+    expect(viewportNotice).toContain("operation: 'window-resize'");
+    expect(viewportNotice).toContain("petWindow.webContents.send('pet:bounds-changed', change)");
+    expect(viewportNotice).not.toContain('settingsWindow');
+    expect(viewportNotice).not.toContain('persistPetBounds');
+  });
+
   it('makes main-process drag and resize end/cancel operations idempotent', () => {
     const dragEnd = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:drag-end'"), mainSource.indexOf("ipcMain.on('pet:resize-start'"));
     const resizeEnd = mainSource.slice(mainSource.indexOf("ipcMain.on('pet:resize-end'"), mainSource.indexOf("ipcMain.on('presentation:emit'"));

@@ -23,6 +23,10 @@ function sameFrame(left: ViewportFrame | null, right: ViewportFrame): boolean {
     && left.preserveModelScreenAnchor === right.preserveModelScreenAnchor);
 }
 
+function sizeKey(frame: ViewportFrame): string {
+  return `${frame.width}:${frame.height}:${frame.renderScale}`;
+}
+
 /**
  * Coalesces all renderer viewport notifications before the runtime applies a
  * frame. Bounds is the authoritative origin source; observer notifications
@@ -36,6 +40,7 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
   let latestOrigin = { x: 0, y: 0 };
   let preserveModelScreenAnchor = true;
   let originAuthority: 'initial' | 'window-resize' | 'bounds' = 'initial';
+  let exactBoundsSizeKey: string | null = null;
   let pending: ViewportFrame | null = null;
   let applied: ViewportFrame | null = null;
 
@@ -69,6 +74,7 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
         latestOrigin = { x: frame.screenX, y: frame.screenY };
         preserveModelScreenAnchor = frame.preserveModelScreenAnchor;
         originAuthority = 'bounds';
+        exactBoundsSizeKey = sizeKey(frame);
         queue(frame);
         return;
       }
@@ -77,8 +83,14 @@ export function createViewportSyncCoordinator(apply: (frame: ViewportFrame) => v
         // Once an exact bounds event has arrived, a same-sized window event
         // is allowed to carry CSS/DPR only. Its screenX/Y can be an older
         // Chromium sample delivered after the bounds IPC message.
+        // A native resize event can arrive after the exact rectangle IPC for
+        // the same BrowserWindow.setBounds call. Its window.screenX/Y sample
+        // may still be from the previous frame, so it must not overwrite the
+        // exact origin. A different size still starts a new live frame and is
+        // allowed to carry the next origin until the exact bounds IPC arrives.
+        const exactBoundsForSize = originAuthority === 'bounds' && exactBoundsSizeKey === sizeKey(frame);
         const sizeChanged = !sameSize(applied, frame);
-        if (originAuthority !== 'bounds' || sizeChanged) {
+        if (!exactBoundsForSize && (originAuthority !== 'bounds' || sizeChanged)) {
           latestOrigin = { x: frame.screenX, y: frame.screenY };
           preserveModelScreenAnchor = frame.preserveModelScreenAnchor;
           originAuthority = 'window-resize';
