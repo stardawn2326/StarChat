@@ -5,6 +5,8 @@ import type { AppSettings } from '../../shared/settings';
 import { presentationForAssistantText } from '../../shared/companion';
 import { AGENT_MODE_OPTIONS, type AgentMode, type AgentTask } from '../../shared/agent';
 import { GlassSelect } from './GlassSelect';
+import { AgentTaskPanel } from './AgentTaskPanel';
+import { estimateContextUsage } from './agent-ui-model';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
@@ -149,7 +151,6 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [agentTask, setAgentTask] = useState<AgentTask | null>(null);
-  const [agentInput, setAgentInput] = useState('');
   const activeId = useRef<string | null>(null);
   const assistantText = useRef('');
   const settingsRef = useRef(state.settings);
@@ -322,7 +323,7 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
   useEffect(() => {
     let disposed = false;
     void window.baoyin.agent.list().then((tasks) => {
-      const latest = tasks.find((task) => task.roleId === state.role.id && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(task.status));
+      const latest = tasks.find((task) => task.roleId === state.role.id);
       if (!disposed && latest) setAgentTask(latest);
     }).catch(() => undefined);
     const unsubscribe = window.baoyin.agent.onEvent((event) => {
@@ -336,6 +337,15 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
             return next;
           });
         }
+      } else if (event.type === 'step') {
+        setAgentTask((current) => {
+          if (!current) return current;
+          const steps = [...current.steps];
+          const existing = steps.findIndex((step) => step.id === event.step.id);
+          if (existing >= 0) steps[existing] = event.step;
+          else steps.push(event.step);
+          return { ...current, steps, currentStep: event.step.index, updatedAt: event.timestamp };
+        });
       } else if (event.type === 'approval') {
         setAgentTask((current) => current ? { ...current, status: 'waiting_for_approval', approval: event.request } : current);
       } else if (event.type === 'input') {
@@ -353,7 +363,7 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
         activeId.current = null;
         setRequestId(null);
       } else if (event.type === 'error') {
-        setAgentTask((current) => current ? { ...current, status: 'failed', error: event.message } : current);
+        setAgentTask((current) => current ? { ...current, error: current.error ?? event.message } : current);
         setError(event.message);
         cancelSpeech();
         activeId.current = null;
@@ -371,6 +381,7 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
     emitDialogue('listening');
     setError(null);
     setDraft('');
+    setAgentTask(null);
     assistantText.current = '';
     const history = messages.filter((item) => item.content.trim()).slice(-18);
     setMessages((current) => [...current, { role: 'user', content: message }, { role: 'assistant', content: '' }]);
@@ -423,13 +434,21 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
     try { await window.baoyin.agent.approve({ taskId: waitingForApproval.taskId, requestId: waitingForApproval.id, approved }); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '审批失败'); }
   };
-  const respond = async (): Promise<void> => {
-    if (!waitingForInput || !agentInput.trim()) return;
-    try { await window.baoyin.agent.respond({ taskId: waitingForInput.taskId, requestId: waitingForInput.id, value: agentInput.trim() }); setAgentInput(''); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : '补充信息失败'); }
+  const contextUsage = estimateContextUsage(messages, draft);
+  const hasActiveTask = Boolean(agentTask && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(agentTask.status));
+  const handleAgentApprove = async (approved: boolean): Promise<void> => {
+    await approve(approved);
+  };
+  const handleAgentRespond = async (value: string): Promise<void> => {
+    if (!waitingForInput) return;
+    try {
+      await window.baoyin.agent.respond({ taskId: waitingForInput.taskId, requestId: waitingForInput.id, value });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '补充信息失败');
+    }
   };
 
-  return <div className="companion-chat">
+  return <div className="companion-chat" data-agent-ui="chat">
     <div className="companion-status">
       <span>关系阶段<strong>{state.companion.stageLabel}</strong></span>
       <span>亲密度<strong>{state.companion.affinity}/100</strong></span>
@@ -437,16 +456,19 @@ export function CompanionChat({ state, onModeChange }: CompanionChatProps): JSX.
       <span>记忆<strong>{state.companion.memoryCount}</strong></span>
     </div>
     <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div>
-    <div className="companion-messages" aria-live="polite">
+    <div className="companion-messages" data-agent-ui="messages" aria-live="polite" aria-label="对话消息">
       {messages.length === 0 ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
       {messages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
     </div>
     {error ? <p className="error-banner">{error}</p> : null}
-    {agentTask?.status === 'running' || agentTask?.status === 'queued' ? <p className="security-note" role="status">后台任务：{agentTask.status === 'queued' ? '排队中' : '执行中'} · 工具日志不会进入关系记忆。</p> : null}
-    {agentTask && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(agentTask.status) && agentTask.steps.at(-1)?.summary ? <p className="security-note" role="status">当前步骤：{agentTask.steps.at(-1)?.summary}</p> : null}
-    {waitingForApproval ? <div className="status-callout agent-approval" role="dialog"><strong>需要你的许可</strong><span>目标：{waitingForApproval.target}</span><small>{waitingForApproval.plan}</small><div className="toolbar"><button className="primary-button" type="button" onClick={() => void approve(true)}>批准这次计划</button><button className="secondary-button" type="button" onClick={() => void approve(false)}>拒绝</button></div></div> : null}
-    {waitingForInput ? <div className="status-callout agent-input"><strong>需要补充信息</strong><span>{waitingForInput.prompt}</span><div className="companion-composer"><input value={agentInput} onChange={(event) => setAgentInput(event.target.value)} /><button className="primary-button" type="button" disabled={!agentInput.trim()} onClick={() => void respond()}>继续</button></div></div> : null}
-    <div className="companion-composer"><textarea value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送</button>{requestId ? <button className="secondary-button" type="button" onClick={stop}>停止</button> : null}</div>
+    {agentTask ? <div aria-label="当前步骤"><AgentTaskPanel task={agentTask} onApprove={(approved) => void handleAgentApprove(approved)} onRespond={(value) => void handleAgentRespond(value)} onCancel={hasActiveTask ? stop : undefined} /></div> : null}
+    <div className="companion-composer agent-composer" data-agent-ui="composer">
+      <div className="agent-composer-tools">
+        <div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件槽位"><span className="agent-attachment-slot">附件</span><span className="agent-attachment-slot is-empty">暂未接入文件 IPC</span></div>
+        <span className="agent-context-usage" role="status">上下文占用 · 本地估算 {contextUsage.percent}%（{contextUsage.characters} 字符）</span>
+      </div>
+      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} placeholder="输入消息，Enter发送，Shift+Enter换行" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /><div className="agent-compose-actions"><button className="primary-button" type="button" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}>发送消息</button>{requestId ? <button className="secondary-button" type="button" onClick={stop}>停止</button> : null}</div></div>
+    </div>
     <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p>
   </div>;
 }

@@ -14,6 +14,7 @@ import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type Prese
 import { applyThemeToDocument } from '../../shared/theme';
 import { syncPetBoundsIntoSettings } from './settings-state';
 import { AgentWorkbench, type WorkbenchPage } from './AgentWorkbench';
+import { AgentConsole } from './AgentConsole';
 
 function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -406,7 +407,7 @@ function App(): JSX.Element {
 
   const workbenchContent = page
     ? <SettingsDetailsV2 state={appState} page={page} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} onBack={() => window.history.back()} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />
-    : <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} />;
+    : <AgentConsole state={appState} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} />;
 
   return <main className="app-shell settings-center-shell">
     <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} themeLabel={settings.themePreference === 'system' ? '跟随系统' : settings.themePreference === 'light' ? '浅色晨星' : '深色星夜'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onShowPet={() => window.baoyin.app.showPet()} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()}>{workbenchContent}</AgentWorkbench>
