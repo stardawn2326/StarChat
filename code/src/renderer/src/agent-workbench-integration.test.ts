@@ -7,6 +7,8 @@ const appSource = readFileSync(resolve(rendererDirectory, 'App.tsx'), 'utf8');
 const consoleSource = readFileSync(resolve(rendererDirectory, 'AgentConsole.tsx'), 'utf8');
 const chatSource = readFileSync(resolve(rendererDirectory, 'CompanionChat.tsx'), 'utf8');
 const detailsSource = readFileSync(resolve(rendererDirectory, 'SettingsDetailsV2.tsx'), 'utf8');
+const mainSource = readFileSync(resolve(rendererDirectory, '../../main/index.ts'), 'utf8');
+const rendererBootstrapSource = readFileSync(resolve(rendererDirectory, 'main.tsx'), 'utf8');
 const glassSelectSource = readFileSync(resolve(rendererDirectory, 'GlassSelect.tsx'), 'utf8');
 const sharedRendererStyles = readFileSync(resolve(rendererDirectory, 'styles.css'), 'utf8');
 const stylesheet = readFileSync(resolve(rendererDirectory, 'settings-center.css'), 'utf8');
@@ -25,6 +27,14 @@ describe('StarChat Agent workbench integration boundary', () => {
     expect(consoleSource).toContain('agentEvent');
     expect(detailsSource).toContain('agentTasks');
     expect(detailsSource).toContain('agentEvent');
+  });
+
+  it('keeps the embedded workbench on the shared Live2D and presentation boundary', () => {
+    expect(consoleSource).toContain("import { Live2DCanvas } from './Live2DCanvas';");
+    expect(consoleSource).toContain('window.baoyin.presentation.onEvent');
+    expect(rendererBootstrapSource).toContain("if (role === 'pet' || role === 'settings')");
+    expect(mainSource).toContain("if (sourceWindow !== settingsWindow || !isSafePresentationEvent(payload))");
+    expect(mainSource).toContain("settingsWindow.webContents.send('presentation:event', payload)");
   });
 
   it('keeps every SettingsWindow color declaration on shared theme tokens', () => {

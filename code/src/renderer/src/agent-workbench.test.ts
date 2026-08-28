@@ -65,12 +65,13 @@ describe('StarChat Agent workbench shell', () => {
       invocations: []
     } as AgentTask;
     const markup = renderToStaticMarkup(createElement(AgentWorkbench, {
-      activePage: 'chat',
+      activePage: null,
       roleName: '白音',
       modelLabel: '未配置外部模型',
       themeLabel: '浅色晨星',
       agentAvailable: true,
       agentTasks: [task],
+      bottomPanelOpen: true,
       onNavigate: () => undefined,
       onToggleBottomPanel: () => undefined,
       onCancelTask: () => undefined,

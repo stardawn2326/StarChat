@@ -116,9 +116,9 @@ function ToggleField({ label, checked, onChange, description, disabled = false }
   return <label className="toggle-field"><span><strong>{label}</strong>{description ? <small>{description}</small> : null}</span><input aria-label={label} type="checkbox" role="switch" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} /></label>;
 }
 
-function DetailHeader({ page, onBack, onReset }: { page: SettingsPageId; onBack: () => void; onReset: () => void }): JSX.Element {
+function DetailHeader({ page, onReset }: { page: SettingsPageId; onReset: () => void }): JSX.Element {
   const card = SETTINGS_CARDS.find((item) => item.id === page) ?? SETTINGS_CARDS[0];
-  return <div className="detail-header"><button type="button" className="back-button" onClick={onBack}>← 返回工作台</button><div><span className="eyebrow">STARCHAT / {card.icon}</span><h1>{card.title}</h1><p>{card.description}</p></div><button type="button" className="secondary-button" onClick={onReset}>恢复本页默认</button></div>;
+  return <div className="detail-header"><div className="detail-heading"><span className="eyebrow">STARCHAT / SETTINGS</span><h1>{card.title}</h1><p>{card.description}</p></div><button type="button" className="secondary-button" onClick={onReset}>恢复本页默认</button></div>;
 }
 
 function PersonalityDetails(props: SettingsDetailsV2Props): JSX.Element {
@@ -221,5 +221,5 @@ function ChatDetails(props: SettingsDetailsV2Props): JSX.Element {
 
 export function SettingsDetailsV2(props: SettingsDetailsV2Props): JSX.Element {
   const card = SETTINGS_CARDS.find((item) => item.id === props.page);
-  return <section className="settings-details" aria-label={`${card?.title ?? ''}详情`}><DetailHeader page={props.page} onBack={props.onBack} onReset={props.onResetPage} />{props.error ? <p className="error-banner" role="alert">{props.error}</p> : null}{props.page === 'chat' ? <ChatDetails {...props} /> : null}{props.page === 'personality' ? <PersonalityDetails {...props} /> : null}{props.page === 'model' ? <ModelDetails {...props} /> : null}{props.page === 'voice' ? <VoiceDetails {...props} /> : null}{props.page === 'service' ? <ServiceDetails {...props} /> : null}{props.page === 'behavior' ? <BehaviorDetails {...props} /> : null}</section>;
+  return <section className="settings-details" aria-label={`${card?.title ?? ''}详情`} data-settings-detail><DetailHeader page={props.page} onReset={props.onResetPage} />{props.error ? <p className="error-banner" role="alert">{props.error}</p> : null}{props.page === 'chat' ? <ChatDetails {...props} /> : null}{props.page === 'personality' ? <PersonalityDetails {...props} /> : null}{props.page === 'model' ? <ModelDetails {...props} /> : null}{props.page === 'voice' ? <VoiceDetails {...props} /> : null}{props.page === 'service' ? <ServiceDetails {...props} /> : null}{props.page === 'behavior' ? <BehaviorDetails {...props} /> : null}</section>;
 }

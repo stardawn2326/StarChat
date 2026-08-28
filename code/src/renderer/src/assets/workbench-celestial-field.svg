@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1900 1200" preserveAspectRatio="none">
+  <defs>
+    <pattern id="fine-stars" width="211" height="173" patternUnits="userSpaceOnUse">
+      <circle cx="16" cy="22" r="0.8" fill="#fff" opacity="0.78"/>
+      <circle cx="73" cy="61" r="0.48" fill="#fff" opacity="0.58"/>
+      <circle cx="139" cy="31" r="0.66" fill="#fff" opacity="0.72"/>
+      <circle cx="191" cy="126" r="0.55" fill="#fff" opacity="0.62"/>
+      <circle cx="38" cy="153" r="0.42" fill="#fff" opacity="0.52"/>
+      <circle cx="116" cy="112" r="0.36" fill="#fff" opacity="0.45"/>
+    </pattern>
+    <pattern id="drift-stars" width="307" height="233" patternUnits="userSpaceOnUse" patternTransform="translate(41 27)">
+      <circle cx="28" cy="88" r="0.56" fill="#fff" opacity="0.72"/>
+      <circle cx="102" cy="19" r="0.38" fill="#fff" opacity="0.48"/>
+      <circle cx="173" cy="154" r="0.72" fill="#fff" opacity="0.76"/>
+      <circle cx="262" cy="52" r="0.45" fill="#fff" opacity="0.58"/>
+      <circle cx="286" cy="207" r="0.34" fill="#fff" opacity="0.42"/>
+    </pattern>
+  </defs>
+  <rect width="1900" height="1200" fill="url(#fine-stars)"/>
+  <rect width="1900" height="1200" fill="url(#drift-stars)" opacity="0.78"/>
+  <g fill="#fff">
+    <circle cx="92" cy="286" r="1.15" opacity="0.88"/>
+    <circle cx="244" cy="494" r="1.35" opacity="0.92"/>
+    <circle cx="390" cy="105" r="1.05" opacity="0.78"/>
+    <circle cx="563" cy="754" r="1.1" opacity="0.74"/>
+    <circle cx="713" cy="184" r="1.25" opacity="0.88"/>
+    <circle cx="856" cy="67" r="1.1" opacity="0.82"/>
+    <circle cx="1019" cy="461" r="1.25" opacity="0.84"/>
+    <circle cx="1168" cy="212" r="1.05" opacity="0.76"/>
+    <circle cx="1326" cy="824" r="1.2" opacity="0.82"/>
+    <circle cx="1480" cy="111" r="1.25" opacity="0.9"/>
+    <circle cx="1649" cy="617" r="1.05" opacity="0.78"/>
+    <circle cx="1812" cy="346" r="1.2" opacity="0.84"/>
+    <circle cx="1773" cy="994" r="1.1" opacity="0.78"/>
+    <circle cx="1234" cy="1086" r="1.2" opacity="0.86"/>
+    <circle cx="743" cy="1062" r="1.05" opacity="0.76"/>
+    <circle cx="321" cy="950" r="1.18" opacity="0.82"/>
+  </g>
+  <g stroke="#fff" stroke-linecap="round" fill="none">
+    <path d="M727 86h10M732 81v10" stroke-width="0.8" opacity="0.72"/>
+    <path d="M1428 287h8M1432 283v8" stroke-width="0.7" opacity="0.62"/>
+    <path d="M1118 803h9M1122.5 798.5v9" stroke-width="0.7" opacity="0.68"/>
+    <path d="M1710 72h7M1713.5 68.5v7" stroke-width="0.65" opacity="0.6"/>
+  </g>
+</svg>

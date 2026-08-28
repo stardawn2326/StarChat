@@ -48,10 +48,10 @@ describe('Windows transparent pet shell', () => {
     expect(blurHandler).not.toContain('focus()');
   });
 
-  it('neutralizes non-client chrome on the settings window as well', () => {
+  it('keeps custom workbench chrome while retaining the native resize frame', () => {
     const creation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
     expect(creation).toContain("title: ''");
-    expect(creation).toContain('thickFrame: false');
+    expect(creation).toContain('thickFrame: true');
     expect(creation).toContain('roundedCorners: false');
     expect(creation).toContain('autoHideMenuBar: true');
     expect(creation).not.toContain("backgroundMaterial: 'none'");
@@ -61,6 +61,17 @@ describe('Windows transparent pet shell', () => {
     expect(creation).toContain("settingsWindow.setBackgroundColor('#00000000')");
     expect(creation).not.toContain("settingsWindow.setBackgroundMaterial('none')");
     expect(creation).not.toContain("titleBarStyle: 'hidden'");
+  });
+
+  it('selects an adaptive first-launch size and restores persisted bounds', () => {
+    const creation = source.slice(source.indexOf('function createSettingsWindow'), source.indexOf('function arrangeInteractionTestWindow'));
+    expect(creation).toContain('resolveWorkbenchWindowState');
+    expect(creation).toContain('readWorkbenchWindowState');
+    expect(creation).toContain('...restoredWindowState.bounds');
+    expect(creation).toContain('resizable: true');
+    expect(creation).toContain('maximizable: true');
+    expect(creation).not.toContain('width: 1900');
+    expect(creation).not.toContain('height: 1200');
   });
 
   it('keeps the pet hidden until the renderer reports a stable runtime frame', () => {

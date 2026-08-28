@@ -38,6 +38,12 @@ const bridge = {
     minimize: (): void => ipcRenderer.send('window:minimize'),
     close: (): void => ipcRenderer.send('window:close'),
     toggleMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize'),
+    isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
+    onMaximizedChanged: (callback: (maximized: boolean) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, maximized: boolean): void => callback(maximized === true);
+      ipcRenderer.on('window:maximized-changed', listener);
+      return () => ipcRenderer.removeListener('window:maximized-changed', listener);
+    },
     showSettings: (): void => ipcRenderer.send('settings:show'),
     hideSettings: (): void => ipcRenderer.send('settings:hide'),
     toggleSettings: (): void => ipcRenderer.send('settings:toggle'),

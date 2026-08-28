@@ -3,7 +3,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { AgentWorkbench } from './AgentWorkbench';
+import { AgentWorkbench, SettingsSidebar } from './AgentWorkbench';
 
 const rendererDirectory = resolve(import.meta.dirname);
 const workbenchSource = readFileSync(resolve(rendererDirectory, 'AgentWorkbench.tsx'), 'utf8');
@@ -26,6 +26,14 @@ function renderWorkbench(): string {
     onNavigate: () => undefined,
     onToggleBottomPanel: () => undefined,
     children: createElement('div', null, 'Agent 内容')
+  }));
+}
+
+function renderSettingsSidebar(): string {
+  return renderToStaticMarkup(createElement(SettingsSidebar, {
+    activePage: 'settings',
+    onNavigate: () => undefined,
+    collapsed: false
   }));
 }
 
@@ -110,9 +118,12 @@ describe('StarChat 参考图工作台视觉契约', () => {
 
   it('keeps the six settings domains and debug/import/export reachable only through the Settings route', () => {
     const markup = renderWorkbench();
+    const settingsSidebar = renderSettingsSidebar();
 
     expect(markup).toContain('data-workbench="settings-entry"');
-    expect(workbenchSource).not.toMatch(/<(?:input|textarea|select)\b/);
+    expect(markup).not.toMatch(/<(?:input|textarea|select)\b/);
+    expect(settingsSidebar).toContain('data-workbench-sidebar-mode="settings"');
+    expect(settingsSidebar).toContain('placeholder="搜索设置"');
     expect(workbenchSource).not.toContain('settings-card');
     expect(appSource).toContain("const settingsPageIds: readonly SettingsPageId[] = ['chat', 'personality', 'model', 'voice', 'service', 'behavior'];");
     for (const capability of ['onImportRole', 'onExportRole', 'onDebug', 'onRuntimeCommand', 'onSaveService']) expect(appSource).toContain(capability);
@@ -124,6 +135,12 @@ describe('StarChat 参考图工作台视觉契约', () => {
     const source = existsSync(screenshotHelper) ? readFileSync(screenshotHelper, 'utf8') : '';
     expect(source).toContain('1622');
     expect(source).toContain('969');
+    expect(source).toContain('width: 1900');
+    expect(source).toContain('height: 1200');
+    expect(source).toContain('defaultWindowViewport');
+    expect(source).toContain('captureDefaultWindowSettingsTheme');
+    expect(source).toContain('settingsDefaultLight');
+    expect(source).toContain('settingsDefaultDark');
     expect(source).toContain('light');
     expect(source).toContain('dark');
     expect(source).toContain('capturePage');
@@ -163,15 +180,21 @@ describe('StarChat 参考图工作台视觉契约', () => {
     }
     expect(rebuiltStylesheet).toContain('1622x969');
     expect(rebuiltStylesheet).toMatch(/titlebar\s+is 55px/u);
-    expect(rebuiltStylesheet).toContain('--wb-sidebar-open-width: 266px');
+    expect(rebuiltStylesheet).toContain('--wb-sidebar-open-width: 280px');
   });
 
   it('keeps the first-layer Codex composition free of an inset sidebar card', () => {
     expect(rebuiltStylesheet).toContain('/* First-layer Codex composition */');
-    expect(rebuiltStylesheet).toContain('padding: 0 14px 14px 0');
+    expect(rebuiltStylesheet).toContain('body[data-window="settings"] #root > main.app-shell.settings-center-shell');
+    expect(rebuiltStylesheet).toContain('row-gap: 0');
+    expect(rebuiltStylesheet).toContain('padding: 0 0 14px;');
     expect(rebuiltStylesheet).toContain('grid-template-columns: var(--wb-sidebar-width) minmax(0, 1fr)');
     expect(rebuiltStylesheet).toContain('background: transparent; border: 0; border-radius: 0; box-shadow: none;');
     expect(rebuiltStylesheet).toContain('.wb-topbar {');
+    expect(rebuiltStylesheet).toContain('.wb-bottom-panel {');
+    expect(rebuiltStylesheet).toContain('border: 1px solid var(--theme-border)');
+    expect(rebuiltStylesheet).toContain('.wb-main-grid { display: grid; min-width: 0; min-height: 0; grid-column: 2; grid-row: 2; grid-template-columns: minmax(0, 1fr) 354px; gap: 0; height: 100%; margin-top: 0; }');
+    expect(rebuiltStylesheet).toContain('margin-bottom: 8px');
     expect(rebuiltStylesheet).toContain('border-bottom: 1px solid var(--theme-titlebar-border)');
   });
 

@@ -17,6 +17,7 @@ import { AgentWorkbench, type WorkbenchPage } from './AgentWorkbench';
 import type { WorkbenchInspection, WorkbenchInspectionKind } from '../../shared/workbench';
 import type { WorkbenchToolAction } from './AgentWorkbench';
 import { AgentConsole } from './AgentConsole';
+import { readWorkbenchLayoutState, writeWorkbenchLayoutPatch } from './workbench-layout';
 
 function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -53,9 +54,7 @@ function App(): JSX.Element {
   const [runtimeReadyEpoch, setRuntimeReadyEpoch] = useState(0);
   const [displays, setDisplays] = useState<Awaited<ReturnType<typeof window.baoyin.display.list>>>([]);
   const [page, setPage] = useState<WorkbenchPage>(null);
-  const [bottomPanelOpen, setBottomPanelOpen] = useState(() => {
-    try { return window.localStorage.getItem('starchat.bottom-panel.open') !== 'false'; } catch { return true; }
-  });
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(() => readWorkbenchLayoutState().bottomPanelOpen);
   const [conversationKey, setConversationKey] = useState(() => `conversation.${crypto.randomUUID()}`);
   const [sessionTitle, setSessionTitle] = useState('新对话');
   const [sessionMessageCount, setSessionMessageCount] = useState(0);
@@ -125,6 +124,8 @@ function App(): JSX.Element {
       if (modelIdentity && currentIdentity && modelIdentity !== currentIdentity) return;
       setRuntimeReadyEpoch((epoch) => epoch + 1);
     });
+    void window.baoyin.app.isMaximized().then(setIsMaximized).catch(() => undefined);
+    const unsubscribeMaximized = window.baoyin.app.onMaximizedChanged(setIsMaximized);
     void window.baoyin.workbench.inspect({ kind: 'source' }).then(setWorkbenchInspection).catch(() => undefined);
     const popstate = (): void => {
       const route = window.location.hash.slice(1);
@@ -139,6 +140,7 @@ function App(): JSX.Element {
       unsubscribeBounds();
       unsubscribePreview();
       unsubscribeRuntimeReady();
+      unsubscribeMaximized();
       window.removeEventListener('popstate', popstate);
       if (settingsTimer.current) window.clearTimeout(settingsTimer.current);
       if (presentationTimer.current) window.clearTimeout(presentationTimer.current);
@@ -146,7 +148,7 @@ function App(): JSX.Element {
   }, []);
 
   useEffect(() => {
-    try { window.localStorage.setItem('starchat.bottom-panel.open', String(bottomPanelOpen)); } catch { /* browser storage can be unavailable */ }
+    writeWorkbenchLayoutPatch({ bottomPanelOpen });
   }, [bottomPanelOpen]);
 
   useEffect(() => {
@@ -487,7 +489,7 @@ function App(): JSX.Element {
   const workbenchContent = page === null
       ? <AgentConsole key={conversationKey} state={appState} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} onNewConversation={startNewConversation} onMessageSent={onMessageSent} />
       : page === 'settings'
-      ? <SettingsHome state={appState} presentation={presentationDraft} onOpen={openPage} onBack={() => navigateWorkbench(null)} />
+      ? <SettingsHome state={appState} presentation={presentationDraft} />
       : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={startNewConversation} onMessageSent={onMessageSent} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
 
     return <main className="app-shell settings-center-shell">

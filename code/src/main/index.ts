@@ -65,13 +65,14 @@ import { AgentService } from './agent-service';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
 import { formatWorkbenchShare, inspectWorkbench } from './workbench-service';
-import { toggleWindowState } from './window-state';
+import {
+  resolveWorkbenchWindowState,
+  WORKBENCH_MIN_SIZE
+} from './window-state';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
 let settingsWindow: BrowserWindow | null = null;
-let settingsWindowMaximized = false;
-let settingsWindowRestoreBounds: Electron.Rectangle | null = null;
 let clickTargetWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let settingsStore: SettingsStore;
@@ -82,6 +83,7 @@ let agentService: AgentService;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
+let workbenchWindowPersistTimer: ReturnType<typeof setTimeout> | null = null;
 let registeredSettingsShortcut = '';
 const INTERACTION_SHORTCUT = 'CommandOrControl+Alt+I';
 let petDragStart: { point: PetDragPoint; bounds: Electron.Rectangle } | null = null;
@@ -444,6 +446,23 @@ function persistPetBounds(immediate = false): void {
   }
 }
 
+function persistWorkbenchWindowState(immediate = false): void {
+  if (!settingsWindow || settingsWindow.isDestroyed() || !settingsStore) return;
+  if (workbenchWindowPersistTimer) {
+    clearTimeout(workbenchWindowPersistTimer);
+    workbenchWindowPersistTimer = null;
+  }
+  const write = (): void => {
+    workbenchWindowPersistTimer = null;
+    if (!settingsWindow || settingsWindow.isDestroyed()) return;
+    const maximized = settingsWindow.isMaximized();
+    const bounds = maximized ? settingsWindow.getNormalBounds() : settingsWindow.getBounds();
+    getStore().saveWorkbenchWindowState({ version: 1, bounds, maximized });
+  };
+  if (immediate) write();
+  else workbenchWindowPersistTimer = setTimeout(write, 180);
+}
+
 function sendPetBoundsChanged(): void {
   if (!petWindow || petWindow.isDestroyed()) {
     return;
@@ -638,18 +657,25 @@ function createPetWindow(): void {
 }
 
 function createSettingsWindow(): void {
+  const primaryWorkArea = screen.getPrimaryDisplay().workArea;
+  const restoredWindowState = resolveWorkbenchWindowState(
+    getStore().readWorkbenchWindowState(),
+    screen.getAllDisplays().map((display) => display.workArea),
+    primaryWorkArea
+  );
+  const targetWorkArea = screen.getDisplayMatching(restoredWindowState.bounds).workArea;
   settingsWindow = new BrowserWindow({
-    width: 900,
-    height: 880,
-    minWidth: 640,
-    minHeight: 640,
+    ...restoredWindowState.bounds,
+    minWidth: Math.min(WORKBENCH_MIN_SIZE.width, targetWorkArea.width),
+    minHeight: Math.min(WORKBENCH_MIN_SIZE.height, targetWorkArea.height),
     frame: false,
     title: '',
-    thickFrame: false,
+    thickFrame: true,
     roundedCorners: false,
     autoHideMenuBar: true,
     titleBarOverlay: false,
     resizable: true,
+    maximizable: true,
     hasShadow: false,
     show: false,
     transparent: true,
@@ -672,22 +698,40 @@ function createSettingsWindow(): void {
     sendSettingsWindowFocusState(false);
   });
   settingsWindow.on('show', () => sendSettingsWindowFocusState(settingsWindow?.isFocused() === true));
-  settingsWindow.on('hide', () => sendSettingsWindowFocusState(false));
+  settingsWindow.on('hide', () => {
+    sendSettingsWindowFocusState(false);
+    persistWorkbenchWindowState(true);
+  });
+  settingsWindow.on('move', () => persistWorkbenchWindowState());
+  settingsWindow.on('resize', () => persistWorkbenchWindowState());
+  settingsWindow.on('maximize', () => {
+    sendSettingsWindowMaximizedState(true);
+    persistWorkbenchWindowState(true);
+  });
+  settingsWindow.on('unmaximize', () => {
+    sendSettingsWindowMaximizedState(false);
+    persistWorkbenchWindowState(true);
+  });
   settingsWindow.webContents.on('did-finish-load', () => {
     sendSettingsWindowFocusState(settingsWindow?.isFocused() === true);
+    sendSettingsWindowMaximizedState(settingsWindow?.isMaximized() === true);
   });
   loadRenderer(settingsWindow, 'settings');
   settingsWindow.on('close', (event) => {
+    persistWorkbenchWindowState(true);
     if (!isQuitting) {
       event.preventDefault();
       settingsWindow?.hide();
     }
   });
   settingsWindow.on('closed', () => {
+    if (workbenchWindowPersistTimer) {
+      clearTimeout(workbenchWindowPersistTimer);
+      workbenchWindowPersistTimer = null;
+    }
     settingsWindow = null;
-    settingsWindowMaximized = false;
-    settingsWindowRestoreBounds = null;
   });
+  if (restoredWindowState.maximized) settingsWindow.maximize();
 }
 
 function arrangeInteractionTestWindow(): void {
@@ -759,6 +803,11 @@ function sendSettingsWindowFocusState(active: boolean): void {
     return;
   }
   settingsWindow.webContents.send('settings:window-focus', active);
+}
+
+function sendSettingsWindowMaximizedState(maximized: boolean): void {
+  if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isDestroyed()) return;
+  settingsWindow.webContents.send('window:maximized-changed', maximized);
 }
 
 function inspectLive2DSelection(path: string): Live2DModelInspection {
@@ -1223,17 +1272,15 @@ function registerIpc(): void {
   ipcMain.handle('window:toggle-maximize', (event) => {
     const targetWindow = BrowserWindow.fromWebContents(event.sender);
     if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以切换最大化');
-    const currentBounds = targetWindow.getBounds();
-    const transition = toggleWindowState(
-      { maximized: settingsWindowMaximized, restoreBounds: settingsWindowRestoreBounds },
-      currentBounds,
-      screen.getDisplayMatching(currentBounds).workArea
-    );
-    targetWindow.unmaximize();
-    targetWindow.setBounds(transition.bounds);
-    settingsWindowMaximized = transition.state.maximized;
-    settingsWindowRestoreBounds = transition.state.restoreBounds;
-    return transition.state.maximized;
+    if (targetWindow.isMaximized()) targetWindow.unmaximize();
+    else targetWindow.maximize();
+    persistWorkbenchWindowState(true);
+    return targetWindow.isMaximized();
+  });
+  ipcMain.handle('window:is-maximized', (event) => {
+    const targetWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以读取最大化状态');
+    return targetWindow.isMaximized();
   });
   ipcMain.handle('api:test-connection', async (event, request: ConnectionTestRequest): Promise<ConnectionTestResult> => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以测试服务连接');
@@ -1714,6 +1761,9 @@ function registerIpc(): void {
     if (petWindow && !petWindow.isDestroyed()) {
       petWindow.webContents.send('presentation:event', payload);
     }
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.webContents.send('presentation:event', payload);
+    }
   });
   ipcMain.on('baoyin:settings-preview', (event, detail: SettingsPreviewDetail) => {
     const source = BrowserWindow.fromWebContents(event.sender);
@@ -1829,6 +1879,7 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   closePetContextMenu();
   persistPetBounds(true);
+  persistWorkbenchWindowState(true);
   isQuitting = true;
   stopCursorPolling();
   stopManagedCosyVoiceService();

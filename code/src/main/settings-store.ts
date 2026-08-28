@@ -14,6 +14,11 @@ import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
 import { validateRolePackage, type RolePackage } from '../shared/role-package';
 import { createPersonalityRequestSnapshot, type PersonalityRequestSnapshot } from '../shared/personality-contract';
 import { createCompanionState, sanitizeCompanionState, type CompanionState } from '../shared/companion';
+import {
+  DEFAULT_WORKBENCH_WINDOW_STATE,
+  sanitizePersistedWorkbenchWindowState,
+  type PersistedWorkbenchWindowState
+} from './window-state';
 
 interface StoredSecrets {
   apiKey: string;
@@ -36,6 +41,7 @@ export class SettingsStore {
   private readonly live2dAdapterPath: string;
   private readonly rolesPath: string;
   private readonly companionStatePath: string;
+  private readonly workbenchWindowStatePath: string;
 
   constructor(private readonly baseDir: string) {
     this.settingsPath = join(baseDir, 'settings.json');
@@ -43,6 +49,20 @@ export class SettingsStore {
     this.live2dAdapterPath = join(baseDir, 'live2d-adapter.json');
     this.rolesPath = join(baseDir, 'roles.json');
     this.companionStatePath = join(baseDir, 'companion-state.json');
+    this.workbenchWindowStatePath = join(baseDir, 'workbench-window-state.json');
+  }
+
+  readWorkbenchWindowState(): PersistedWorkbenchWindowState {
+    return sanitizePersistedWorkbenchWindowState(
+      readJson<unknown>(this.workbenchWindowStatePath, DEFAULT_WORKBENCH_WINDOW_STATE)
+    );
+  }
+
+  saveWorkbenchWindowState(value: PersistedWorkbenchWindowState): PersistedWorkbenchWindowState {
+    const sanitized = sanitizePersistedWorkbenchWindowState(value);
+    mkdirSync(this.baseDir, { recursive: true });
+    writeFileSync(this.workbenchWindowStatePath, JSON.stringify(sanitized, null, 2), 'utf8');
+    return sanitized;
   }
 
   readSettings(): AppSettings {

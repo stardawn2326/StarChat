@@ -19,6 +19,24 @@ afterAll(() => {
 });
 
 describe('SettingsStore role persistence', () => {
+  it('persists workbench normal bounds and native maximized state separately', () => {
+    const store = new SettingsStore(testRoot);
+    expect(store.readWorkbenchWindowState()).toEqual({ version: 1, bounds: null, maximized: false });
+
+    store.saveWorkbenchWindowState({
+      version: 1,
+      bounds: { x: 120, y: 80, width: 1280, height: 900 },
+      maximized: true
+    });
+
+    expect(new SettingsStore(testRoot).readWorkbenchWindowState()).toEqual({
+      version: 1,
+      bounds: { x: 120, y: 80, width: 1280, height: 900 },
+      maximized: true
+    });
+    expect(existsSync(join(testRoot, 'workbench-window-state.json'))).toBe(true);
+  });
+
   it('persists, activates and restores a custom role after reconstruction', () => {
     const store = new SettingsStore(testRoot);
     const custom = createBlankRolePackage('role.blank', '空白角色');

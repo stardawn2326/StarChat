@@ -9,6 +9,7 @@ import { DEFAULT_ROLE_PACKAGE } from '../../shared/default-role';
 import { DEFAULT_APP_SETTINGS, DEFAULT_MODEL_VIEWPORT, sanitizeAppSettings } from '../../shared/settings';
 import { DEFAULT_PRESENTATION_SETTINGS } from '../../shared/presentation-contract';
 import { SettingsHome } from './SettingsHome';
+import { SettingsSidebar } from './AgentWorkbench';
 import { formatSemanticMappings, parseSemanticMappings, runtimeExpressionCommand, runtimeMotionCommand } from './SettingsDetailsV2';
 import { SettingsDetailsV2 } from './SettingsDetailsV2';
 import { isWindowIntent } from './settings-preview';
@@ -132,14 +133,17 @@ describe('settings center components', () => {
     ]);
   });
 
-  it('renders the category-card home without a legacy menu or low-value controls', () => {
-    const markup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS, onOpen: () => undefined }));
+  it('renders a Codex-style settings overview and keeps all categories in the left navigation', () => {
+    const markup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS }));
     expect(markup).toContain('aria-labelledby="settings-home-title"');
-    expect(markup).toContain('人格与记忆');
-    expect(markup).not.toContain('模型构图');
-    expect(markup).not.toContain('窗口与交互');
-    expect(markup).not.toContain('<nav');
-    for (const card of SETTINGS_CARDS) expect(markup).toContain(`data-settings-page="${card.id}"`);
+    expect(markup).toContain('data-settings-overview');
+    expect(markup).toContain('当前状态');
+    expect(markup).toContain('工作台与桌宠');
+    expect(markup).not.toContain('data-settings-page');
+    const sidebar = renderToStaticMarkup(createElement(SettingsSidebar, { activePage: 'settings', onNavigate: () => undefined, collapsed: false }));
+    expect(sidebar).toContain('aria-label="设置导航"');
+    expect(sidebar).toContain('placeholder="搜索设置"');
+    for (const card of SETTINGS_CARDS) expect(sidebar).toContain(`data-settings-page="${card.id}"`);
   });
 
   it('exposes real behavior controls without moving model viewport controls into the window settings page', () => {
@@ -227,7 +231,7 @@ describe('settings center components', () => {
   });
 
   it('applies one token contract to every SettingsWindow surface, including future semantic controls', () => {
-    const homeMarkup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS, onOpen: () => undefined }));
+    const homeMarkup = renderToStaticMarkup(createElement(SettingsHome, { state: settingsState, presentation: DEFAULT_PRESENTATION_SETTINGS }));
     expect(homeMarkup).toContain('class="settings-home"');
     for (const card of SETTINGS_CARDS) {
       const markup = renderToStaticMarkup(createElement(SettingsDetailsV2, detailsProps(card.id)));

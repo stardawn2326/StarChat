@@ -55,7 +55,7 @@ async function boot(): Promise<void> {
     window.baoyin.app.onWindowFocusState(setSettingsWindowActiveState);
   }
   try {
-    if (role === 'pet') {
+    if (role === 'pet' || role === 'settings') {
       await loadCubismCore();
     }
     const { default: App } = role === 'pet' ? await import('./PetApp') : await import('./App');

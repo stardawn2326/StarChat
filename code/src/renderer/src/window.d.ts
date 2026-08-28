@@ -31,6 +31,8 @@ declare global {
         minimize(): void;
         close(): void;
         toggleMaximize(): Promise<boolean>;
+        isMaximized(): Promise<boolean>;
+        onMaximizedChanged(callback: (maximized: boolean) => void): () => void;
         showSettings(): void;
         hideSettings(): void;
         toggleSettings(): void;

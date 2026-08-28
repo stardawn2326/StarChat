@@ -1,10 +1,12 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { PublicAppState } from '../../shared/ipc';
 import { DEFAULT_ROLE_PACKAGE } from '../../shared/default-role';
 import { DEFAULT_APP_SETTINGS } from '../../shared/settings';
 import { applyThemeToDocument } from '../../shared/theme';
 import { AgentConsole } from './AgentConsole';
 import { AgentWorkbench } from './AgentWorkbench';
+import { SettingsHome } from './SettingsHome';
+import { readWorkbenchLayoutState } from './workbench-layout';
 
 function createScreenshotState(theme: 'light' | 'dark'): PublicAppState {
   const settings = { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' as const, themePreference: theme };
@@ -26,7 +28,10 @@ function createScreenshotState(theme: 'light' | 'dark'): PublicAppState {
 
 export function WorkbenchScreenshot(): JSX.Element {
   const theme = useMemo<'light' | 'dark'>(() => new URLSearchParams(window.location.search).get('theme') === 'light' ? 'light' : 'dark', []);
+  const settingsMode = useMemo(() => new URLSearchParams(window.location.search).get('mode') === 'settings', []);
+  const productionLayout = useMemo(() => new URLSearchParams(window.location.search).get('layout') === 'production', []);
   const state = useMemo(() => createScreenshotState(theme), [theme]);
+  const [bottomPanelOpen, setBottomPanelOpen] = useState(() => productionLayout ? readWorkbenchLayoutState().bottomPanelOpen : true);
   useEffect(() => {
     document.documentElement.dataset.baoyinWindow = 'settings';
     document.body.dataset.window = 'settings';
@@ -34,8 +39,8 @@ export function WorkbenchScreenshot(): JSX.Element {
     applyThemeToDocument(document, theme, theme === 'dark');
   }, [theme]);
   return <main className="app-shell settings-center-shell">
-    <AgentWorkbench activePage={null} roleName={state.role.displayName} modelLabel="默认模型" bottomPanelOpen agentAvailable agentTasks={[]} initialEnvironmentOpen onNavigate={() => undefined} onToggleBottomPanel={() => undefined} onMinimize={() => undefined} onClose={() => undefined}>
-      <AgentConsole state={state} agentTasks={[]} agentEvent={null} onModeChange={() => undefined} contextUsageOverride={32} />
+    <AgentWorkbench activePage={settingsMode ? 'settings' : null} roleName={state.role.displayName} modelLabel="默认模型" bottomPanelOpen={bottomPanelOpen} agentAvailable agentTasks={[]} initialEnvironmentOpen={!settingsMode} onNavigate={() => undefined} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onMinimize={() => undefined} onClose={() => undefined} workspaceLabel="Project-008" sessionTitle="设置工作台预览" sessionMetaLabel="刚刚" centerTitle="Project-008 设置工作台预览" referenceEnvironment referenceLayout={!productionLayout}>
+      {settingsMode ? <SettingsHome state={state} presentation={state.settings.presentation} /> : <AgentConsole state={state} agentTasks={[]} agentEvent={null} onModeChange={() => undefined} contextUsageOverride={32} referenceFixture={!productionLayout} />}
     </AgentWorkbench>
   </main>;
 }

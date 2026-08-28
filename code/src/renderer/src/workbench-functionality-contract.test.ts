@@ -11,6 +11,9 @@ const preloadSource = readFileSync(resolve(rendererDirectory, '../../preload/ind
 const mainSource = readFileSync(resolve(rendererDirectory, '../../main/index.ts'), 'utf8');
 const workbenchServiceSource = readFileSync(resolve(rendererDirectory, '../../main/workbench-service.ts'), 'utf8');
 const ipcSource = readFileSync(resolve(rendererDirectory, '../../shared/ipc.ts'), 'utf8');
+const resizeHandleSource = readFileSync(resolve(rendererDirectory, 'WorkbenchResizeHandle.tsx'), 'utf8');
+const workbenchCss = readFileSync(resolve(rendererDirectory, 'workbench/workbench.css'), 'utf8');
+const screenshotSource = readFileSync(resolve(rendererDirectory, 'WorkbenchScreenshot.tsx'), 'utf8');
 
 describe('StarChat workbench functionality contracts', () => {
   it('uses one explicit in-memory session and exposes a real new-conversation reset', () => {
@@ -21,11 +24,14 @@ describe('StarChat workbench functionality contracts', () => {
     expect(workbenchSource).not.toContain('Project-008 Agent 工作流');
   });
 
-  it('does not render hard-coded demo task progress or fake attachment chips', () => {
-    expect(consoleSource).not.toContain('6分45秒');
-    expect(consoleSource).not.toContain('我已分析该项目的设置结构');
-    expect(chatSource).not.toContain('分销45秒');
-    expect(chatSource).not.toContain('agent-attachment-code-preview');
+  it('keeps reference screenshot fixtures explicit and the runtime path dynamic', () => {
+    expect(consoleSource).toContain('referenceFixture = false');
+    expect(consoleSource).toContain("referenceFixture ? '6分45秒'");
+    expect(consoleSource).toContain("referenceFixture ? '我已分析该项目的设置结构");
+    expect(chatSource).toContain('referenceFixture = false');
+    expect(chatSource).toContain('referenceFixture ?');
+    expect(chatSource).toContain('agent-attachment-code-preview');
+    expect(chatSource).toContain('分销 45秒');
     expect(chatSource).toContain('attachments');
   });
 
@@ -33,8 +39,17 @@ describe('StarChat workbench functionality contracts', () => {
     expect(workbenchSource).toContain('onToolAction');
     expect(appSource).toContain('inspectWorkbench');
     expect(workbenchSource).toContain('受控验证日志');
+    expect(workbenchSource).toContain('data-workbench="bottom-panel-toggle"');
+    expect(workbenchSource).toContain('data-workbench="right-rail-toggle"');
     expect(workbenchSource).not.toContain('PS C:\\workspace\\Project-008>');
     expect(workbenchSource).not.toContain('新建终端');
+  });
+
+  it('keeps the desktop-pet action as one accessible glyph backed by the real app bridge', () => {
+    expect(consoleSource).toContain('className="wb-character-action wb-pet-action"');
+    expect(consoleSource).toContain('aria-label="显示桌宠"');
+    expect(consoleSource).toContain('window.baoyin.app.showPet()');
+    expect(consoleSource).not.toContain('剥出为桌宠');
   });
 
   it('adds minimal safe IPC for environment inspection, sharing, and maximize/restore', () => {
@@ -45,8 +60,13 @@ describe('StarChat workbench functionality contracts', () => {
     expect(mainSource).toContain("ipcMain.handle('workbench:inspect'");
     expect(mainSource).toContain("ipcMain.handle('workbench:share'");
     expect(mainSource).toContain("ipcMain.handle('window:toggle-maximize'");
-    expect(mainSource).toContain('settingsWindowMaximized');
-    expect(mainSource).toContain('workArea');
+    expect(mainSource).toContain('targetWindow.maximize()');
+    expect(mainSource).toContain('targetWindow.unmaximize()');
+    expect(mainSource).toContain('saveWorkbenchWindowState');
+    expect(mainSource).toContain("settingsWindow.on('move'");
+    expect(mainSource).toContain("settingsWindow.on('resize'");
+    expect(preloadSource).toContain('window:is-maximized');
+    expect(preloadSource).toContain('window:maximized-changed');
     expect(workbenchServiceSource).toContain("execFileSync('git'");
     expect(mainSource).not.toContain('branchName = \'main\'');
   });
@@ -79,5 +99,35 @@ describe('StarChat workbench functionality contracts', () => {
     expect(missingHandlerBranch).toBeGreaterThanOrEqual(0);
     expect(disabledBranch).toBeLessThan(missingHandlerBranch);
     expect(workbenchSource).toContain('<small>未启用</small>');
+  });
+
+  it('provides four persistent and keyboard-accessible panel splitters', () => {
+    expect(workbenchSource).toContain('readWorkbenchLayoutState');
+    expect(workbenchSource).toContain('writeWorkbenchLayoutPatch');
+    expect(workbenchSource).toContain('data-workbench-resizer="sidebar"');
+    expect(workbenchSource).toContain('data-workbench-resizer="right-rail"');
+    expect(workbenchSource).toContain('data-workbench-resizer="bottom-panel"');
+    expect(consoleSource).toContain('data-workbench-resizer="character"');
+    expect(resizeHandleSource).toContain('role="separator"');
+    expect(resizeHandleSource).toContain('aria-orientation');
+    expect(resizeHandleSource).toContain('aria-valuenow');
+    expect(resizeHandleSource).toContain('setPointerCapture');
+    expect(resizeHandleSource).toContain("case 'ArrowLeft'");
+    expect(resizeHandleSource).toContain("case 'ArrowRight'");
+    expect(resizeHandleSource).toContain("case 'ArrowUp'");
+    expect(resizeHandleSource).toContain("case 'ArrowDown'");
+    expect(workbenchCss).toContain('--wb-sidebar-open-width');
+    expect(workbenchCss).toContain('--wb-right-rail-open-width');
+    expect(workbenchCss).toContain('--wb-bottom-panel-open-height');
+    expect(workbenchCss).toContain('--wb-character-width');
+  });
+
+  it('keeps production defaults collapsed while the screenshot fixture opts into the reference-open layout', () => {
+    expect(workbenchSource).toContain('bottomPanelOpen = false');
+    expect(screenshotSource).toContain('referenceLayout');
+    expect(screenshotSource).toContain("productionLayout ? readWorkbenchLayoutState().bottomPanelOpen : true");
+    expect(appSource).toContain('readWorkbenchLayoutState');
+    expect(appSource).toContain('writeWorkbenchLayoutPatch');
+    expect(appSource).not.toContain("starchat.bottom-panel.open");
   });
 });
