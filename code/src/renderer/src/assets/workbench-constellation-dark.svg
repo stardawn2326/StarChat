@@ -1,25 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 914" preserveAspectRatio="none">
-  <!-- Dark reference constellation. Coordinates are in the sidebar layer
-       below the 55px titlebar (screen y minus 55px). -->
-  <g fill="none" stroke="#fff" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M73 520L99 594L68 615L125 644L176 652L225 619" stroke-width="0.62" opacity="0.42"/>
-    <path d="M68 615C42 638 44 670 67 691C75 698 80 700 84 698" stroke-width="0.56" opacity="0.30"/>
-    <path d="M84 698C108 710 145 707 176 652" stroke-width="0.48" opacity="0.22"/>
-    <path d="M-20 755C18 770 43 802 61 844C76 879 77 901 84 914" stroke-width="0.46" opacity="0.20"/>
-    <path d="M225 619C238 600 249 579 259 552" stroke-width="0.44" opacity="0.16"/>
+  <!--
+    The dark theme keeps the exact light-theme constellation geometry.  Only
+    the ink is cooled and softened so the motif remains part of the night
+    field instead of becoming a second, unrelated composition.
+  -->
+  <g fill="none" stroke="#9ab9e7" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M152 434L238 440L203 620L146 647L191 688L114 703L58 743" stroke-width="0.72" opacity="0.16"/>
+    <path d="M80 510L57 549L114 599L146 647" stroke-width="0.66" opacity="0.15"/>
   </g>
-  <g fill="#fff">
-    <path d="M187 421L188.8 427.2L195 429L188.8 430.8L187 437L185.2 430.8L179 429L185.2 427.2Z" opacity="0.78"/>
-    <path d="M73 512L74.5 517.5L80 519L74.5 520.5L73 526L71.5 520.5L66 519L71.5 517.5Z" opacity="0.80"/>
-    <path d="M99 584L101 591L108 593L101 595L99 602L97 595L90 593L97 591Z" opacity="1"/>
-    <path d="M68 606L70 613L77 615L70 617L68 624L66 617L59 615L66 613Z" opacity="0.84"/>
-    <path d="M125 635L127 642L134 644L127 646L125 653L123 646L116 644L123 642Z" opacity="0.92"/>
-    <path d="M176 643L178 650L185 652L178 654L176 661L174 654L167 652L174 650Z" opacity="0.86"/>
-    <path d="M225 610L227 617L234 619L227 621L225 628L223 621L216 619L223 617Z" opacity="1"/>
-    <path d="M84 689L86 696L93 698L86 700L84 707L82 700L75 698L82 696Z" opacity="0.94"/>
-    <circle cx="52" cy="667" r="0.82" opacity="0.48"/>
-    <circle cx="43" cy="735" r="0.9" opacity="0.42"/>
-    <circle cx="33" cy="844" r="0.85" opacity="0.38"/>
-    <circle cx="151" cy="689" r="0.72" opacity="0.34"/>
+  <g fill="#c6dafa">
+    <path d="M152 425L154.2 431.8L161 434L154.2 436.2L152 443L149.8 436.2L143 434L149.8 431.8Z" opacity="0.67"/>
+    <path d="M238 431L239.7 436.3L245 438L239.7 439.7L238 445L236.3 439.7L231 438L236.3 436.3Z" opacity="0.59"/>
+    <path d="M80 503L81.5 507.5L86 509L81.5 510.5L80 515L78.5 510.5L74 509L78.5 507.5Z" opacity="0.61"/>
+    <path d="M57 540L59 546L65 548L59 550L57 556L55 550L49 548L55 546Z" opacity="0.75"/>
+    <path d="M114 590L116 596L122 598L116 600L114 606L112 600L106 598L112 596Z" opacity="0.77"/>
+    <path d="M203 611L205 617L211 619L205 621L203 627L201 621L195 619L201 617Z" opacity="0.53"/>
+    <path d="M146 638L148 644L154 646L148 648L146 654L144 648L138 646L144 644Z" opacity="0.61"/>
+    <path d="M191 679L193 685L199 687L193 689L191 695L189 689L183 687L189 685Z" opacity="0.69"/>
+    <path d="M114 694L116 701L123 703L116 705L114 712L112 705L105 703L112 701Z" opacity="0.76"/>
+    <path d="M58 734L60 741L67 743L60 745L58 752L56 745L49 743L56 741Z" opacity="0.76"/>
   </g>
 </svg>

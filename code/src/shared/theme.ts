@@ -116,6 +116,11 @@ export function resolveThemePreference(preference: unknown, systemDark: boolean)
   return normalized === 'system' ? (systemDark ? 'dark' : 'light') : normalized;
 }
 
+/** Return the explicit preference represented by the opposite theme action. */
+export function nextThemePreference(theme: ResolvedTheme): Exclude<ThemePreference, 'system'> {
+  return theme === 'dark' ? 'light' : 'dark';
+}
+
 export function themeCssVariables(theme: ResolvedTheme): ThemeTokenSet {
   return { ...THEME_TOKENS[theme] };
 }

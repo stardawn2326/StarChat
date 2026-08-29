@@ -34,12 +34,14 @@ async function boot(): Promise<void> {
   }
   const params = new URLSearchParams(window.location.search);
   const screenshotWorkbench = params.get('window') === 'workbench-screenshot';
+  const live2dPreview = params.get('live2dEntry');
   const role = params.get('window') === 'pet' ? 'pet' : 'settings';
   document.documentElement.dataset.baoyinWindow = role;
   document.body.dataset.window = role;
   document.title = role === 'pet' ? '' : 'StarChat';
   if (screenshotWorkbench) {
     try {
+      if (screenshotWorkbench && live2dPreview) await loadCubismCore();
       const { WorkbenchScreenshot } = await import('./WorkbenchScreenshot');
       createRoot(root).render(<WorkbenchScreenshot />);
     } catch (error) {

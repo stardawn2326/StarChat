@@ -321,56 +321,56 @@ body[data-window="settings"] .loading-card { display: grid; min-height: 100vh; p
 }
 
 /* SettingsWindow inheritance contract: new pages and Agent surfaces inherit the same tokens. */
-body[data-window="settings"] .settings-center-shell :where(*) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*) {
   color: inherit;
   border-color: var(--theme-border);
 }
-body[data-window="settings"] .settings-center-shell :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"]) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"]) {
   color: inherit;
   accent-color: var(--theme-accent);
 }
-body[data-window="settings"] .settings-center-shell :where(p, span, small, label, legend, dt, dd, li, .field-hint, .detail-note) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(p, span, small, label, legend, dt, dd, li, .field-hint, .detail-note) {
   color: var(--theme-muted);
 }
-body[data-window="settings"] .settings-center-shell :where(input, textarea, select, [contenteditable="true"]) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(input, textarea, select, [contenteditable="true"]) {
   color: var(--theme-text);
   background: var(--theme-control-surface);
   border-color: var(--theme-border);
 }
-body[data-window="settings"] .settings-center-shell :where(button, [role="button"], summary) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(button, [role="button"], summary) {
   color: var(--theme-text);
   background: var(--theme-control-surface);
   border-color: var(--theme-border);
 }
-body[data-window="settings"] .settings-center-shell :where(button:hover, [role="button"]:hover, summary:hover) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(button:hover, [role="button"]:hover, summary:hover) {
   color: var(--theme-heading);
   background: var(--theme-control-hover);
   border-color: var(--theme-border-strong);
 }
-body[data-window="settings"] .settings-center-shell :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"]) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"]) {
   color: var(--theme-disabled);
   border-color: var(--theme-border);
 }
-body[data-window="settings"] .settings-center-shell :where(input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, [role="button"]:focus-visible, summary:focus-visible) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, [role="button"]:focus-visible, summary:focus-visible) {
   outline: 2px solid var(--theme-focus);
   outline-offset: 2px;
 }
-body[data-window="settings"] .settings-center-shell :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay) {
   color: var(--theme-text);
   background: var(--theme-menu-surface);
   border-color: var(--theme-menu-border);
   box-shadow: 0 18px 48px var(--theme-shadow);
 }
-body[data-window="settings"] .settings-center-shell :where([data-settings-surface], [data-agent-ui], .settings-surface, .agent-surface) {
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where([data-settings-surface], [data-agent-ui], .settings-surface, .agent-surface) {
   color: var(--theme-text);
   background: var(--theme-surface);
   border-color: var(--theme-border);
 }
-body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar) { width: 10px; height: 10px; }
-body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-track) { background: var(--theme-scrollbar-track); }
-body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb) { background: var(--theme-scrollbar-thumb); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
-body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb:hover) { background: var(--theme-accent); background-clip: padding-box; }
-body[data-window="settings"] .settings-center-shell :where(*) { scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track); }
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*::-webkit-scrollbar) { width: 10px; height: 10px; }
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*::-webkit-scrollbar-track) { background: var(--theme-scrollbar-track); }
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*::-webkit-scrollbar-thumb) { background: var(--theme-scrollbar-thumb); border: 2px solid transparent; border-radius: 999px; background-clip: padding-box; }
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*::-webkit-scrollbar-thumb:hover) { background: var(--theme-accent); background-clip: padding-box; }
+body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*) { scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track); }
 
 /* Theme contract: all settings surfaces consume the tokens owned by shared/theme.ts. */
 html[data-theme="light"] body[data-window="settings"] { color-scheme: light; }
@@ -522,8 +522,8 @@ body[data-window="settings"] .settings-center-shell :where(.agent-ui, [data-agen
 
 /* StarChat Agent workbench contract. All surfaces resolve through shared/theme.ts. */
 body[data-window="settings"] .settings-center-shell { padding: 12px; overflow: hidden; }
-body[data-window="settings"] .workbench-shell,
-body[data-window="settings"] [data-workbench="shell"] { display: flex; height: 100%; min-height: 0; flex-direction: column; gap: 10px; }
+body[data-window="settings"] .workbench-shell:not([data-workbench-structure="shared"]),
+body[data-window="settings"] [data-workbench="shell"]:not([data-workbench-structure="shared"]) { display: flex; height: 100%; min-height: 0; flex-direction: column; gap: 10px; }
 body[data-window="settings"] .workbench-topbar { position: relative; top: auto; display: flex; flex: 0 0 46px; align-items: center; justify-content: space-between; height: 46px; padding: 0 8px 0 14px; border-radius: 14px; }
 body[data-window="settings"] .workbench-brand-lockup { min-width: 0; gap: 8px; }
 body[data-window="settings"] .workbench-brand-mark { display: grid; width: 24px; height: 24px; place-items: center; color: var(--theme-accent-strong); background: var(--theme-accent-soft); border: 1px solid var(--theme-border); border-radius: 8px; font-size: 12px; }
@@ -770,8 +770,8 @@ body[data-window="settings"] .settings-center-shell {
   overflow: hidden;
   border-radius: 18px;
 }
-body[data-window="settings"] .workbench-shell,
-body[data-window="settings"] [data-workbench="shell"] {
+body[data-window="settings"] .workbench-shell:not([data-workbench-structure="shared"]),
+body[data-window="settings"] [data-workbench="shell"]:not([data-workbench-structure="shared"]) {
   position: relative;
   display: grid;
   width: 100%;

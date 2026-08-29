@@ -11,7 +11,7 @@ import { SettingsHome } from './SettingsHome';
 import type { SettingsPageId } from './settings-schema';
 import { emitSettingsPreview, isWindowIntent } from './settings-preview';
 import { DEFAULT_PRESENTATION_SETTINGS, sanitizePresentationSettings, type PresentationSettings } from '../../shared/presentation-contract';
-import { applyThemeToDocument } from '../../shared/theme';
+import { applyThemeToDocument, nextThemePreference, type ResolvedTheme } from '../../shared/theme';
 import { syncPetBoundsIntoSettings } from './settings-state';
 import { AgentWorkbench, type WorkbenchPage } from './AgentWorkbench';
 import type { WorkbenchInspection, WorkbenchInspectionKind } from '../../shared/workbench';
@@ -23,11 +23,12 @@ function sameBounds(a: AppSettings['petBounds'], b: AppSettings['petBounds']): b
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function useThemePreference(preference: AppSettings['themePreference']): void {
+function useThemePreference(preference: AppSettings['themePreference']): ResolvedTheme {
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>('light');
   useEffect(() => {
     const media = window.matchMedia('(prefers-color-scheme: dark)');
     const apply = (): void => {
-      applyThemeToDocument(document, preference, media.matches);
+      setResolvedTheme(applyThemeToDocument(document, preference, media.matches));
     };
     apply();
     const onSystemThemeChange = (): void => {
@@ -36,6 +37,7 @@ function useThemePreference(preference: AppSettings['themePreference']): void {
     media.addEventListener('change', onSystemThemeChange);
     return () => media.removeEventListener('change', onSystemThemeChange);
   }, [preference]);
+  return resolvedTheme;
 }
 
 function pathLabel(path: string | null | undefined): string {
@@ -194,7 +196,7 @@ function App(): JSX.Element {
 
   const settings = settingsDraft ?? appState?.settings ?? DEFAULT_APP_SETTINGS;
   const role = roleDraft ?? appState?.role ?? null;
-  useThemePreference(settings.themePreference);
+  const resolvedTheme = useThemePreference(settings.themePreference);
   settingsRef.current = settingsDraft;
   roleRef.current = roleDraft;
   const modelViewport = useMemo(() => modelViewportForPath(settings, settings.live2dModelPath), [settings]);
@@ -493,7 +495,7 @@ function App(): JSX.Element {
       : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={startNewConversation} onMessageSent={onMessageSent} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={agentTasks ?? []} agentEvent={agentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.baoyin.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.baoyin.presentation.emit(event)} onDebug={(command) => window.baoyin.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
 
     return <main className="app-shell settings-center-shell">
-      <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onNewConversation={startNewConversation} sessionTitle={sessionTitle} sessionMessageCount={sessionMessageCount} workspaceLabel={pathLabel(workbenchInspection?.environment.gitRoot ?? workbenchInspection?.environment.workspaceRoot)} environment={workbenchInspection?.environment ?? null} inspection={workbenchInspection} activeTool={activeWorkbenchTool} onToolAction={handleToolAction} onRefreshInspection={() => activeWorkbenchTool && void inspectWorkbench(activeWorkbenchTool)} onShare={shareEnvironment} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()} onMaximize={() => void toggleMaximize()} isMaximized={isMaximized}>{workbenchContent}</AgentWorkbench>
+      <AgentWorkbench activePage={page} roleName={roleDraft.displayName} modelLabel={live2dPreview?.entryPath ?? appState.live2d.entryPath ?? '未配置外部模型'} theme={resolvedTheme} onToggleTheme={() => onSettingsChange({ themePreference: nextThemePreference(resolvedTheme) })} bottomPanelOpen={bottomPanelOpen} agentAvailable={agentTasks !== null} agentTasks={agentTasks ?? []} onNavigate={navigateWorkbench} onToggleBottomPanel={() => setBottomPanelOpen((open) => !open)} onNewConversation={startNewConversation} sessionTitle={sessionTitle} sessionMessageCount={sessionMessageCount} workspaceLabel={pathLabel(workbenchInspection?.environment.gitRoot ?? workbenchInspection?.environment.workspaceRoot)} environment={workbenchInspection?.environment ?? null} inspection={workbenchInspection} activeTool={activeWorkbenchTool} onToolAction={handleToolAction} onRefreshInspection={() => activeWorkbenchTool && void inspectWorkbench(activeWorkbenchTool)} onShare={shareEnvironment} onCancelTask={(taskId) => void cancelAgentTask(taskId)} onMinimize={() => window.baoyin.app.minimize()} onClose={() => window.baoyin.app.hideSettings()} onMaximize={() => void toggleMaximize()} isMaximized={isMaximized}>{workbenchContent}</AgentWorkbench>
     </main>;
 }
 

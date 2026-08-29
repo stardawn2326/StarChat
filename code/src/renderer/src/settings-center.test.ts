@@ -238,12 +238,13 @@ describe('settings center components', () => {
       expect(markup).toContain('class="settings-details"');
     }
 
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(*)');
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"])');
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(input, textarea, select, [contenteditable="true"])');
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay)');
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"])');
-    expect(settingsCenterCss).toContain('body[data-window="settings"] .settings-center-shell :where(*::-webkit-scrollbar-thumb)');
+    const settingsInheritanceScope = 'body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"])';
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where(*)`);
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where(button, input, textarea, select, summary, [role="button"], [role="option"], [role="listbox"])`);
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where(input, textarea, select, [contenteditable="true"])`);
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where([role="dialog"], [role="listbox"], .glass-select-menu, .settings-panel, .settings-overlay)`);
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where(button:disabled, input:disabled, textarea:disabled, select:disabled, [aria-disabled="true"])`);
+    expect(settingsCenterCss).toContain(`${settingsInheritanceScope} :where(*::-webkit-scrollbar-thumb)`);
     for (const token of ['--theme-text', '--theme-muted', '--theme-control-surface', '--theme-menu-surface', '--theme-surface-selected', '--theme-disabled', '--theme-danger']) {
       expect(settingsCenterCss).toContain(token);
     }

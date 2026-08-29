@@ -167,7 +167,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
 
   it('pins the reference baseline proportions and key panel dimensions', () => {
     for (const dimension of [
-      'grid-template-rows: 55px minmax(0, 1fr) 174px',
+      'grid-template-rows: 55px minmax(500px, 1fr) var(--wb-bottom-panel-height)',
       'grid-template-columns: var(--wb-sidebar-width) minmax(0, 1fr)',
       'gap: 10px',
       'flex: 0 0 62px',
@@ -187,13 +187,18 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(rebuiltStylesheet).toContain('/* First-layer Codex composition */');
     expect(rebuiltStylesheet).toContain('body[data-window="settings"] #root > main.app-shell.settings-center-shell');
     expect(rebuiltStylesheet).toContain('row-gap: 0');
-    expect(rebuiltStylesheet).toContain('padding: 0 0 14px;');
+    expect(rebuiltStylesheet).toContain('padding: 0 0 var(--wb-frame-bottom-inset);');
+    expect(rebuiltStylesheet).toContain('--wb-frame-bottom-inset: 14px;');
     expect(rebuiltStylesheet).toContain('grid-template-columns: var(--wb-sidebar-width) minmax(0, 1fr)');
-    expect(rebuiltStylesheet).toContain('background: transparent; border: 0; border-radius: 0; box-shadow: none;');
+    expect(rebuiltStylesheet).toContain('box-sizing: border-box;');
     expect(rebuiltStylesheet).toContain('.wb-topbar {');
     expect(rebuiltStylesheet).toContain('.wb-bottom-panel {');
-    expect(rebuiltStylesheet).toContain('border: 1px solid var(--theme-border)');
-    expect(rebuiltStylesheet).toContain('.wb-main-grid { display: grid; min-width: 0; min-height: 0; grid-column: 2; grid-row: 2; grid-template-columns: minmax(0, 1fr) 354px; gap: 0; height: 100%; margin-top: 0; }');
+    expect(rebuiltStylesheet).toContain('border: 1px solid var(--wb-frame-border);');
+    expect(rebuiltStylesheet).toContain('.wb-center {');
+    expect(rebuiltStylesheet).toContain('border: 0;');
+    expect(rebuiltStylesheet).toContain('border-left: 1px solid var(--wb-divider);');
+    expect(rebuiltStylesheet).not.toContain('settings-center-shell::after');
+    expect(rebuiltStylesheet).not.toContain('padding: 1px;');
     expect(rebuiltStylesheet).toContain('margin-bottom: 8px');
     expect(rebuiltStylesheet).toContain('border-bottom: 1px solid var(--theme-titlebar-border)');
   });

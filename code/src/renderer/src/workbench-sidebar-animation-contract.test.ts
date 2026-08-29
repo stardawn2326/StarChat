@@ -48,11 +48,11 @@ describe('Codex sidebar animation contract from the new reference video', () => 
     expect(workbenchStyles).toContain('@media (prefers-reduced-motion: reduce)');
     expect(workbenchStyles).toContain('transition-duration: 0ms');
     expect(workbenchStyles).toContain('data-sidebar-state="collapsed"');
-    expect(workbenchStyles).toContain('--wb-right-rail-width: 354px');
+    expect(workbenchStyles).toContain('--wb-right-rail-open-width: 354px');
     expect(workbenchStyles).toContain('--wb-right-rail-width: 0px');
-    expect(workbenchStyles).toContain('transition: --wb-right-rail-width 360ms cubic-bezier(.48, .38, .2, .98)');
+    expect(workbenchStyles).toContain('--wb-right-rail-width 360ms cubic-bezier(.48, .38, .2, .98)');
     expect(workbenchStyles).toContain('data-right-rail-state="collapsed"');
-    expect(workbenchStyles).toContain('--wb-bottom-panel-height: 174px');
+    expect(workbenchStyles).toContain('--wb-bottom-panel-open-height: 174px');
     expect(workbenchStyles).toContain('data-bottom-panel="closed"');
   });
 
@@ -62,27 +62,17 @@ describe('Codex sidebar animation contract from the new reference video', () => 
     expect(workbenchSource).toContain('tabIndex={open ? 0 : -1}');
 
     const closedPanelRule = workbenchStyles.match(
-      /\.wb-shell\[data-workbench-mode="workbench"\]\[data-bottom-panel="closed"\]\s*>\s*\.wb-bottom-panel\s*\{([^}]*)\}/s
+      /\.wb-shell\[data-bottom-panel="closed"\]\s*\{([^}]*)\}/s
     )?.[1];
 
-    expect(closedPanelRule).toContain('border-width: 0');
-    expect(closedPanelRule).toContain('opacity: 0');
-    expect(closedPanelRule).toContain('pointer-events: none');
-    expect(closedPanelRule).toContain('visibility: hidden');
+    expect(closedPanelRule).toContain('--wb-bottom-panel-height: 0px');
+    expect(workbenchStyles).toMatch(/\.wb-bottom-panel\.is-collapsed\s*\{[^}]*display:\s*none;/s);
   });
 
   it('lets the restored bottom-panel preference drive the rendered grid track', () => {
-    const effectiveShellRule = Array.from(
-      workbenchStyles.matchAll(
-        /^body\[data-window="settings"\] \.settings-center-shell > \.wb-shell\[data-workbench="shell"\]\[data-workbench-mode="workbench"\]\s*\{([^}]*)\}/gms
-      )
-    ).at(-1)?.[1];
-
-    expect(effectiveShellRule).toContain(
-      '--wb-bottom-panel-height: var(--wb-bottom-panel-open-height);'
-    );
-    expect(effectiveShellRule).toContain(
-      'grid-template-rows: 55px minmax(500px, 1fr) var(--wb-bottom-panel-height);'
-    );
+    const shellRule = workbenchStyles.match(/\.wb-shell\s*\{([^}]*)\}/s)?.[1] ?? '';
+    expect(shellRule).toContain('--wb-bottom-panel-height: var(--wb-bottom-panel-open-height);');
+    expect(shellRule).toContain('grid-template-rows: 55px minmax(500px, 1fr) var(--wb-bottom-panel-height);');
+    expect(workbenchStyles).toContain('.wb-shell[data-right-rail-state="collapsed"]');
   });
 });

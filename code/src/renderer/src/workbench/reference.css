@@ -1,0 +1,1597 @@
+/* Final typography tokens are intentionally shared by the reference workbench
+ * rather than by the legacy settings pages.  The workbench can then keep one
+ * UI stack and one code stack while the six settings pages retain their own
+ * layout contract.
+ */
+:root {
+  --font-ui: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-code: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+
+  --font-size-title: 16px;
+  --font-size-section: 14px;
+  --font-size-body: 14px;
+  --font-size-label: 14px;
+  --font-size-caption: 12px;
+  --font-size-code: 13px;
+
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+
+  --line-height-body: 1.6;
+  --line-height-ui: 1.4;
+  --line-height-code: 1.5;
+}
+
+html[data-theme="light"] {
+  --text-primary: #203858;
+  --text-secondary: #5d718c;
+  --text-tertiary: #7e8fa5;
+  --text-disabled: #aab7c6;
+}
+
+html[data-theme="dark"] {
+  --text-primary: #edf3fb;
+  --text-secondary: #a8b4c5;
+  --text-tertiary: #738197;
+  --text-disabled: #536173;
+}
+
+/*
+ * StarChat reference layer.
+ *
+ * This is the one visual contract for the shared workbench.  The normal
+ * application keeps its live layout state, while screenshot fixtures expose
+ * the same tree at a deterministic scale derived from 1622x969.  Settings
+ * pages do not inherit these selectors because the shared shell is explicit.
+ */
+
+.wb-shell[data-workbench-structure="shared"] {
+  --wb-reference-scale: 1;
+  --wb-font-family: var(--font-ui);
+  --wb-topbar-height: calc(55px * var(--wb-reference-scale));
+  --wb-main-bottom-gap: calc(8px * var(--wb-reference-scale));
+  --wb-shell-corner: calc(12px * var(--wb-reference-scale));
+  box-sizing: border-box;
+  font-family: var(--wb-font-family);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  grid-template-rows: var(--wb-topbar-height) minmax(0, 1fr) var(--wb-bottom-panel-height);
+}
+
+.wb-shell[data-workbench-structure="shared"],
+.wb-shell[data-workbench-structure="shared"] :where(button, input, textarea) {
+  font-family: var(--wb-font-family);
+}
+
+.wb-shell[data-workbench-structure="shared"] > :where(.wb-topbar, .wb-sidebar, .wb-main-grid, .wb-bottom-panel),
+.wb-shell[data-workbench-structure="shared"] :where(.wb-main-grid, .wb-center, .wb-center-scroll, .wb-center-frame, .wb-center-content, .wb-right-rail, .wb-bottom-panel, .wb-character-panel, .agent-composer) {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+}
+
+body[data-window="settings"] #root > main.app-shell.settings-center-shell {
+  box-sizing: border-box;
+  border-radius: var(--wb-shell-corner, 12px);
+  overflow: hidden;
+}
+
+.wb-shell[data-workbench-structure="shared"] {
+  --wb-frame-right-inset: calc(14px * var(--wb-reference-scale));
+  --wb-frame-bottom-inset: calc(12px * var(--wb-reference-scale));
+  --wb-sidebar-closed-width: calc(8px * var(--wb-reference-scale));
+  --wb-glass-blur: 18px;
+  --wb-glass-saturation: 120%;
+  padding-bottom: var(--wb-frame-bottom-inset);
+  border-radius: var(--wb-shell-corner);
+  overflow: hidden;
+}
+
+.wb-shell[data-workbench-structure="shared"]::after {
+  top: var(--wb-topbar-height);
+  width: var(--wb-sidebar-open-width);
+  height: calc(100% - var(--wb-topbar-height));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-topbar {
+  height: var(--wb-topbar-height);
+  padding: 0 calc(9px * var(--wb-reference-scale)) 0 calc(15px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-drag-region {
+  gap: calc(10px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-brand-avatar {
+  width: calc(36px * var(--wb-reference-scale));
+  height: calc(36px * var(--wb-reference-scale));
+  padding: calc(3px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-brand-avatar-crop {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .78), rgba(208, 226, 248, .62));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-brand-avatar-crop img {
+  position: absolute;
+  top: calc(-10px * var(--wb-reference-scale));
+  left: calc(-27px * var(--wb-reference-scale));
+  width: calc(90px * var(--wb-reference-scale));
+  height: calc(135px * var(--wb-reference-scale));
+  max-width: none;
+  object-fit: fill;
+  object-position: center;
+  pointer-events: none;
+  user-select: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-source-avatar {
+  position: relative;
+  display: block;
+  width: calc(18px * var(--wb-reference-scale));
+  height: calc(18px * var(--wb-reference-scale));
+  flex: 0 0 calc(18px * var(--wb-reference-scale));
+  overflow: hidden;
+  gap: 0;
+  background: linear-gradient(145deg, rgba(255, 255, 255, .74), rgba(203, 221, 244, .58));
+  border: 1px solid rgba(119, 159, 198, .28);
+  border-radius: 5px;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-source-avatar img {
+  position: absolute;
+  top: calc(-5px * var(--wb-reference-scale));
+  left: calc(-18px * var(--wb-reference-scale));
+  width: calc(55px * var(--wb-reference-scale));
+  height: calc(82px * var(--wb-reference-scale));
+  max-width: none;
+  object-fit: fill;
+  pointer-events: none;
+  user-select: none;
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-brand-name {
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-theme-toggle,
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-toggle {
+  width: calc(32px * var(--wb-reference-scale));
+  height: calc(32px * var(--wb-reference-scale));
+  border-radius: calc(7px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-toggle {
+  margin-left: calc(42px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-window-controls {
+  gap: calc(2px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-window-control {
+  width: calc(34px * var(--wb-reference-scale));
+  height: calc(34px * var(--wb-reference-scale));
+  border-radius: calc(8px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar {
+  gap: calc(14px * var(--wb-reference-scale));
+  padding: calc(30px * var(--wb-reference-scale)) calc(15px * var(--wb-reference-scale)) calc(10px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-new-chat {
+  min-height: calc(60px * var(--wb-reference-scale));
+  padding: calc(10px * var(--wb-reference-scale)) calc(9px * var(--wb-reference-scale));
+  border-radius: calc(13px * var(--wb-reference-scale));
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-heading {
+  margin-top: calc(16px * var(--wb-reference-scale));
+  padding: calc(2px * var(--wb-reference-scale)) 0 calc(1px * var(--wb-reference-scale));
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-heading > span {
+  width: calc(104px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-project-tree {
+  gap: calc(14px * var(--wb-reference-scale));
+  margin-top: calc(12px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-reference-secondary-workspace {
+  display: grid;
+  min-width: 0;
+  gap: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-project-row {
+  grid-template-columns: calc(19px * var(--wb-reference-scale)) minmax(0, 1fr) calc(17px * var(--wb-reference-scale));
+  gap: calc(8px * var(--wb-reference-scale));
+  padding: calc(8px * var(--wb-reference-scale)) calc(9px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-project-row strong {
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-session-row {
+  grid-template-columns: calc(19px * var(--wb-reference-scale)) minmax(0, 1fr) auto;
+  gap: calc(8px * var(--wb-reference-scale));
+  min-height: calc(52px * var(--wb-reference-scale));
+  padding: calc(8px * var(--wb-reference-scale)) calc(9px * var(--wb-reference-scale)) calc(8px * var(--wb-reference-scale)) calc(15px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-session-row > span {
+  font-size: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-session-row small {
+  font-size: calc(12px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-project-row,
+.wb-shell[data-workbench-structure="shared"] .wb-session-row:not(.is-active) {
+  background: transparent !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-project-row:hover,
+.wb-shell[data-workbench-structure="shared"] .wb-project-row:focus-visible,
+.wb-shell[data-workbench-structure="shared"] .wb-session-row:not(.is-active):hover,
+.wb-shell[data-workbench-structure="shared"] .wb-session-row:not(.is-active):focus-visible {
+  background: var(--theme-control-surface) !important;
+  border-color: var(--theme-border) !important;
+  box-shadow: none !important;
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-footer {
+  padding-top: calc(18px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-settings-entry {
+  min-height: calc(52px * var(--wb-reference-scale));
+}
+
+/* The work view is a transparent layout surface. The center and rail each own
+   one semantic frame, with the reference's six-pixel breathing seam between. */
+.wb-shell[data-workbench-structure="shared"] .wb-main-grid {
+  grid-template-columns: minmax(calc(760px * var(--wb-reference-scale)), 1fr) var(--wb-right-rail-width);
+  gap: calc(6px * var(--wb-reference-scale));
+  height: calc(100% - var(--wb-main-bottom-gap));
+  margin-right: var(--wb-frame-right-inset);
+  margin-bottom: var(--wb-main-bottom-gap);
+  padding-top: calc(2px * var(--wb-reference-scale));
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center {
+  background: var(--wb-frame-surface, var(--wb-panel-surface));
+  border: 1px solid var(--wb-frame-border);
+  border-radius: calc(14px * var(--wb-reference-scale));
+  box-shadow: 0 15px 38px var(--theme-shadow), inset 0 1px 0 var(--theme-surface-strong);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-toolbar {
+  flex-basis: calc(62px * var(--wb-reference-scale));
+  gap: calc(16px * var(--wb-reference-scale));
+  padding: 0 calc(16px * var(--wb-reference-scale)) 0 calc(27px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-title {
+  gap: calc(9px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-title strong {
+  font-size: calc(20px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-actions {
+  gap: calc(16px * var(--wb-reference-scale));
+  margin-right: calc(33px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-actions .wb-icon-button,
+.wb-shell[data-workbench-structure="shared"] .wb-share-action {
+  height: calc(42px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-center-actions .wb-icon-button {
+  width: calc(42px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-share-action {
+  gap: calc(8px * var(--wb-reference-scale));
+  padding-inline: calc(8px * var(--wb-reference-scale));
+  border-radius: calc(8px * var(--wb-reference-scale));
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-environment-popover {
+  top: calc(62px * var(--wb-reference-scale));
+  right: calc(9px * var(--wb-reference-scale));
+  width: calc(265px * var(--wb-reference-scale));
+  gap: calc(14px * var(--wb-reference-scale));
+  padding: calc(15px * var(--wb-reference-scale));
+  border-radius: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-right-rail {
+  gap: calc(10px * var(--wb-reference-scale));
+  padding: calc(17px * var(--wb-reference-scale)) calc(21px * var(--wb-reference-scale)) 0;
+  background: var(--wb-frame-surface, var(--wb-panel-surface));
+  border: 1px solid var(--wb-frame-border);
+  border-radius: calc(14px * var(--wb-reference-scale));
+  box-shadow: 0 15px 38px var(--theme-shadow), inset 0 1px 0 var(--theme-surface-strong);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-rail-topline {
+  height: calc(75px * var(--wb-reference-scale));
+  flex-basis: calc(75px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-rail-topline::after {
+  top: calc(47px * var(--wb-reference-scale));
+  height: calc(2px * var(--wb-reference-scale));
+  background: var(--wb-rail-separator);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-rail-topline > .wb-icon-button {
+  top: calc(3px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-tool-grid {
+  gap: calc(14px * var(--wb-reference-scale));
+  grid-template-rows: repeat(3, calc(174px * var(--wb-reference-scale)));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-tool-card {
+  min-height: calc(174px * var(--wb-reference-scale));
+  padding: calc(18px * var(--wb-reference-scale)) calc(10px * var(--wb-reference-scale));
+  gap: calc(14px * var(--wb-reference-scale));
+  border-radius: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-tool-card strong {
+  font-size: calc(17px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-bottom-panel {
+  margin-right: var(--wb-frame-right-inset);
+  border: 1px solid var(--wb-frame-border);
+  border-radius: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-terminal-tabs {
+  height: calc(45px * var(--wb-reference-scale));
+  gap: calc(8px * var(--wb-reference-scale));
+  padding-inline: calc(13px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-terminal-tab,
+.wb-shell[data-workbench-structure="shared"] .wb-terminal-add,
+.wb-shell[data-workbench-structure="shared"] .wb-terminal-close {
+  height: calc(30px * var(--wb-reference-scale));
+  gap: calc(7px * var(--wb-reference-scale));
+  border-radius: calc(7px * var(--wb-reference-scale));
+  font-size: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-terminal-body {
+  gap: calc(10px * var(--wb-reference-scale));
+  padding: calc(17px * var(--wb-reference-scale)) calc(28px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-agent-console {
+  padding: calc(18px * var(--wb-reference-scale)) calc(21px * var(--wb-reference-scale)) calc(14px * var(--wb-reference-scale)) calc(18px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-agent-workflow {
+  grid-template-columns: var(--wb-character-width) calc(10px * var(--wb-reference-scale)) minmax(calc(470px * var(--wb-reference-scale)), 1fr);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-dialogue-column {
+  padding-top: calc(48px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-dialogue-meta {
+  padding: 0 calc(16px * var(--wb-reference-scale)) calc(11px * var(--wb-reference-scale));
+  font-size: calc(14px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-dialogue-meta strong {
+  font-size: calc(17px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-trajectory {
+  gap: calc(14px * var(--wb-reference-scale));
+  padding: calc(6px * var(--wb-reference-scale)) calc(16px * var(--wb-reference-scale)) calc(22px * var(--wb-reference-scale));
+  font-size: calc(15px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-trajectory p {
+  max-width: calc(330px * var(--wb-reference-scale));
+  margin: calc(25px * var(--wb-reference-scale)) 0 calc(10px * var(--wb-reference-scale));
+  font-size: calc(15px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-plan-actions {
+  gap: calc(18px * var(--wb-reference-scale));
+  padding-top: calc(4px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-dialogue-column .companion-chat {
+  gap: calc(10px * var(--wb-reference-scale));
+  padding-top: 0;
+}
+
+.wb-shell[data-workbench-structure="shared"] .agent-composer {
+  min-height: calc(210px * var(--wb-reference-scale));
+  gap: calc(7px * var(--wb-reference-scale));
+  padding: calc(12px * var(--wb-reference-scale)) calc(14px * var(--wb-reference-scale)) calc(10px * var(--wb-reference-scale));
+  border-radius: calc(14px * var(--wb-reference-scale));
+}
+
+/* Reference material: the base is cool and quiet, glass is translucent, and
+   the edge is a single low-contrast seam. Dark mode keeps the star field but
+   removes the blue-white wash from the old settings cascade. */
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] {
+  --wb-frame-border: rgba(255, 255, 255, .78);
+  --wb-divider: rgba(105, 140, 180, .18);
+  --wb-rail-separator: rgba(105, 140, 180, .10);
+  --wb-panel-border: rgba(150, 181, 215, .28);
+  --wb-panel-surface: linear-gradient(180deg, rgba(255, 255, 255, .16) 0%, rgba(250, 253, 255, .14) 34%, rgba(230, 239, 249, .11) 76%, rgba(214, 229, 244, .06) 100%);
+  --wb-frame-surface: linear-gradient(180deg, rgba(255, 250, 253, .48) 0%, rgba(255, 255, 255, .47) 34%, rgba(255, 255, 255, .45) 76%, rgba(244, 250, 255, .38) 100%);
+  --wb-card-surface: linear-gradient(180deg, rgba(255, 255, 255, .015) 0%, rgba(247, 251, 255, .012) 48%, rgba(218, 231, 246, .02) 100%);
+  --wb-starfield-color: rgba(71, 135, 188, .72);
+  --wb-starfield-opacity: .22;
+  --wb-constellation-color: rgba(255, 255, 255, 1);
+  --wb-constellation-opacity: 1;
+  background:
+    radial-gradient(ellipse 25% 54% at 0 100%, rgba(116, 160, 214, .22) 0%, rgba(116, 160, 214, .13) 46%, transparent 74%),
+    radial-gradient(ellipse at 88% 4%, rgba(199, 225, 245, .34), transparent 58%),
+    linear-gradient(100deg, #dee7f4 0%, #e0e9f5 64%, #e1eaf6 100%);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-structure="shared"] {
+  --wb-frame-border: rgba(150, 140, 150, .12);
+  --wb-divider: rgba(126, 145, 170, .12);
+  --wb-rail-separator: rgba(126, 145, 170, .08);
+  --wb-panel-border: rgba(149, 169, 198, .16);
+  --wb-panel-surface: linear-gradient(180deg, rgba(5, 12, 23, .18) 0%, rgba(2, 7, 16, .21) 52%, rgba(1, 5, 14, .24) 100%);
+  --wb-frame-surface: var(--wb-panel-surface);
+  --wb-card-surface: linear-gradient(180deg, rgba(42, 49, 60, .34) 0%, rgba(35, 44, 56, .35) 58%, rgba(8, 16, 29, .34) 100%);
+  --wb-starfield-color: rgba(219, 235, 255, .94);
+  --wb-starfield-opacity: .58;
+  --wb-constellation-color: rgba(208, 225, 248, .88);
+  --wb-constellation-opacity: .72;
+  background:
+    radial-gradient(ellipse at 88% 4%, rgba(60, 81, 111, .16), transparent 60%),
+    linear-gradient(100deg, #01050f 0%, #00040d 58%, #00020a 100%);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-main-grid {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .40) 0%, rgba(255, 255, 255, .38) 48%, rgba(244, 248, 252, .24) 76%, rgba(214, 229, 245, .10) 100%), rgba(222, 234, 247, .34);
+  border-color: var(--wb-frame-border);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .10), inset 0 1px 0 rgba(255, 255, 255, .68);
+}
+
+/* The reference keeps a dark, quiet seam around the otherwise luminous
+   light panes.  It is a side-specific edge treatment, not another nested
+   frame.  The dark reference already derives this seam from its base layer. */
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-main-grid {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-center {
+  border-top-color: rgba(110, 141, 198, .08);
+  border-right-color: rgba(110, 141, 198, .20);
+  border-bottom-color: rgba(110, 141, 198, .20);
+  border-left-color: rgba(255, 255, 255, .78);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .06), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-right-rail {
+  border-top-color: rgba(110, 141, 198, .08);
+  border-right-color: rgba(110, 141, 198, .10);
+  border-bottom-color: rgba(110, 141, 198, .20);
+  border-left-color: rgba(110, 141, 198, .20);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .06), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-bottom-panel {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .12) 0%, rgba(249, 252, 255, .09) 35%, rgba(231, 240, 250, .07) 70%, rgba(215, 229, 245, .06) 100%), rgba(222, 234, 247, .10);
+  border-color: var(--wb-frame-border);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .10), inset 0 1px 0 rgba(255, 255, 255, .68);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-structure="shared"] :where(.wb-main-grid, .wb-bottom-panel) {
+  background: linear-gradient(180deg, rgba(5, 12, 23, .16) 0%, rgba(2, 7, 16, .19) 50%, rgba(1, 4, 12, .24) 100%), rgba(1, 5, 14, .20);
+  border-color: var(--wb-frame-border);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, .42), inset 0 1px 0 rgba(203, 222, 255, .07);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] :where(.agent-composer, .wb-character-panel) {
+  background: var(--wb-panel-surface);
+  border-color: var(--wb-panel-border);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-structure="shared"] :where(.agent-composer, .wb-character-panel) {
+  background: var(--wb-panel-surface);
+  border-color: var(--wb-panel-border);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-structure="shared"] .wb-tool-card,
+html[data-theme="dark"] .wb-shell[data-workbench-structure="shared"] .wb-tool-card {
+  background: var(--wb-card-surface);
+  border-color: var(--wb-panel-border);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-structure="shared"] .wb-tool-card {
+  background: linear-gradient(180deg, rgba(48, 50, 54, .42) 0%, rgba(38, 39, 43, .40) 58%, rgba(8, 16, 29, .42) 100%);
+}
+
+.wb-shell[data-workbench-structure="shared"] :where(.wb-main-grid, .wb-center-frame, .wb-center-content, .wb-agent-console, .wb-agent-workflow, .companion-chat, .wb-tool-grid, .agent-attachment-slots, .agent-composer-tools) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-structure="shared"] :where(.wb-window-control, .wb-center-actions .wb-icon-button, .wb-share-action, .wb-rail-topline .wb-icon-button, .wb-terminal-add, .wb-terminal-close, .agent-composer-control) {
+  background: transparent;
+  border-color: transparent;
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-environment-popover-reference {
+  background: var(--theme-menu-surface);
+}
+
+/* Resize overlays follow the same scaled frame coordinates. */
+.wb-shell[data-workbench-structure="shared"] .wb-sidebar-resizer {
+  top: var(--wb-topbar-height);
+  bottom: var(--wb-frame-bottom-inset);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-right-rail-resizer {
+  right: calc(var(--wb-right-rail-width) + var(--wb-frame-right-inset) - calc(5px * var(--wb-reference-scale)));
+  bottom: var(--wb-main-bottom-gap);
+}
+
+.wb-shell[data-workbench-structure="shared"] .wb-bottom-panel-resizer {
+  right: var(--wb-frame-right-inset);
+  bottom: calc(var(--wb-bottom-panel-height) + calc(9px * var(--wb-reference-scale)));
+  left: var(--wb-sidebar-width);
+}
+
+/*
+ * Final reference ownership layer.
+ *
+ * The settings window is also the host for this workbench, so an unscoped
+ * material rule is not safe: the settings stylesheet can otherwise turn a
+ * frame, card, or composer into a second surface.  This layer is deliberately
+ * scoped to the workbench visual contract and gives every visible tier one
+ * owner: app background, semantic frame, card, or transient overlay.
+ */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-bg-app: linear-gradient(112deg, #e4eaf6 0%, #e4eaf6 52%, #e4eaf6 100%);
+  --wb-surface-panel: linear-gradient(180deg, rgba(255, 255, 255, .34) 0%, rgba(254, 255, 255, .28) 48%, rgba(235, 243, 250, .20) 100%);
+  --wb-surface-card: linear-gradient(180deg, rgba(248, 250, 253, .27) 0%, rgba(241, 246, 251, .21) 54%, rgba(232, 240, 249, .27) 100%);
+  --wb-surface-overlay: linear-gradient(180deg, rgba(241, 244, 251, .62) 0%, rgba(235, 241, 250, .70) 100%);
+  --wb-surface-control: rgba(241, 247, 253, .68);
+  --wb-surface-bottom: linear-gradient(180deg, rgba(252, 254, 255, .22) 0%, rgba(236, 244, 251, .15) 45px, rgba(218, 231, 246, .12) 100%);
+  --wb-shadow-panel: 0 16px 40px rgba(76, 119, 160, .14), inset 0 1px 0 rgba(255, 255, 255, .72);
+  --wb-shadow-card: 0 8px 22px rgba(89, 128, 165, .08), inset 0 1px 0 rgba(255, 255, 255, .74);
+  --wb-border-frame: rgba(146, 176, 211, .34);
+  --wb-border-card: rgba(171, 198, 226, .48);
+  --wb-border-divider: rgba(112, 149, 189, .20);
+  --wb-text-main: #07134f;
+  --wb-text-muted: #40588a;
+  --wb-text-subtle: #7180a6;
+  --wb-accent: #1e79e8;
+  --wb-starfield-opacity: .04 !important;
+  --wb-outer-border: rgba(78, 112, 175, .30);
+  box-sizing: border-box;
+  color: var(--wb-text-main);
+  font-family: "Inter", "SF Pro Display", "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-weight: 450;
+  background:
+    radial-gradient(ellipse 32% 72% at 0 100%, rgba(112, 164, 225, .24) 0%, rgba(112, 164, 225, .13) 44%, transparent 76%),
+    var(--wb-bg-app) !important;
+  border-radius: 18px;
+  box-shadow: inset 0 0 0 1px var(--wb-outer-border);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(button, input, textarea, select) {
+  font-family: inherit;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-topbar {
+  padding-right: calc(20px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-brand-lockup {
+  transform: translateY(calc(10px * var(--wb-reference-scale)));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-sidebar-toggle {
+  margin-left: calc(51px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center-actions {
+  margin-right: calc(25px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-window-controls {
+  gap: calc(24px * var(--wb-reference-scale));
+  transform: translateY(calc(5px * var(--wb-reference-scale)));
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"]::before {
+  opacity: .04 !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-topbar, .wb-sidebar, .wb-main-grid, .wb-bottom-panel, .wb-center, .wb-right-rail, .wb-character-panel, .agent-composer, .wb-tool-card, .wb-environment-popover-reference) {
+  box-sizing: border-box;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-topbar,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-sidebar {
+  color: var(--wb-text-muted);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-main-grid {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-center, .wb-right-rail) {
+  background: var(--wb-surface-panel);
+  border: 1px solid var(--wb-border-frame);
+  box-shadow: var(--wb-shadow-panel);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center {
+  background:
+    radial-gradient(ellipse 24% 70% at 25% 40%, rgba(110, 163, 224, .18) 0%, rgba(110, 163, 224, .07) 48%, transparent 78%),
+    var(--wb-surface-panel);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center {
+  border-top-color: rgba(110, 141, 198, .08);
+  border-right-color: rgba(110, 141, 198, .20);
+  border-bottom-color: rgba(110, 141, 198, .20);
+  border-left-color: rgba(255, 255, 255, .78);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .06), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-right-rail {
+  border-top-color: rgba(110, 141, 198, .08);
+  border-right-color: rgba(110, 141, 198, .10);
+  border-bottom-color: rgba(110, 141, 198, .20);
+  border-left-color: rgba(110, 141, 198, .20);
+  box-shadow: 0 15px 38px rgba(76, 130, 172, .06), inset 0 1px 0 rgba(255, 255, 255, .22);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-center, .wb-right-rail) {
+  background: linear-gradient(180deg, rgba(93, 124, 170, .18) 0px, rgba(93, 124, 170, .06) 1px, rgba(255, 255, 255, .34) 2px, rgba(255, 255, 255, 0) 5px), var(--wb-surface-panel);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center {
+  background: linear-gradient(180deg, rgba(93, 124, 170, .18) 0px, rgba(93, 124, 170, .06) 1px, rgba(255, 255, 255, .34) 2px, rgba(255, 255, 255, 0) 5px), radial-gradient(ellipse 24% 70% at 25% 40%, rgba(110, 163, 224, .18) 0%, rgba(110, 163, 224, .07) 48%, transparent 78%), var(--wb-surface-panel);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-grid {
+  flex: 0 0 calc(564px * var(--wb-reference-scale));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-right-rail {
+  padding-left: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center-toolbar {
+  border-bottom: 0 !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center-frame::before {
+  position: absolute;
+  top: calc(63px * var(--wb-reference-scale));
+  right: 0;
+  left: 0;
+  z-index: 0;
+  height: calc(3px * var(--wb-reference-scale));
+  content: "";
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(112, 149, 189, .04), rgba(112, 149, 189, .13), rgba(112, 149, 189, .02));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center-title strong,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card strong,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-brand-name {
+  color: var(--wb-text-main);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-center-title, .wb-center-actions, .wb-tool-card, .wb-terminal-tabs, .wb-terminal-body, .wb-agent-console) {
+  position: relative;
+  z-index: 1;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-right-rail {
+  border-left-color: var(--wb-border-divider);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-rail-topline::after {
+  top: calc(46px * var(--wb-reference-scale));
+  height: calc(2px * var(--wb-reference-scale));
+  background: rgba(112, 149, 189, .08);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card {
+  color: var(--wb-text-main);
+  background: var(--wb-surface-card) !important;
+  border: 1px solid var(--wb-border-card) !important;
+  box-shadow: var(--wb-shadow-card) !important;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* The reference uses a navy ink hierarchy rather than the older teal-grey
+   defaults. Keep the override inside the workbench scope so settings pages
+   and the live runtime retain their own semantic theme tokens. */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-dialogue-meta, .wb-trajectory, .wb-plan-actions, .wb-environment-popover-reference, .wb-terminal-body) {
+  color: var(--wb-text-muted);
+  font-weight: 450;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-dialogue-meta strong, .wb-trajectory > span, .wb-center-title strong, .wb-tool-card strong, .wb-brand-name, .wb-project-row strong, .wb-session-row > span, .wb-sidebar-heading, .wb-settings-entry, .wb-terminal-tab) {
+  color: var(--wb-text-main);
+  font-weight: 450;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-trajectory p, .wb-environment-popover-reference span, .wb-verification-note, .wb-verification-empty, .wb-session-row small) {
+  color: var(--wb-text-muted);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card:hover,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card:focus-visible {
+  background: linear-gradient(180deg, rgba(249, 252, 255, .86), rgba(232, 241, 250, .86));
+  border-color: rgba(91, 151, 214, .56);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-icon {
+  color: var(--wb-text-main);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-project-row, .wb-session-row:not(.is-active), .wb-settings-entry) {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-project-row:hover, .wb-project-row:focus-visible, .wb-session-row:not(.is-active):hover, .wb-session-row:not(.is-active):focus-visible, .wb-settings-entry:hover, .wb-settings-entry:focus-visible) {
+  background: var(--wb-surface-control);
+  border-color: var(--wb-border-divider);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-session-row.is-active {
+  background: rgba(244, 249, 255, .50) !important;
+  border-color: rgba(154, 191, 226, .40) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-bottom-panel {
+  background: var(--wb-surface-bottom) !important;
+  border: 1px solid var(--wb-border-frame) !important;
+  box-shadow: var(--wb-shadow-panel) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs {
+  background: linear-gradient(180deg, rgba(255, 255, 255, .28), rgba(239, 246, 253, .20)) !important;
+  border-bottom-color: var(--wb-border-divider) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-body {
+  background: linear-gradient(180deg, rgba(219, 232, 246, .12), rgba(215, 229, 245, .08)) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-bottom-panel {
+  background:
+    linear-gradient(180deg,
+      transparent 0%,
+      transparent 64%,
+      rgba(190, 205, 236, .04) 68%,
+      rgba(190, 205, 236, .20) 79%,
+      rgba(190, 205, 236, .22) 86%,
+      rgba(190, 205, 236, .18) 96%,
+      rgba(255, 255, 255, .20) 100%),
+    var(--wb-surface-bottom) !important;
+  border-top-color: rgba(255, 255, 255, .70) !important;
+  border-right-color: rgba(146, 176, 211, .34) !important;
+  border-bottom-color: rgba(146, 176, 211, .34) !important;
+  border-left-color: rgba(146, 176, 211, .34) !important;
+  box-shadow: 0 16px 40px rgba(76, 119, 160, .14) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs {
+  height: calc(47px * var(--wb-reference-scale));
+  border-bottom: 2px solid var(--wb-border-divider) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-body {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .62) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-new-chat {
+  background: rgba(255, 255, 255, .30) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card {
+  border-top-color: rgba(255, 255, 255, .72) !important;
+  border-right-color: rgba(146, 176, 211, .34) !important;
+  border-bottom-color: rgba(146, 176, 211, .34) !important;
+  border-left-color: rgba(146, 176, 211, .34) !important;
+  box-shadow: 0 8px 22px rgba(89, 128, 165, .08), inset 0 1px 0 rgba(255, 255, 255, .38) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-composer, .wb-character-panel) {
+  background: linear-gradient(180deg, rgba(214, 226, 242, .55), rgba(201, 218, 238, .48)) !important;
+  border-color: var(--wb-border-card) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .22) !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer {
+  background: linear-gradient(180deg, rgba(232, 239, 247, .18) 0%, rgba(240, 245, 250, .12) 100%) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-body {
+  background: linear-gradient(180deg, rgba(219, 232, 246, .10), rgba(205, 214, 244, .25)) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer {
+  overflow: hidden;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-compose-row textarea, .agent-composer-control) {
+  color: var(--wb-text-main);
+  background: rgba(225, 235, 247, .75) !important;
+  border-color: var(--wb-border-divider) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-compose-row textarea::placeholder {
+  color: var(--wb-text-muted);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-attachment-slot, .agent-composer-control.is-context, .agent-composer-control[data-agent-composer-control="model"], .agent-composer-control[data-agent-composer-control="temperature"]) {
+  background: rgba(240, 247, 253, .56);
+  border-color: rgba(153, 190, 222, .44);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-send-button {
+  color: #173558;
+  background: #f5c45e;
+  border-color: rgba(169, 124, 42, .34);
+  box-shadow: 0 5px 14px rgba(196, 145, 48, .24), inset 0 1px 0 rgba(255, 255, 255, .55);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference {
+  color: var(--wb-text-main);
+  background: var(--wb-surface-overlay);
+  border-color: rgba(150, 182, 215, .52);
+  box-shadow: 0 22px 52px rgba(66, 110, 153, .18), inset 0 1px 0 rgba(255, 255, 255, .76);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference {
+  top: calc(61px * var(--wb-reference-scale));
+  border-top-color: rgba(255, 255, 255, .78) !important;
+  border-right-color: rgba(255, 255, 255, .35) !important;
+  border-bottom-color: rgba(150, 182, 215, .10) !important;
+  border-left-color: rgba(150, 182, 215, .30) !important;
+  box-shadow: 0 22px 52px rgba(66, 110, 153, .18) !important;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-reference-thumb {
+  background:
+    radial-gradient(circle at 76% 24%, rgba(122, 191, 255, .62) 0 1px, transparent 2px),
+    linear-gradient(145deg, #071326 0%, #123d69 62%, #050d1a 100%);
+  border-color: rgba(97, 157, 205, .44);
+  box-shadow: inset 0 1px 0 rgba(184, 222, 255, .24), 0 2px 8px rgba(32, 88, 143, .18);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference {
+  gap: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference :where(.wb-environment-list, .wb-environment-source) {
+  gap: calc(18px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference :where(.wb-environment-list span, .wb-environment-source span) {
+  font-size: calc(14px * var(--wb-reference-scale));
+  line-height: 1.45;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-theme-toggle, .wb-sidebar-toggle, .wb-window-control, .wb-center-actions .wb-icon-button, .wb-share-action, .wb-rail-topline .wb-icon-button, .wb-terminal-add, .wb-terminal-close, .agent-composer-control) {
+  color: var(--wb-text-muted);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-theme-toggle:hover, .wb-theme-toggle:focus-visible, .wb-sidebar-toggle:hover, .wb-sidebar-toggle:focus-visible, .wb-window-control:hover, .wb-window-control:focus-visible, .wb-center-actions .wb-icon-button:hover, .wb-center-actions .wb-icon-button:focus-visible, .wb-share-action:hover, .wb-share-action:focus-visible) {
+  color: var(--wb-text-main);
+  background: rgba(248, 252, 255, .44);
+  border-color: var(--wb-border-divider);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-bg-app: linear-gradient(112deg, #020711 0%, #010610 54%, #00040d 100%);
+  --wb-surface-panel: linear-gradient(180deg, rgba(9, 17, 29, .45) 0%, rgba(3, 11, 23, .56) 54%, rgba(1, 7, 17, .64) 100%);
+  --wb-surface-card: linear-gradient(180deg, rgba(22, 31, 44, .60) 0%, rgba(18, 27, 40, .72) 54%, rgba(10, 18, 31, .72) 100%);
+  --wb-surface-overlay: linear-gradient(180deg, rgba(27, 38, 53, .88) 0%, rgba(8, 17, 30, .92) 100%);
+  --wb-surface-control: rgba(21, 31, 45, .70);
+  --wb-surface-bottom: linear-gradient(180deg, rgba(10, 21, 36, .58) 0%, rgba(3, 12, 25, .66) 45px, rgba(1, 6, 16, .78) 100%);
+  --wb-shadow-panel: 0 18px 46px rgba(0, 0, 0, .46), inset 0 1px 0 rgba(191, 214, 246, .08);
+  --wb-shadow-card: 0 10px 26px rgba(0, 0, 0, .22), inset 0 1px 0 rgba(205, 226, 255, .08);
+  --wb-border-frame: rgba(147, 169, 200, .20);
+  --wb-border-card: rgba(144, 167, 198, .20);
+  --wb-border-divider: rgba(143, 163, 193, .20);
+  --wb-text-main: #edf3ff;
+  --wb-text-muted: #b0bfd5;
+  --wb-text-subtle: #7e90ab;
+  --wb-accent: #78adff;
+  --wb-starfield-opacity: .58 !important;
+  --wb-outer-border: rgba(150, 140, 170, .10);
+  color: var(--wb-text-main);
+  background:
+    var(--wb-bg-app) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-center, .wb-right-rail) {
+  border-color: var(--wb-border-frame);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-center-toolbar,
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs {
+  border-color: var(--wb-border-divider);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-center-title strong, .wb-tool-card strong, .wb-brand-name, .wb-terminal-tab, .wb-terminal-body, .wb-verification-note, .wb-verification-empty) {
+  color: var(--wb-text-main);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card {
+  background: linear-gradient(180deg, rgba(27, 33, 45, .60) 0%, rgba(17, 25, 38, .72) 54%, rgba(19, 28, 41, .72) 100%) !important;
+  border-color: var(--wb-border-card) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card:hover,
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card:focus-visible {
+  background: linear-gradient(180deg, rgba(34, 47, 65, .78), rgba(13, 24, 39, .82));
+  border-color: rgba(117, 166, 232, .48);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-project-row, .wb-session-row:not(.is-active), .wb-settings-entry) {
+  background: transparent;
+  border-color: transparent;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-project-row:hover, .wb-project-row:focus-visible, .wb-session-row:not(.is-active):hover, .wb-session-row:not(.is-active):focus-visible, .wb-settings-entry:hover, .wb-settings-entry:focus-visible) {
+  background: var(--wb-surface-control);
+  border-color: var(--wb-border-divider);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-composer, .wb-character-panel) {
+  background: linear-gradient(180deg, rgba(12, 22, 36, .65) 0%, rgba(7, 16, 30, .70) 70%, rgba(3, 11, 23, .75) 100%) !important;
+  border-color: var(--wb-border-card) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer {
+  background: linear-gradient(180deg, rgba(13, 21, 35, .65) 0%, rgba(7, 16, 30, .70) 70%, rgba(3, 11, 23, .75) 100%) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card.is-disabled {
+  opacity: 1;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card.is-disabled :where(.wb-tool-icon, strong, small) {
+  opacity: .72;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-tool-card.is-disabled {
+  background: linear-gradient(180deg, rgba(27, 33, 45, .60) 0%, rgba(16, 27, 40, .72) 54%, rgba(12, 21, 34, .72) 100%) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-compose-row textarea, .agent-composer-control) {
+  color: var(--wb-text-main);
+  background: rgba(5, 14, 27, .85) !important;
+  border-color: var(--wb-border-divider) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-attachment-slot, .agent-composer-control.is-context, .agent-composer-control[data-agent-composer-control="model"], .agent-composer-control[data-agent-composer-control="temperature"]) {
+  background: rgba(17, 29, 45, .78);
+  border-color: var(--wb-border-card);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-send-button {
+  color: #0c1b2e;
+  background: #edbd5f;
+  border-color: rgba(240, 202, 117, .46);
+  box-shadow: 0 6px 18px rgba(226, 175, 77, .22), inset 0 1px 0 rgba(255, 255, 255, .48);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference {
+  color: var(--wb-text-main);
+  background: var(--wb-surface-overlay);
+  border-color: var(--wb-border-frame);
+  box-shadow: 0 22px 52px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(205, 226, 255, .08);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs {
+  background: linear-gradient(180deg, rgba(6, 13, 24, .50), rgba(2, 8, 17, .56)) !important;
+  border-bottom-color: var(--wb-border-divider) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-body {
+  background: linear-gradient(180deg, rgba(2, 10, 22, .55), rgba(1, 6, 16, .70)) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-session-row.is-active {
+  background: rgba(10, 16, 25, .76) !important;
+  border-color: rgba(170, 180, 194, .32) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-theme-toggle, .wb-sidebar-toggle, .wb-window-control, .wb-center-actions .wb-icon-button, .wb-share-action, .wb-rail-topline .wb-icon-button, .wb-terminal-add, .wb-terminal-close, .agent-composer-control) {
+  color: var(--wb-text-muted);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-theme-toggle:hover, .wb-theme-toggle:focus-visible, .wb-sidebar-toggle:hover, .wb-sidebar-toggle:focus-visible, .wb-window-control:hover, .wb-window-control:focus-visible, .wb-center-actions .wb-icon-button:hover, .wb-center-actions .wb-icon-button:focus-visible, .wb-share-action:hover, .wb-share-action:focus-visible) {
+  color: var(--wb-text-main);
+  background: rgba(30, 43, 61, .72);
+  border-color: var(--wb-border-divider);
+}
+
+/* The supplied role image already contains the concept's halo and local
+   star accents. Keep it as one transparent art layer so the fallback does
+   not double-draw a second circular frame underneath it. */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art.is-static-role::before {
+  display: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img {
+  position: absolute;
+  top: calc(70px * var(--wb-reference-scale));
+  left: calc(50% - calc(13px * var(--wb-reference-scale)));
+  display: block;
+  flex: none;
+  width: auto;
+  height: calc(1200px * var(--wb-reference-scale));
+  max-width: none;
+  object-fit: contain;
+  object-position: center top;
+  transform: translateX(-50%);
+  z-index: 1;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img.wb-static-role-highlight {
+  z-index: 2;
+  opacity: .78;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 43%, rgba(0, 0, 0, .82) 52%, transparent 69%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 43%, rgba(0, 0, 0, .82) 52%, transparent 69%);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img {
+  filter: brightness(.27) saturate(2.20) contrast(1.08);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img.wb-static-role-highlight {
+  filter: brightness(.50) saturate(.92) contrast(1.10);
+  opacity: .72;
+  mask-image: linear-gradient(to bottom, #000 0%, #000 28%, rgba(0, 0, 0, .72) 40%, rgba(0, 0, 0, .30) 54%, rgba(0, 0, 0, .08) 62%, transparent 68%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 0%, #000 28%, rgba(0, 0, 0, .72) 40%, rgba(0, 0, 0, .30) 54%, rgba(0, 0, 0, .08) 62%, transparent 68%);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img.wb-static-role-base {
+  filter: brightness(.82) saturate(1.18) contrast(1.22);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img.wb-static-role-highlight {
+  filter: brightness(1.04) saturate(.96) contrast(1.05);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art.is-static-role::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  pointer-events: none;
+  background-image: url('../assets/workbench-celestial-field.svg');
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  opacity: var(--wb-character-starfield-opacity);
+  mix-blend-mode: screen;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-character-starfield-opacity: .30;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-character-starfield-opacity: .50;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-character-panel, .wb-character-art) {
+  background: linear-gradient(180deg, #050e1e 0%, #020916 100%) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-panel::after {
+  background: linear-gradient(to bottom, rgba(190, 205, 230, .10), transparent 21%, transparent 74%, rgba(0, 0, 0, .12));
+  opacity: .1 !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-panel {
+  background: linear-gradient(180deg, rgba(214, 226, 242, .55), rgba(201, 218, 238, .48)) !important;
+}
+
+/* The role stage needs depth of its own: a soft central bloom, a cool lower
+   recovery, and a quiet vertical falloff keep the transparent character from
+   reading as a cutout on a flat card. */
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art {
+  background:
+    radial-gradient(ellipse 68% 48% at 50% 30%, rgba(255, 255, 255, .78) 0%, rgba(224, 239, 254, .58) 42%, transparent 74%),
+    radial-gradient(ellipse 86% 64% at 50% 82%, rgba(157, 194, 231, .30) 0%, rgba(188, 215, 242, .14) 54%, transparent 84%),
+    linear-gradient(180deg, #e7f0fb 0%, #d8e8f8 45%, #c9ddf2 100%) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art {
+  background:
+    radial-gradient(ellipse 70% 54% at 50% 32%, rgba(91, 126, 174, .30) 0%, rgba(35, 63, 103, .18) 42%, transparent 76%),
+    radial-gradient(ellipse 88% 66% at 50% 88%, rgba(16, 42, 78, .42) 0%, rgba(7, 24, 50, .20) 54%, transparent 82%),
+    linear-gradient(180deg, #07152a 0%, #030d1d 54%, #020816 100%) !important;
+}
+
+/* Match the concept composer rhythm: the attachment row owns the tall
+   preview cards, the prompt follows it, and the controls stay in one bottom
+   line without a second background frame. */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer {
+  position: relative;
+  top: calc(-7px * var(--wb-reference-scale));
+  min-height: calc(214px * var(--wb-reference-scale));
+  margin-bottom: calc(3px * var(--wb-reference-scale));
+  padding: calc(19px * var(--wb-reference-scale)) calc(10px * var(--wb-reference-scale)) calc(10px * var(--wb-reference-scale)) calc(14px * var(--wb-reference-scale));
+  grid-template-rows: calc(82px * var(--wb-reference-scale)) minmax(0, 1fr) calc(40px * var(--wb-reference-scale));
+  gap: calc(7px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-attachment-slots {
+  min-height: calc(82px * var(--wb-reference-scale));
+  gap: calc(7px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-attachment-slot {
+  height: calc(80px * var(--wb-reference-scale));
+  border-radius: calc(11px * var(--wb-reference-scale));
+  font-size: calc(15px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-attachment-preview {
+  width: calc(77px * var(--wb-reference-scale));
+  padding: calc(2px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-attachment-label {
+  width: calc(78px * var(--wb-reference-scale));
+  justify-content: center;
+  padding-inline: calc(4px * var(--wb-reference-scale));
+  font-size: calc(14px * var(--wb-reference-scale));
+  white-space: nowrap;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-compose-row {
+  align-items: flex-end;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-compose-row textarea {
+  height: calc(47px * var(--wb-reference-scale));
+  min-height: calc(47px * var(--wb-reference-scale));
+  max-height: calc(47px * var(--wb-reference-scale));
+  padding: calc(8px * var(--wb-reference-scale)) 0;
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-send-button {
+  width: calc(36px * var(--wb-reference-scale));
+  height: calc(36px * var(--wb-reference-scale));
+  flex: 0 0 calc(36px * var(--wb-reference-scale));
+  transform: translateY(calc(-1px * var(--wb-reference-scale)));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer-control[data-agent-composer-control="model"],
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer-control[data-agent-composer-control="temperature"] {
+  gap: calc(4px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-trajectory {
+  gap: calc(14px * var(--wb-reference-scale));
+  font-size: calc(16px * var(--wb-reference-scale));
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-trajectory > span {
+  gap: calc(5px * var(--wb-reference-scale));
+}
+
+/*
+ * Live2D Stage ownership.
+ *
+ * The stage is a fixed geometry host.  Its visual layers are absolute and
+ * only their opacity changes when a model becomes ready, so loading a model
+ * can never move the dialogue column or composer.
+ */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art {
+  container-type: size;
+  container-name: live2d-stage;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art[data-workbench-stage="live2d"]::before {
+  display: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art.is-static-role::after {
+  display: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-stars,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-halo,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role,
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-glow {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-stars {
+  z-index: 0;
+  background-image: url('../assets/workbench-celestial-field.svg');
+  background-position: center;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  opacity: var(--wb-character-starfield-opacity);
+  mix-blend-mode: screen;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-halo {
+  z-index: 0;
+  width: 82%;
+  height: auto;
+  aspect-ratio: 1;
+  inset: 9% auto auto 9%;
+  border: 1px solid var(--theme-border-strong);
+  border-radius: 50%;
+  box-shadow: 0 0 0 21px var(--theme-accent-soft), 0 0 35px var(--theme-accent-soft);
+  opacity: 0;
+  transform: translateZ(0);
+  transition: opacity 200ms ease;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-halo.is-active {
+  opacity: .68;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role {
+  z-index: 1;
+  transition: opacity 200ms ease;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role-placeholder {
+  opacity: 1;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role-live {
+  opacity: 0;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] [data-live2d-stage-status="ready"] .wb-stage-role-placeholder {
+  opacity: 0;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] [data-live2d-stage-status="ready"] .wb-stage-role-live {
+  opacity: 1;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role > .live2d-card {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-role > .live2d-card .live2d-overlay {
+  display: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-glow {
+  z-index: 2;
+  background: linear-gradient(to bottom, var(--theme-surface-strong), transparent 21%, transparent 74%, var(--theme-surface));
+  opacity: .32;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-glow {
+  background: linear-gradient(to bottom, transparent 0%, transparent 40%, rgba(0, 4, 12, .36) 52%, rgba(0, 4, 12, .48) 62%, rgba(0, 4, 12, .08) 78%, rgba(0, 4, 12, .14) 100%);
+  opacity: 1;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-panel::after {
+  display: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-stage-status {
+  position: absolute;
+  right: calc(14px * var(--wb-reference-scale));
+  bottom: calc(12px * var(--wb-reference-scale));
+  z-index: 3;
+  max-width: 78%;
+  padding: calc(5px * var(--wb-reference-scale)) calc(8px * var(--wb-reference-scale));
+  color: var(--wb-text-muted);
+  background: var(--wb-surface-control);
+  border: 1px solid var(--wb-border-divider);
+  border-radius: calc(7px * var(--wb-reference-scale));
+  font-size: calc(11px * var(--wb-reference-scale));
+  line-height: 1.35;
+  opacity: 0;
+  transform: translateY(calc(4px * var(--wb-reference-scale)));
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] [data-live2d-stage-status="error"] .wb-stage-status {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@container live2d-stage (max-height: 560px) {
+  .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img {
+    top: calc(46px * var(--wb-reference-scale));
+    height: calc(1320px * var(--wb-reference-scale));
+  }
+}
+
+@container live2d-stage (min-height: 561px) and (max-height: 760px) {
+  .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img {
+    height: calc(1200px * var(--wb-reference-scale));
+  }
+}
+
+@container live2d-stage (min-height: 761px) {
+  .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-static-role img {
+    height: calc(1120px * var(--wb-reference-scale));
+  }
+}
+
+/*
+ * Final Typography & Visual Polish ownership.
+ *
+ * Keep the plan's typography tokens at the reference boundary.  This avoids
+ * leaking workbench-specific ink into the six settings pages while ensuring
+ * every visible tier resolves from the same UI/code stacks.
+ */
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-font-ui: var(--font-ui);
+  --wb-font-code: var(--font-code);
+  --wb-body-weight: var(--font-weight-regular);
+  --wb-heading-weight: var(--font-weight-semibold);
+  --wb-text-main: var(--text-primary);
+  --wb-text-muted: var(--text-secondary);
+  --wb-text-subtle: var(--text-tertiary);
+  --wb-text-disabled: var(--text-disabled);
+  font-family: var(--wb-font-ui);
+  font-weight: var(--font-weight-regular);
+  font-synthesis: none;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(button, input, textarea, select) {
+  font-family: var(--wb-font-ui);
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-text-main: var(--text-primary);
+  --wb-text-muted: var(--text-secondary);
+  --wb-text-subtle: var(--text-tertiary);
+  --wb-text-disabled: var(--text-disabled);
+  --wb-border-divider: rgba(112, 149, 189, .14);
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] {
+  --wb-text-main: var(--text-primary);
+  --wb-text-muted: var(--text-secondary);
+  --wb-text-subtle: var(--text-tertiary);
+  --wb-text-disabled: var(--text-disabled);
+  --wb-border-divider: rgba(143, 163, 193, .15);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-topbar, .wb-sidebar) {
+  color: var(--wb-text-muted);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-brand-name, .wb-center-title strong) {
+  color: var(--wb-text-main);
+  font-size: var(--font-size-title);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.35;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-sidebar-heading, .wb-environment-heading strong) {
+  color: var(--wb-text-main);
+  font-size: var(--font-size-section);
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-ui);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-source > div strong {
+  color: var(--wb-text-main);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  line-height: var(--line-height-ui);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-new-chat, .wb-share-action span, .wb-tool-card strong, .wb-project-row strong, .wb-session-row > span) {
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.45;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-new-chat, .wb-tool-card strong, .wb-project-row strong, .wb-session-row > span) {
+  color: var(--wb-text-main);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-session-row small, .wb-tool-card.is-disabled small) {
+  color: var(--wb-text-disabled);
+  font-size: var(--font-size-caption);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.4;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-dialogue-meta, .wb-trajectory, .wb-plan-actions, .wb-environment-popover-reference, .wb-terminal-body) {
+  color: var(--wb-text-muted);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-dialogue-meta strong {
+  color: var(--wb-text-main);
+  font-size: var(--font-size-label);
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-ui);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-trajectory > span {
+  color: var(--wb-text-main);
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-medium);
+  line-height: 1.5;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-trajectory p {
+  color: var(--wb-text-secondary, var(--wb-text-muted));
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-plan-actions {
+  color: var(--wb-text-tertiary, var(--wb-text-subtle));
+  font-size: var(--font-size-caption);
+  line-height: 1.4;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference :where(.wb-environment-list span, .wb-environment-source span) {
+  color: var(--wb-text-muted);
+  font-size: 13px;
+  font-weight: var(--font-weight-regular);
+  line-height: 1.45;
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-environment-popover-reference .wb-environment-heading strong {
+  color: var(--wb-text-main);
+  font-size: var(--font-size-section);
+  font-weight: var(--font-weight-semibold);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.agent-compose-row textarea) {
+  font-size: var(--font-size-body);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-body);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .agent-composer-control {
+  font-size: 12.5px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-ui);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tab {
+  color: var(--wb-text-main);
+  font-size: 13px;
+  font-weight: var(--font-weight-medium);
+  line-height: var(--line-height-ui);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-body {
+  font-size: 13px;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-code);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-verification-note, .wb-verification-empty) {
+  color: var(--wb-text-muted);
+  font-family: var(--wb-font-ui);
+  font-size: 13px;
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-code);
+}
+
+.wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-environment-code, .wb-terminal-prompt, .wb-code-text) {
+  color: var(--wb-text-muted);
+  font-family: var(--wb-font-code);
+  font-size: var(--font-size-code);
+  font-weight: var(--font-weight-regular);
+  line-height: var(--line-height-code);
+  font-variant-numeric: tabular-nums;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs,
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-terminal-tabs {
+  border-bottom: 1px solid var(--wb-border-divider) !important;
+}
+
+html[data-theme="light"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art {
+  background:
+    radial-gradient(circle at 50% 38%, rgba(190, 220, 250, .22), transparent 55%),
+    radial-gradient(ellipse 86% 64% at 50% 82%, rgba(157, 194, 231, .30) 0%, rgba(188, 215, 242, .14) 54%, transparent 84%),
+    linear-gradient(to bottom, #eef6ff, #e4eef9) !important;
+}
+
+html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] .wb-character-art {
+  background:
+    radial-gradient(circle at 50% 35%, rgba(55, 85, 125, .14), transparent 52%),
+    radial-gradient(ellipse 88% 66% at 50% 88%, rgba(16, 42, 78, .42) 0%, rgba(7, 24, 50, .20) 54%, transparent 82%),
+    linear-gradient(to bottom, #07111f, #050b14) !important;
+}

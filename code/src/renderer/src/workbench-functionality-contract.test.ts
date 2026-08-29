@@ -45,10 +45,11 @@ describe('StarChat workbench functionality contracts', () => {
     expect(workbenchSource).not.toContain('新建终端');
   });
 
-  it('keeps the desktop-pet action as one accessible glyph backed by the real app bridge', () => {
-    expect(consoleSource).toContain('className="wb-character-action wb-pet-action"');
-    expect(consoleSource).toContain('aria-label="显示桌宠"');
-    expect(consoleSource).toContain('window.baoyin.app.showPet()');
+  it('keeps the desktop-pet bridge available without adding an obsolete workbench glyph', () => {
+    expect(preloadSource).toContain('showPet');
+    expect(consoleSource).not.toContain('className="wb-character-action wb-pet-action"');
+    expect(consoleSource).not.toContain('aria-label="显示桌宠"');
+    expect(consoleSource).not.toContain('window.baoyin.app.showPet()');
     expect(consoleSource).not.toContain('剥出为桌宠');
   });
 
