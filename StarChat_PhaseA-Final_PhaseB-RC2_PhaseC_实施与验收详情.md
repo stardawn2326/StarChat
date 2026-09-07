@@ -89,7 +89,7 @@
 
 第一次生产构建在受限环境中遇到 `spawn EPERM`，确认属于 Windows 沙箱对子进程的限制；在提升权限后使用同一命令成功完成，未发现源码编译错误。
 
-首次 GitHub Actions 运行 `34120568793` 的测试阶段暴露了 Windows Runner 临时仓库的差异路径计算问题。已在 `ee19e4fac4b5821fc42af520f96acdeeef6f11e5` 中改为基于同一 `WorkspaceGuard` realpath 计算相对路径，并保留越界、绝对路径和 `..` 拒绝；随后在 `32f0507139c8e2aed65677a5585f02c309300bb1` 中将 Vitest 固定为官方 singleThread 模式并保持测试隔离，降低 Windows Runner 的 worker 异常退出概率。CI 工作流将 GitRunner 和品牌迁移测试放入独立 Vitest 进程，避免 Windows Runner 中的 Git/Unicode 临时目录测试影响其余测试 worker；两组总计仍覆盖 102 个测试文件、522 个测试。本机完整测试已重新通过，新的远端运行结果以推送后为准。
+首次 GitHub Actions 运行 `34120568793` 的测试阶段暴露了 Windows Runner 临时仓库的差异路径计算问题。已在 `ee19e4fac4b5821fc42af520f96acdeeef6f11e5` 中改为基于同一 `WorkspaceGuard` realpath 计算相对路径，并保留越界、绝对路径和 `..` 拒绝；随后在 `32f0507139c8e2aed65677a5585f02c309300bb1` 中将 Vitest 固定为官方 singleThread 模式并保持测试隔离，降低 Windows Runner 的 worker 异常退出概率。CI 工作流将普通测试、GitRunner 和品牌迁移测试分别放入独立 Vitest 进程，避免 Windows Runner 中的 Git/Unicode 临时目录测试影响其余测试 worker；三组总计仍覆盖 102 个测试文件、522 个测试。本机完整测试已重新通过，新的远端运行结果以推送后为准。
 
 ## 四、Windows 产物
 
