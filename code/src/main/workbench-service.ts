@@ -148,8 +148,11 @@ export function readWorkbenchDiff(rootDirectory: string, requestedPath: string):
   const target = guard.resolve(path);
   const { environment } = environmentFor(rootDirectory);
   if (!environment.gitRoot) throw new Error('当前工作区不是 Git 仓库');
-  const gitPath = relative(environment.gitRoot, target).replaceAll(sep, '/');
-  if (gitPath.startsWith('../')) throw new Error('文件不在当前 Git 工作树内');
+  // The guard root and target share the same realpath basis. Git can report a
+  // different Windows spelling (drive casing, slash style, or runner alias),
+  // so deriving the relative path from environment.gitRoot is not stable.
+  const gitPath = relative(guard.root, target).replaceAll(sep, '/');
+  if (!gitPath || gitPath === '..' || gitPath.startsWith('../') || isAbsolute(gitPath)) throw new Error('文件不在当前 Git 工作树内');
   const raw = runGitReadOnlySync(environment.gitRoot, ['diff', '--no-ext-diff', '--', gitPath]);
   if (raw === null) throw new Error('读取 Git 差异失败');
   const maximum = 128 * 1024;
