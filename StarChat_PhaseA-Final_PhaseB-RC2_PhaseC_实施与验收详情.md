@@ -6,6 +6,7 @@
 - Git 分支：`master`
 - 源码提交：`4a9c6f038091e84a3da3aef5c97895adeabcf05c`
 - 文档提交：`5cf0268b85c6a38888e9026852a41f74a64643bf`
+- CI 路径修复提交：`ee19e4fac4b5821fc42af520f96acdeeef6f11e5`
 - 说明：附件内容作为项目方案和验收标准参考；附件中的示例文字没有被当作额外工具指令执行。
 
 ## 一、执行结论
@@ -87,12 +88,14 @@
 
 第一次生产构建在受限环境中遇到 `spawn EPERM`，确认属于 Windows 沙箱对子进程的限制；在提升权限后使用同一命令成功完成，未发现源码编译错误。
 
+首次 GitHub Actions 运行 `34120568793` 的测试阶段暴露了 Windows Runner 临时仓库的差异路径计算问题。已在 `ee19e4fac4b5821fc42af520f96acdeeef6f11e5` 中改为基于同一 `WorkspaceGuard` realpath 计算相对路径，并保留越界、绝对路径和 `..` 拒绝；本机完整测试已重新通过，新的远端运行结果以推送后为准。
+
 ## 四、Windows 产物
 
 - 文件：`outputs\StarChat 0.2.1.exe`
 - 类型：Windows x64 Portable
-- 大小：78,969,691 bytes（约 75.29 MiB）
-- SHA-256：`B8B9E43DDF2C34F703BB7D71B0C094D5FA0B12AB41F5E9877F4847DCF82930E8`
+- 大小：78,971,092 bytes（约 75.29 MiB）
+- SHA-256：`19515011CB11A015EF0E0E6492E6D0DE80D3DD3E7F9CA6C5A51C2E7419154788`
 - 签名：未配置代码签名证书，因此为未签名产物。
 - 保留策略：保留最终 exe；`outputs\win-unpacked` 和 builder 调试文件已清理。
 
@@ -116,7 +119,7 @@
 - 目标分支：`master`
 - 本轮源码提交：`4a9c6f0`。
 - 本文件已在源码提交之后单独提交，并已与源码一起推送。
-- 推送结果：已成功将 `master` 推送到上述 GitHub remote；最终远端指针以推送后的 Git 记录为准。
+- CI 路径修复和最新产物会随本轮后续 `master` 推送同步到上述 GitHub remote。
 
 ## 七、尚需进行的人工验收
 
