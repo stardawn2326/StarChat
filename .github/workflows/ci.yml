@@ -31,9 +31,9 @@ jobs:
         run: pnpm run typecheck
       - name: Test
         run: |
-          pnpm exec vitest run --exclude=src/main/git-runner.test.ts
+          pnpm exec vitest run --exclude=src/main/git-runner.test.ts --exclude=src/main/brand-migration.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          pnpm exec vitest run src/main/git-runner.test.ts
+          pnpm exec vitest run src/main/git-runner.test.ts src/main/brand-migration.test.ts
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Build
         run: pnpm run build
