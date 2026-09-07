@@ -31,6 +31,18 @@ describe('companion memory service', () => {
     expect(reloaded.getSummary('session-a')).toMatchObject({ messageCount: 20 });
   });
 
+  it('persists name and person profile kinds instead of sanitizing them away', () => {
+    const { store, service } = createMemoryTestService();
+    service.recordConversation('role-a', 'session-a', [
+      { role: 'user', content: '我叫星晓。我的朋友叫小明。' },
+      { role: 'assistant', content: '记住了。' }
+    ]);
+    expect(store.listProfile('role-a')).toEqual(expect.arrayContaining([
+      expect.objectContaining({ kind: 'name', content: '我叫星晓' }),
+      expect.objectContaining({ kind: 'person', content: '我的朋友叫小明' })
+    ]));
+  });
+
   it('rejects sensitive facts and low-importance episodes', () => {
     const { service } = createMemoryTestService();
     expect(() => service.rememberProfile({ roleId: 'role-a', kind: 'identity', content: '我的 API key 是 sk-123456789012345' })).toThrow(/敏感/);
@@ -53,5 +65,24 @@ describe('companion memory service', () => {
     expect(service.contextFor({ roleId: 'role-a', query: '项目' })).toContain('已关闭');
     expect(service.recordConversation('role-a', 'session-a', [{ role: 'user', content: '我喜欢测试' }, { role: 'assistant', content: '记住了' }])).toBeNull();
     expect(store.snapshot().profile).toHaveLength(0);
+  });
+
+  it('keeps workspace summaries out of personal retrieval and out of profile memory', () => {
+    const { store, service } = createMemoryTestService();
+    service.recordConversation({
+      roleId: 'role-a',
+      sessionId: 'workspace-session',
+      scope: { contextType: 'workspace', workspaceId: 'workspace-a', sessionId: 'workspace-session' },
+      source: 'agent',
+      messages: Array.from({ length: 20 }, (_, index) => ({
+        role: index % 2 === 0 ? 'user' as const : 'assistant' as const,
+        content: index === 0 ? '我的项目内部代号是 PROJECT-X。' : `当前工作区消息 ${index}`
+      }))
+    });
+    const personal = service.retrieve({ roleId: 'role-a', scope: { contextType: 'personal', sessionId: 'personal-a' }, query: 'PROJECT-X' });
+    const workspace = service.retrieve({ roleId: 'role-a', scope: { contextType: 'workspace', workspaceId: 'workspace-a', sessionId: 'workspace-session' }, query: 'PROJECT-X' });
+    expect(personal.items).toHaveLength(0);
+    expect(personal.profile).toHaveLength(0);
+    expect(workspace.summaries[0]?.scope).toMatchObject({ contextType: 'workspace', workspaceId: 'workspace-a', sessionId: 'workspace-session' });
   });
 });

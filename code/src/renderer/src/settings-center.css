@@ -372,6 +372,14 @@ body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbe
 body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*::-webkit-scrollbar-thumb:hover) { background: var(--theme-accent); background-clip: padding-box; }
 body[data-window="settings"] .settings-center-shell > :not(.wb-shell[data-workbench-structure="shared"][data-workbench-mode="workbench"]) :where(*) { scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track); }
 
+.live2d-adapter-editor { display: grid; gap: 14px; }
+.live2d-adapter-grid, .live2d-parameter-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 14px; }
+.live2d-adapter-grid .text-field, .live2d-parameter-grid .text-field { min-width: 0; }
+.live2d-adapter-grid select, .live2d-parameter-grid select { width: 100%; }
+.live2d-adapter-grid .secondary-button { justify-self: start; padding: 5px 9px; }
+.live2d-parameter-grid input[type="range"] { width: 100%; }
+@media (max-width: 900px) { .live2d-adapter-grid, .live2d-parameter-grid { grid-template-columns: 1fr; } }
+
 /* Theme contract: all settings surfaces consume the tokens owned by shared/theme.ts. */
 html[data-theme="light"] body[data-window="settings"] { color-scheme: light; }
 html[data-theme="dark"] body[data-window="settings"] { color-scheme: dark; }

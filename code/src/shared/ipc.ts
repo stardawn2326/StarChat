@@ -1,6 +1,6 @@
 import type { RolePackage } from './role-package';
 import type { AppSettings } from './settings';
-import type { Live2DModelRecord, Live2DModelState } from './live2d';
+import type { Live2DAdapterConfig, Live2DModelRecord, Live2DModelState } from './live2d';
 import type { PresentationEvent } from './presentation';
 import type { CubismParameterPatch, CubismRuntimeMetrics } from './cubism';
 import type { PresentationSettings } from './presentation-contract';
@@ -26,6 +26,7 @@ export interface SaveSettingsRequest {
   settings: Partial<AppSettings>;
   apiKey?: string;
   clearApiKey?: boolean;
+  live2dAdapter?: Live2DAdapterConfig | null;
 }
 
 export interface ConnectionTestRequest {

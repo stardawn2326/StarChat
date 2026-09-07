@@ -18,6 +18,7 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ROLE_PACKAGE, isBuiltinRoleId } from '../shared/default-role';
+import { applyLive2DAdapterOverride } from '../shared/live2d';
 import type {
   AgentApproveRequest,
   AgentEvent,
@@ -67,6 +68,8 @@ import { AgentService } from './agent-service';
 import { SessionStore } from './session-store';
 import { MemoryStore } from './memory-store';
 import { MemoryService } from './memory-service';
+import { migrateLegacyCompanionMemories } from './memory-migration';
+import { personalMemoryScope } from '../shared/memory-scope';
 import type { SessionRenameRequest, SessionSnapshot, WorkspaceTrustState } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
@@ -331,7 +334,11 @@ function getPublicState(): PublicAppState {
   if (legacyRecord && registry.current()?.id !== legacyRecord.id) {
     registry.setCurrentModel(legacyRecord.id);
   }
-  const live2d = inspectExternalLive2DModel(settings.live2dModelPath);
+  const inspectedLive2d = inspectExternalLive2DModel(settings.live2dModelPath);
+  const savedAdapter = store.readLive2DAdapter();
+  const live2d = inspectedLive2d.adapter && savedAdapter?.overrides
+    ? { ...inspectedLive2d, adapter: applyLive2DAdapterOverride(inspectedLive2d.adapter, savedAdapter.overrides) }
+    : inspectedLive2d;
   const roles = store.readRolePackages();
   const role = roles.find((item) => item.id === settings.activeRoleId) ?? roles[0] ?? DEFAULT_ROLE_PACKAGE;
   const companion = store.readCompanionState(role.id);
@@ -342,7 +349,7 @@ function getPublicState(): PublicAppState {
     roles,
     live2d,
     live2dModels: registry.list(),
-    companion: companionSummary(companion, role.personality.relationshipStages),
+    companion: companionSummary(companion, role.personality.relationshipStages, memoryService?.listProfile(role.id).length ?? 0),
     voices: voiceProfileStore.list(),
     memories: memoryService?.listProfile(role.id) ?? []
   };
@@ -359,7 +366,7 @@ function sendAgentEvent(event: AgentEvent): void {
     const task = agentStore?.get(event.taskId);
     if (task) {
       publishSessionSnapshot(sessionStore.appendMessage(task.sessionId, { role: 'assistant', content: event.result.summary }));
-      recordMemoryForSession(task.roleId, task.sessionId);
+      recordMemoryForSession(task.roleId, task.sessionId, 'agent');
     }
   }
   const sender = agentTaskSenders.get(event.taskId);
@@ -367,16 +374,21 @@ function sendAgentEvent(event: AgentEvent): void {
   if (event.type === 'complete' || event.type === 'error') agentTaskSenders.delete(event.taskId);
 }
 
-function recordMemoryForSession(roleId: string, sessionId: string): void {
+function recordMemoryForSession(roleId: string, sessionId: string, source: 'companion' | 'agent'): void {
   if (!memoryService || !sessionStore) return;
   const session = sessionStore.snapshot().sessions.find((item) => item.id === sessionId);
   if (!session) return;
   try {
-    memoryService.recordConversation(roleId, sessionId, session.messages.map((message) => ({
-      role: message.role,
-      content: message.content,
-      createdAt: message.createdAt
-    })));
+    const context = sessionStore.sessionContext(sessionId);
+    memoryService.recordConversation({
+      roleId,
+      sessionId,
+      scope: context.contextType === 'personal'
+        ? personalMemoryScope(sessionId)
+        : { contextType: 'workspace', workspaceId: context.workspaceId, sessionId },
+      source,
+      messages: session.messages.map((message) => ({ role: message.role, content: message.content, createdAt: message.createdAt }))
+    });
     sendStateChanged();
   } catch (error) {
     console.warn('Memory persistence skipped:', error);
@@ -1244,10 +1256,13 @@ async function runChat(
   const snapshot = getStore().createPersonalityRequestSnapshot();
   const before = getStore().readCompanionState(snapshot.roleId);
   const memoryEnabled = settings.longTermMemoryEnabled;
-  const companionPromptState = memoryEnabled ? before : { ...before, memories: [] };
-  const structuredMemoryContext = memoryService?.contextFor({ roleId: snapshot.roleId, query: message, limit: 5 }) ?? '暂无可用长期记忆；不要编造用户经历。';
+  const sessionContext = sessionStore.sessionContext(request.sessionId);
+  const memoryScope = sessionContext.contextType === 'personal'
+    ? personalMemoryScope(request.sessionId)
+    : { contextType: 'workspace' as const, workspaceId: sessionContext.workspaceId, sessionId: request.sessionId };
+  const structuredMemoryContext = memoryService?.contextFor({ roleId: snapshot.roleId, scope: memoryScope, query: message, limit: 5 }) ?? '暂无可用长期记忆；不要编造用户经历。';
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildCompanionSystemPrompt(snapshot, companionPromptState) },
+    { role: 'system', content: buildCompanionSystemPrompt(snapshot, before) },
     { role: 'system', content: `结构化长期记忆（${memoryEnabled ? '仅在自然相关时参考' : '已关闭'}）：\n${structuredMemoryContext}` },
     ...(settings.systemPrompt ? [{ role: 'system', content: settings.systemPrompt } as ChatMessage] : []),
     ...normalizeHistory(request.history).filter((item) => item.role !== 'system'),
@@ -1275,8 +1290,8 @@ async function runChat(
   }
   const nextCompanion = getStore().saveCompanionState(recordCompanionExchange(before, snapshot, message, responseText));
   publishSessionSnapshot(sessionStore.appendMessage(request.sessionId, { role: 'assistant', content: responseText }));
-  recordMemoryForSession(snapshot.roleId, request.sessionId);
-  sendChatEvent(sender, { type: 'complete', requestId, response: responseText, companion: companionSummary(nextCompanion, snapshot.relationshipStages) });
+  recordMemoryForSession(snapshot.roleId, request.sessionId, 'companion');
+  sendChatEvent(sender, { type: 'complete', requestId, response: responseText, companion: companionSummary(nextCompanion, snapshot.relationshipStages, memoryService?.listProfile(snapshot.roleId).length ?? 0) });
   sendStateChanged();
 }
 
@@ -1581,6 +1596,7 @@ function registerIpc(): void {
       ? candidate.activeRoleId
       : DEFAULT_ROLE_PACKAGE.id;
     const previousAdapter = store.readLive2DAdapter();
+    const adapterToSave = modelPathChanged ? live2d.adapter : request.live2dAdapter ?? live2d.adapter;
     const settingsToSave = {
       ...request.settings,
       ...(modelPathChanged ? { live2dModelPath: candidate.live2dModelPath } : {}),
@@ -1590,7 +1606,7 @@ function registerIpc(): void {
       settingsToSave,
       request.apiKey,
       request.clearApiKey,
-      live2d.adapter
+      adapterToSave
     );
     if (next.petLocked && petModelEditMode) {
       setPetModelEditMode(false);
@@ -2053,6 +2069,8 @@ if (singleInstanceLock) {
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
     const memoryStore = new MemoryStore(join(userDataDir, 'memory.json'));
+    const migratedMemoryCount = migrateLegacyCompanionMemories(settingsStore, memoryStore);
+    if (migratedMemoryCount > 0) console.info(`已迁移 ${migratedMemoryCount} 条旧版伴侣记忆`);
     memoryService = new MemoryService({
       store: memoryStore,
       enabled: () => settingsStore.readSettings().longTermMemoryEnabled

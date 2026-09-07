@@ -110,7 +110,7 @@ export interface Live2DParameterBinding {
   available: boolean;
   aliases: string[];
   recommendedRange: { min: number; max: number; default: number };
-  source: 'model-cdi3' | 'missing';
+  source: 'model-cdi3' | 'user-override' | 'missing';
 }
 
 export interface Live2DParameterCapability {
@@ -177,6 +177,15 @@ export interface Live2DAdapterConfig {
   parameterBindings: Record<Live2DParameterSemantic, Live2DParameterBinding>;
   semanticMappings: Record<string, Live2DSemanticRoute>;
   resetValues: Record<string, number>;
+  overrides?: Live2DAdapterOverride;
+}
+
+export interface Live2DAdapterOverride {
+  schemaVersion: 1;
+  sourceEntryPath: string;
+  parameterBindings?: Partial<Record<Live2DParameterSemantic, string>>;
+  semanticMappings?: Record<string, { sourceFile: string | null; supported?: boolean; reason?: string }>;
+  updatedAt: number;
 }
 
 export interface Live2DLicenseNotice {
@@ -252,6 +261,37 @@ export interface Live2DResolvedSemantic {
 }
 
 export type Live2DParameterState = Record<string, number>;
+
+export function applyLive2DAdapterOverride(
+  adapter: Live2DAdapterConfig,
+  override: Live2DAdapterOverride | null | undefined
+): Live2DAdapterConfig {
+  if (!override || override.schemaVersion !== 1 || override.sourceEntryPath !== adapter.sourceEntryPath) return adapter;
+  const parameterBindings = { ...adapter.parameterBindings };
+  for (const [semantic, targetId] of Object.entries(override.parameterBindings ?? {})) {
+    const current = parameterBindings[semantic as Live2DParameterSemantic];
+    if (!current || typeof targetId !== 'string' || !targetId.trim()) continue;
+    parameterBindings[semantic as Live2DParameterSemantic] = {
+      ...current,
+      targetId: targetId.trim(),
+      available: true,
+      aliases: [...new Set([...current.aliases, targetId.trim()])],
+      source: 'user-override'
+    };
+  }
+  const semanticMappings = { ...adapter.semanticMappings };
+  for (const [name, change] of Object.entries(override.semanticMappings ?? {})) {
+    const current = semanticMappings[name];
+    if (!current || !change || typeof change.sourceFile !== 'string' && change.sourceFile !== null) continue;
+    semanticMappings[name] = {
+      ...current,
+      sourceFile: change.sourceFile,
+      supported: change.supported ?? Boolean(change.sourceFile),
+      reason: change.reason?.trim() || '用户手动覆盖适配器映射。'
+    };
+  }
+  return { ...adapter, parameterBindings, semanticMappings, overrides: override };
+}
 
 export function createParameterBindings(
   availableParameters: readonly Live2DParameterInfo[]

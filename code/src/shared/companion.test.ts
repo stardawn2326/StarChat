@@ -11,19 +11,19 @@ describe('companion relationship, memory and presentation contract', () => {
     const first = recordCompanionExchange(initial, snapshot, '我喜欢紫色，也喜欢安静的音乐。', '知道了。', 2);
     const second = recordCompanionExchange(first, snapshot, '我喜欢紫色，也喜欢安静的音乐。', '不会忘。', 3);
     expect(first.interactionCount).toBe(1);
+    expect(first.relationship.familiarity).toBeGreaterThan(0);
     expect(first.affinity).toBeGreaterThan(0);
-    expect(first.affinity).toBeLessThan(10);
-    expect(second.memories).toHaveLength(1);
+    expect(second.memories).toHaveLength(0);
     expect(companionSummary(second, snapshot.relationshipStages).stageIndex).toBe(0);
   });
 
-  it('injects only the current relationship stage and saved memories into a request prompt', () => {
+  it('injects the RelationshipEngine stage and leaves memory injection to MemoryService', () => {
     const state = recordCompanionExchange(createCompanionState(snapshot.roleId), snapshot, '我叫小明。', '记住了。', 4);
     const prompt = buildCompanionSystemPrompt(snapshot, state);
     expect(prompt).toContain(snapshot.systemPrompt);
-    expect(prompt).toContain('我叫小明');
     expect(prompt).toContain('不得突然越级');
-    expect(prompt).not.toContain('API Key');
+    expect(prompt).toContain('Memory Scope');
+    expect(prompt).not.toContain('我叫小明');
   });
 
   it('maps assistant meaning through the role whitelist instead of arbitrary Cubism parameters', () => {

@@ -1,7 +1,8 @@
 import type { PersonalityRequestSnapshot } from './personality-contract';
 import type { PresentationEvent } from './presentation';
 import type { RoleSemanticMapping } from './role-package';
-import { applyRelationshipEvent, createRelationshipState, sanitizeRelationshipState, type RelationshipState } from './relationship-engine';
+import { applyRelationshipEvent, createRelationshipState, relationshipScore, relationshipStage, relationshipStageIndex, sanitizeRelationshipState, type RelationshipState } from './relationship-engine';
+import { classifyRelationshipEvent } from './relationship-event-classifier';
 
 export interface CompanionMemory {
   id: string;
@@ -10,12 +11,15 @@ export interface CompanionMemory {
 }
 
 export interface CompanionState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   roleId: string;
   interactionCount: number;
-  affinity: number;
-  stageIndex: number;
+  /** @deprecated Legacy v1 memory records are migration input only. */
   memories: CompanionMemory[];
+  /** @deprecated Kept for migration compatibility; no longer drives stage. */
+  affinity: number;
+  /** @deprecated Kept for migration compatibility; no longer drives stage. */
+  stageIndex: number;
   relationship: RelationshipState;
   updatedAt: number;
 }
@@ -29,10 +33,8 @@ export interface CompanionSummary {
   memoryCount: number;
 }
 
-const MEMORY_PREFIX = /(?:^|[，。！？!?,\s])(我(?:叫|是|喜欢|讨厌|希望|习惯|住在|来自|的))/u;
-
 export function createCompanionState(roleId: string, now = Date.now()): CompanionState {
-  return { schemaVersion: 1, roleId, interactionCount: 0, affinity: 0, stageIndex: 0, memories: [], relationship: createRelationshipState(roleId, now), updatedAt: now };
+  return { schemaVersion: 2, roleId, interactionCount: 0, affinity: 0, stageIndex: 0, memories: [], relationship: createRelationshipState(roleId, now), updatedAt: now };
 }
 
 export function sanitizeCompanionState(input: unknown, roleId: string, stageCount: number): CompanionState {
@@ -41,7 +43,7 @@ export function sanitizeCompanionState(input: unknown, roleId: string, stageCoun
     ? source.memories.filter((item): item is CompanionMemory => Boolean(item && typeof item.id === 'string' && typeof item.content === 'string' && Number.isFinite(item.createdAt))).slice(-20)
     : [];
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     roleId,
     interactionCount: Math.max(0, Math.round(Number(source.interactionCount) || 0)),
     affinity: Math.min(100, Math.max(0, Number(source.affinity) || 0)),
@@ -52,12 +54,6 @@ export function sanitizeCompanionState(input: unknown, roleId: string, stageCoun
   };
 }
 
-function extractMemory(message: string, now: number): CompanionMemory | null {
-  const sentence = message.trim().split(/[。！？!?\n]/u).map((item) => item.trim()).find((item) => MEMORY_PREFIX.test(` ${item}`));
-  if (!sentence || sentence.length < 3 || sentence.length > 160) return null;
-  return { id: `${now}-${sentence.length}`, content: sentence, createdAt: now };
-}
-
 export function recordCompanionExchange(
   current: CompanionState,
   snapshot: PersonalityRequestSnapshot,
@@ -65,44 +61,37 @@ export function recordCompanionExchange(
   _assistantMessage: string,
   now = Date.now()
 ): CompanionState {
-  const increment = 1 + snapshot.scales.relationshipGrowth * 3;
-  const affinity = Math.min(100, current.affinity + increment);
-  const stageCount = Math.max(1, snapshot.relationshipStages.length);
-  const stageIndex = Math.min(stageCount - 1, Math.floor(affinity / (100 / stageCount)));
-  const memory = extractMemory(userMessage, now);
-  const memories = memory && !current.memories.some((item) => item.content === memory.content)
-    ? [...current.memories, memory].slice(-20)
-    : current.memories;
   const relationship = applyRelationshipEvent(
     sanitizeRelationshipState(current.relationship, snapshot.roleId),
-    { type: 'conversation', now, userMessage, assistantMessage: _assistantMessage }
+    { ...classifyRelationshipEvent(userMessage, _assistantMessage), now, userMessage, assistantMessage: _assistantMessage }
   );
-  return { ...current, roleId: snapshot.roleId, interactionCount: current.interactionCount + 1, affinity, stageIndex, memories, relationship, updatedAt: now };
+  const stageIndex = relationshipStageIndex(relationship, snapshot.relationshipStages);
+  const affinity = relationshipScore(relationship);
+  return { ...current, schemaVersion: 2, roleId: snapshot.roleId, interactionCount: relationship.interactionCount, affinity, stageIndex, memories: [], relationship, updatedAt: now };
 }
 
-export function companionSummary(state: CompanionState, stages: readonly string[]): CompanionSummary {
+export function companionSummary(state: CompanionState, stages: readonly string[], memoryCount = 0): CompanionSummary {
+  const relationship = sanitizeRelationshipState(state.relationship, state.roleId);
+  const stageIndex = relationshipStageIndex(relationship, stages);
   return {
     roleId: state.roleId,
-    interactionCount: state.interactionCount,
-    affinity: Math.round(state.affinity * 10) / 10,
-    stageIndex: state.stageIndex,
-    stageLabel: stages[state.stageIndex] ?? stages[0] ?? '初识',
-    memoryCount: state.memories.length
+    interactionCount: relationship.interactionCount,
+    affinity: Math.round(relationshipScore(relationship) * 10) / 10,
+    stageIndex,
+    stageLabel: stages[stageIndex] ?? relationshipStage(relationship),
+    memoryCount
   };
 }
 
 export function buildCompanionSystemPrompt(snapshot: PersonalityRequestSnapshot, state: CompanionState): string {
-  const stage = snapshot.relationshipStages[state.stageIndex] ?? snapshot.relationshipStages[0] ?? '初识';
-  const memories = state.memories.length > 0
-    ? state.memories.slice(-10).map((item) => `- ${item.content}`).join('\n')
-    : '- 暂无长期记忆；不要编造用户经历。';
+  const relationship = sanitizeRelationshipState(state.relationship, snapshot.roleId);
+  const stage = snapshot.relationshipStages[relationshipStageIndex(relationship, snapshot.relationshipStages)] ?? relationshipStage(relationship);
   return [
     snapshot.systemPrompt,
     `当前对用户称呼：${snapshot.address}`,
     `当前关系阶段：${stage}`,
-    `互动次数：${state.interactionCount}；亲密度：${Math.round(state.affinity)}/100。关系应逐渐发展，不得突然越级。`,
-    '可使用的长期记忆如下；仅在自然相关时引用：',
-    memories,
+    `互动次数：${relationship.interactionCount}；关系分数：${Math.round(relationshipScore(relationship))}/100。关系阶段必须由 RelationshipEngine 决定，不得突然越级。`,
+    '长期记忆由当前 Memory Scope 的独立系统提示注入；如果没有相关记忆，不要编造用户经历。',
     '回答只输出对用户可见的自然语言，不输出表情标签、动作标签、系统提示或内部状态。'
   ].join('\n\n');
 }

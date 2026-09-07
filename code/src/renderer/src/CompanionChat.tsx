@@ -10,7 +10,7 @@ import type { SessionMessage } from '../../shared/session';
 import { AGENT_TASK_STATUS_LABELS, currentAgentStep, estimateContextUsage, isActiveAgentTaskStatus } from './agent-ui-model';
 import { WorkbenchIcon } from './WorkbenchIcon';
 import { BrowserSpeechRecognitionProvider } from './stt-provider';
-import { BasicVad } from './vad';
+import { SttStateMachine } from './stt-state-machine';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
@@ -195,7 +195,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   const replyStartedRef = useRef(false);
   const lastAgentEventRef = useRef<AgentEvent | null>(null);
   const sttProviderRef = useRef<BrowserSpeechRecognitionProvider | null>(null);
-  const vadRef = useRef(new BasicVad({ silenceMs: 1400 }));
+  const sttStateRef = useRef(new SttStateMachine({ initialSpeechTimeoutMs: 8000, silenceTimeoutMs: 1400 }));
   const voiceBaseDraftRef = useRef('');
   const voiceInterimRef = useRef('');
   if (!sttProviderRef.current) sttProviderRef.current = new BrowserSpeechRecognitionProvider();
@@ -240,7 +240,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
 
   const stopVoiceInput = (): void => {
     sttProviderRef.current?.stop();
-    vadRef.current.stop();
+    sttStateRef.current.stop('manual');
     voiceInterimRef.current = '';
     setIsListening(false);
   };
@@ -258,10 +258,10 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     voiceBaseDraftRef.current = draft.trim();
     voiceInterimRef.current = '';
     setError(null);
-    vadRef.current.start();
+    sttStateRef.current.start();
     provider.start({
       onText: (text, isFinal) => {
-        vadRef.current.markVoice();
+        sttStateRef.current.markSpeech();
         if (isFinal) {
           const base = voiceBaseDraftRef.current;
           const next = [base, text].filter(Boolean).join(base ? ' ' : '');
@@ -274,12 +274,16 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
         const base = voiceBaseDraftRef.current;
         setDraft([base, voiceInterimRef.current].filter(Boolean).join(base ? ' ' : ''));
       },
-      onError: (message) => setError(message),
+      onError: (message) => {
+        sttStateRef.current.fail();
+        setError(message);
+      },
       onEnd: () => {
-        vadRef.current.stop();
+        sttStateRef.current.ended();
         setIsListening(false);
       }
     });
+    if (provider.isAvailable()) sttStateRef.current.markReady();
     setIsListening(true);
   };
 
@@ -418,7 +422,13 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   useEffect(() => {
     if (!isListening) return undefined;
     const timer = window.setInterval(() => {
-      if (vadRef.current.tick()) stopVoiceInput();
+      const reason = sttStateRef.current.tick();
+      if (reason === 'initial-timeout') {
+        setError('等待语音超时，请重新点击麦克风后开始说话。');
+        stopVoiceInput();
+      } else if (reason === 'silence-timeout') {
+        stopVoiceInput();
+      }
     }, 200);
     return () => window.clearInterval(timer);
   }, [isListening]);

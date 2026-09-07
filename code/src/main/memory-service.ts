@@ -11,6 +11,7 @@ import {
   type ProfileMemory,
   type ProfileMemoryKind
 } from '../shared/memory';
+import { normalizeMemoryScope, type MemoryScope } from '../shared/memory-scope';
 import { MemoryStore } from './memory-store';
 
 export interface MemoryConversationMessage {
@@ -33,6 +34,14 @@ export interface ProfileMemoryCandidate {
   content: string;
   confidence?: number;
   source?: 'user_explicit' | 'assistant_inferred' | 'manual';
+}
+
+export interface MemorySessionContext {
+  roleId: string;
+  sessionId: string;
+  scope: MemoryScope;
+  source: 'companion' | 'agent';
+  messages: readonly MemoryConversationMessage[];
 }
 
 export class MemoryExtractor {
@@ -106,18 +115,19 @@ export class MemoryService {
     });
   }
 
-  rememberEpisode(input: { roleId: string; sessionId: string; content: string; emotion?: string; importance: number; tags?: string[]; occurredAt?: number }): EpisodicMemory | null {
+  rememberEpisode(input: { roleId: string; sessionId: string; scope?: MemoryScope; content: string; emotion?: string; importance: number; tags?: string[]; occurredAt?: number }): EpisodicMemory | null {
     if (input.importance < 0.6) return null;
     if (isSensitiveMemoryContent(input.content)) throw new Error('敏感信息不会写入事件记忆');
     return this.options.store.saveEpisodic({
       ...input,
+      scope: normalizeMemoryScope(input.scope, { contextType: 'personal', sessionId: input.sessionId }),
       id: createMemoryId('episode', this.now()),
       occurredAt: input.occurredAt ?? this.now(),
       createdAt: this.now()
     });
   }
 
-  summarizeConversation(roleId: string, sessionId: string, messages: readonly MemoryConversationMessage[]): ConversationSummary | null {
+  summarizeConversation(roleId: string, sessionId: string, messages: readonly MemoryConversationMessage[], scope: MemoryScope = normalizeMemoryScope({ contextType: 'personal', sessionId })): ConversationSummary | null {
     const safeMessages = messages.slice(-20).map((message) => {
       const content = sanitizeMemoryContent(message.content, 260);
       return content ? { ...message, content } : null;
@@ -132,6 +142,7 @@ export class MemoryService {
       id: createMemoryId('summary', this.now()),
       roleId,
       sessionId,
+      scope: normalizeMemoryScope(scope, { contextType: 'personal', sessionId }),
       summary,
       openTopics: questions.slice(-6),
       unfinishedQuestions: questions.slice(-6),
@@ -141,28 +152,49 @@ export class MemoryService {
     });
   }
 
-  recordConversation(roleId: string, sessionId: string, messages: readonly MemoryConversationMessage[]): ConversationSummary | null {
+  recordConversation(context: MemorySessionContext): ConversationSummary | null;
+  recordConversation(roleId: string, sessionId: string, messages: readonly MemoryConversationMessage[]): ConversationSummary | null;
+  recordConversation(
+    contextOrRoleId: MemorySessionContext | string,
+    legacySessionId?: string,
+    legacyMessages?: readonly MemoryConversationMessage[]
+  ): ConversationSummary | null {
     if (!isEnabled(this.options.enabled)) return null;
-    for (const candidate of this.extractProfileCandidates(messages, roleId)) {
+    const context: MemorySessionContext = typeof contextOrRoleId === 'string'
+      ? {
+          roleId: contextOrRoleId,
+          sessionId: legacySessionId ?? '',
+          scope: normalizeMemoryScope({ contextType: 'personal', sessionId: legacySessionId }),
+          source: 'companion',
+          messages: legacyMessages ?? []
+        }
+      : {
+          ...contextOrRoleId,
+          scope: normalizeMemoryScope(contextOrRoleId.scope, contextOrRoleId.scope)
+        };
+    if (!context.sessionId || context.messages.length === 0) return null;
+    const canWritePersonalProfile = context.source === 'companion' && context.scope.contextType === 'personal';
+    if (canWritePersonalProfile) for (const candidate of this.extractProfileCandidates(context.messages, context.roleId)) {
       try {
         this.rememberProfile(candidate);
       } catch {
         // Sensitive candidates are deliberately rejected and never persisted.
       }
     }
-    const characterCount = messages.reduce((total, message) => total + message.content.length, 0);
-    if (messages.length < this.summaryMessageInterval && characterCount < this.summaryCharacterThreshold) return null;
-    return this.summarizeConversation(roleId, sessionId, messages);
+    const characterCount = context.messages.reduce((total, message) => total + message.content.length, 0);
+    if (context.messages.length < this.summaryMessageInterval && characterCount < this.summaryCharacterThreshold) return null;
+    return this.summarizeConversation(context.roleId, context.sessionId, context.messages, context.scope);
   }
 
   retrieve(query: MemoryQuery): MemoryRetrievalResult {
     const limit = Math.min(8, Math.max(3, Math.round(query.limit ?? 5)));
     const now = this.now();
     const normalizedQuery = compact(query.query ?? '', 500);
+    const scope = normalizeMemoryScope(query.scope ?? { contextType: 'personal', sessionId: query.sessionId });
     const items: MemoryRetrievalResult['items'] = [
-      ...this.options.store.listProfile(query.roleId).map((memory) => ({ kind: 'profile' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.confidence, memory.updatedAt, now), memory })),
-      ...this.options.store.listEpisodic(query.roleId, query.sessionId).map((memory) => ({ kind: 'episodic' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.importance, memory.occurredAt, now), memory })),
-      ...this.options.store.listSummaries(query.roleId).filter((memory) => !query.sessionId || memory.sessionId === query.sessionId).map((memory) => ({ kind: 'summary' as const, score: memoryRelevanceScore(normalizedQuery, memory.summary, 0.55, memory.updatedAt, now), memory }))
+      ...(scope.contextType === 'personal' ? this.options.store.listProfile(query.roleId).map((memory) => ({ kind: 'profile' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.confidence, memory.updatedAt, now), memory })) : []),
+      ...this.options.store.listEpisodic(query.roleId, scope).map((memory) => ({ kind: 'episodic' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.importance, memory.occurredAt, now), memory })),
+      ...this.options.store.listSummaries(query.roleId, scope).map((memory) => ({ kind: 'summary' as const, score: memoryRelevanceScore(normalizedQuery, memory.summary, 0.55, memory.updatedAt, now), memory }))
     ].sort((left, right) => right.score - left.score).slice(0, limit);
     return {
       query: normalizedQuery,

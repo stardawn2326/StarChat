@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'node:fs';
+import { canonicalDirectory } from './path-identity';
 
 export type WorkspaceLockPhase = 'reserved' | 'active';
 
@@ -10,8 +10,8 @@ export interface WorkspaceWriteLock {
 }
 
 function canonicalRoot(root: string): string {
-  if (!root || !existsSync(root)) throw new Error('写入锁工作区不存在');
-  return realpathSync(root).replaceAll('\\', '/').replace(/\/+$/u, '').toLocaleLowerCase();
+  if (!root) throw new Error('写入锁工作区不存在');
+  return canonicalDirectory(root).path;
 }
 
 export class WorkspaceLockManager {

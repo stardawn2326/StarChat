@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { RelationshipEngine, createRelationshipState, relationshipStage } from './relationship-engine';
+import { classifyRelationshipEvent } from './relationship-event-classifier';
 
 describe('relationship engine', () => {
   it('grows through gradual conversation stages instead of jumping directly', () => {
@@ -22,5 +23,13 @@ describe('relationship engine', () => {
     expect(state.conflict).toBeLessThan(conflictBefore);
     expect(state.trust).toBeLessThanOrEqual(100);
     expect(state.continuity).toBeLessThanOrEqual(100);
+  });
+
+  it('classifies meaningful relationship cues with explicit priority', () => {
+    expect(classifyRelationshipEvent('我叫星晓。')).toMatchObject({ type: 'personal_disclosure' });
+    expect(classifyRelationshipEvent('不要再这样了。')).toMatchObject({ type: 'boundary' });
+    expect(classifyRelationshipEvent('对不起，我刚才说错了。')).toMatchObject({ type: 'repair' });
+    expect(classifyRelationshipEvent('气死我了，这太糟糕。')).toMatchObject({ type: 'conflict' });
+    expect(classifyRelationshipEvent('谢谢你帮忙。')).toMatchObject({ type: 'positive_interaction' });
   });
 });

@@ -192,7 +192,7 @@ function extractZipArchive(archivePath: string, destination: string): string {
     const compressed = archive.subarray(dataOffset, dataEnd);
     let data: Buffer;
     if (entry.method === 0) data = Buffer.from(compressed);
-    else if (entry.method === 8) data = inflateRawSync(compressed);
+    else if (entry.method === 8) data = inflateRawSync(compressed, { maxOutputLength: Math.min(MAX_ZIP_ENTRY_BYTES, entry.uncompressedSize) });
     else throw new Error(`ZIP 条目压缩方法不支持：${entry.method}`);
     if (data.length !== entry.uncompressedSize || crc32(data) !== entry.crc) {
       throw new Error(`ZIP 条目校验失败：${name}`);

@@ -32,6 +32,18 @@ interface SpeechRecognitionLike {
 
 export type SpeechRecognitionFactory = () => SpeechRecognitionLike;
 
+export function describeSpeechRecognitionError(code: string | undefined): string {
+  switch (code) {
+    case 'not-allowed': return '麦克风权限被拒绝，请在 Windows 和应用权限中允许麦克风。';
+    case 'audio-capture': return '没有可用的麦克风输入设备。';
+    case 'network': return '语音识别网络服务不可用，请检查网络后重试。';
+    case 'no-speech': return '没有检测到语音，请靠近麦克风后重试。';
+    case 'aborted': return '语音识别已停止。';
+    case 'service-not-allowed': return '当前环境不允许使用语音识别服务。';
+    default: return code ? `语音识别失败：${code}` : '语音识别失败。';
+  }
+}
+
 function browserFactory(): SpeechRecognitionFactory | null {
   const candidate = globalThis as typeof globalThis & {
     SpeechRecognition?: new () => SpeechRecognitionLike;
@@ -77,7 +89,7 @@ export class BrowserSpeechRecognitionProvider implements SttProvider {
       }
     };
     recognition.onerror = (event) => {
-      this.handlers?.onError(event.error ? `语音识别失败：${event.error}` : '语音识别失败');
+      this.handlers?.onError(describeSpeechRecognitionError(event.error));
     };
     recognition.onend = () => {
       const current = this.handlers;

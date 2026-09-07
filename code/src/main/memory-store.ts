@@ -10,6 +10,7 @@ import {
   type MemorySnapshot,
   type ProfileMemory
 } from '../shared/memory';
+import { sameMemoryContext, sameMemorySummaryScope, type MemoryScope } from '../shared/memory-scope';
 
 interface PersistedMemorySnapshot {
   version?: number;
@@ -67,9 +68,9 @@ export class MemoryStore {
     this.flush();
   }
 
-  listEpisodic(roleId: string, sessionId?: string): EpisodicMemory[] {
+  listEpisodic(roleId: string, scope?: MemoryScope): EpisodicMemory[] {
     return clone(this.episodic
-      .filter((memory) => memory.roleId === roleId && (!sessionId || memory.sessionId === sessionId))
+      .filter((memory) => memory.roleId === roleId && (!scope || sameMemoryContext(memory.scope, scope)))
       .sort((a, b) => b.occurredAt - a.occurredAt));
   }
 
@@ -93,8 +94,10 @@ export class MemoryStore {
     return summary ? clone(summary) : null;
   }
 
-  listSummaries(roleId: string): ConversationSummary[] {
-    return clone(this.summaries.filter((summary) => summary.roleId === roleId).sort((a, b) => b.updatedAt - a.updatedAt));
+  listSummaries(roleId: string, scope?: MemoryScope): ConversationSummary[] {
+    return clone(this.summaries
+      .filter((summary) => summary.roleId === roleId && (!scope || sameMemorySummaryScope(summary.scope, scope)))
+      .sort((a, b) => b.updatedAt - a.updatedAt));
   }
 
   saveSummary(input: unknown): ConversationSummary {
@@ -116,7 +119,7 @@ export class MemoryStore {
     if (!existsSync(this.filePath)) return;
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as PersistedMemorySnapshot;
-      if (parsed.version !== MEMORY_SCHEMA_VERSION) return;
+      if (parsed.version !== 1 && parsed.version !== MEMORY_SCHEMA_VERSION) return;
       this.profile = Array.isArray(parsed.profile)
         ? parsed.profile.map((item) => sanitizeProfileMemory(item)).filter((item): item is ProfileMemory => Boolean(item)).slice(-200)
         : [];

@@ -11,16 +11,21 @@ export interface RelationshipState {
 export type RelationshipEvent =
   | { type: 'conversation'; now: number; userMessage?: string; assistantMessage?: string }
   | { type: 'normal_interaction' | 'positive_interaction' | 'personal_disclosure' | 'shared_event' | 'conflict' | 'long_absence' | 'return'; now: number; userMessage?: string; assistantMessage?: string }
-  | { type: 'repair'; now: number }
-  | { type: 'boundary'; now: number };
+  | { type: 'repair'; now: number; userMessage?: string; assistantMessage?: string }
+  | { type: 'boundary'; now: number; userMessage?: string; assistantMessage?: string };
 
 export type RelationshipEventInput =
   | { type: 'conversation'; now?: number; userMessage?: string; assistantMessage?: string }
   | { type: 'normal_interaction' | 'positive_interaction' | 'personal_disclosure' | 'shared_event' | 'conflict' | 'long_absence' | 'return'; now?: number; userMessage?: string; assistantMessage?: string }
-  | { type: 'repair'; now?: number }
-  | { type: 'boundary'; now?: number };
+  | { type: 'repair'; now?: number; userMessage?: string; assistantMessage?: string }
+  | { type: 'boundary'; now?: number; userMessage?: string; assistantMessage?: string };
 
 export type RelationshipStage = '初识' | '熟悉' | '信赖' | '亲密';
+
+export function relationshipScore(state: RelationshipState): number {
+  const safe = sanitizeRelationshipState(state, state.roleId);
+  return Math.min(100, Math.max(0, safe.familiarity * 0.45 + safe.trust * 0.4 + safe.continuity * 0.15 - safe.conflict * 0.2));
+}
 
 export function createRelationshipState(roleId: string, now: number | null = null): RelationshipState {
   return { roleId, interactionCount: 0, trust: 0, familiarity: 0, conflict: 0, continuity: 0, lastInteractionAt: now };
@@ -81,11 +86,20 @@ export function applyRelationshipEvent(current: RelationshipState, event: Relati
 }
 
 export function relationshipStage(state: RelationshipState): RelationshipStage {
-  const score = state.familiarity * 0.45 + state.trust * 0.4 + state.continuity * 0.15 - state.conflict * 0.2;
+  const score = relationshipScore(state);
   if (score >= 72) return '亲密';
   if (score >= 42) return '信赖';
   if (score >= 16) return '熟悉';
   return '初识';
+}
+
+export function relationshipStageIndex(state: RelationshipState, stages: readonly string[]): number {
+  if (stages.length === 0) return 0;
+  const stage = relationshipStage(state);
+  const named = stages.findIndex((label) => label.trim().startsWith(stage));
+  if (named >= 0) return named;
+  const score = relationshipScore(state);
+  return Math.min(stages.length - 1, Math.floor((score / 100) * stages.length));
 }
 
 export class RelationshipEngine {

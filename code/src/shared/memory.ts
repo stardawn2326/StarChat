@@ -1,4 +1,6 @@
-export const MEMORY_SCHEMA_VERSION = 1 as const;
+import { normalizeMemoryScope, type MemoryScope } from './memory-scope';
+
+export const MEMORY_SCHEMA_VERSION = 2 as const;
 
 export type ProfileMemoryKind = 'name' | 'identity' | 'preference' | 'habit' | 'person' | 'project' | 'boundary' | 'relationship';
 export type MemorySource = 'user_explicit' | 'assistant_inferred' | 'manual';
@@ -18,6 +20,7 @@ export interface EpisodicMemory {
   id: string;
   roleId: string;
   sessionId: string;
+  scope: MemoryScope;
   content: string;
   emotion?: string;
   importance: number;
@@ -30,6 +33,7 @@ export interface ConversationSummary {
   id: string;
   roleId: string;
   sessionId: string;
+  scope: MemoryScope;
   summary: string;
   openTopics: string[];
   unfinishedQuestions: string[];
@@ -48,6 +52,7 @@ export interface MemorySnapshot {
 export interface MemoryQuery {
   roleId: string;
   sessionId?: string;
+  scope?: MemoryScope;
   query?: string;
   limit?: number;
 }
@@ -66,7 +71,7 @@ export interface MemoryRetrievalResult {
 }
 
 const SENSITIVE_MEMORY = /(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|bearer\s+|password|passwd|secret|private[\s_-]?key|cookie|authorization|身份证|银行卡|信用卡|密码|口令|私钥|sk-[a-z0-9_-]{12,})/iu;
-const PROFILE_KINDS: readonly ProfileMemoryKind[] = ['identity', 'preference', 'habit', 'project', 'boundary', 'relationship'];
+export const PROFILE_MEMORY_KINDS: readonly ProfileMemoryKind[] = ['name', 'identity', 'preference', 'habit', 'person', 'project', 'boundary', 'relationship'];
 const MEMORY_SOURCES: readonly MemorySource[] = ['user_explicit', 'assistant_inferred', 'manual'];
 
 function text(value: unknown, maximum: number): string {
@@ -97,7 +102,7 @@ export function sanitizeProfileMemory(value: unknown, fallbackNow = Date.now()):
   const source = value as Partial<ProfileMemory>;
   const roleId = text(source.roleId, 120);
   const content = sanitizeMemoryContent(source.content, 500);
-  const kind = PROFILE_KINDS.includes(source.kind as ProfileMemoryKind) ? source.kind as ProfileMemoryKind : null;
+  const kind = PROFILE_MEMORY_KINDS.includes(source.kind as ProfileMemoryKind) ? source.kind as ProfileMemoryKind : null;
   const memorySource = MEMORY_SOURCES.includes(source.source as MemorySource) ? source.source as MemorySource : 'manual';
   if (!roleId || !content || !kind) return null;
   const createdAt = timestamp(source.createdAt, fallbackNow);
@@ -118,6 +123,7 @@ export function sanitizeEpisodicMemory(value: unknown, fallbackNow = Date.now())
   const source = value as Partial<EpisodicMemory>;
   const roleId = text(source.roleId, 120);
   const sessionId = text(source.sessionId, 160);
+  const scope = normalizeMemoryScope(source.scope, { contextType: 'personal', sessionId });
   const content = sanitizeMemoryContent(source.content, 1200);
   if (!roleId || !sessionId || !content) return null;
   const createdAt = timestamp(source.createdAt, fallbackNow);
@@ -128,6 +134,7 @@ export function sanitizeEpisodicMemory(value: unknown, fallbackNow = Date.now())
     id: text(source.id, 160) || createMemoryId('episode', createdAt),
     roleId,
     sessionId,
+    scope: { ...scope, ...(scope.sessionId ? {} : { sessionId }) },
     content,
     ...(sanitizeMemoryContent(source.emotion, 80) ? { emotion: sanitizeMemoryContent(source.emotion, 80) ?? undefined } : {}),
     importance: Math.min(1, Math.max(0, Number.isFinite(source.importance) ? Number(source.importance) : 0)),
@@ -142,6 +149,7 @@ export function sanitizeConversationSummary(value: unknown, fallbackNow = Date.n
   const source = value as Partial<ConversationSummary>;
   const roleId = text(source.roleId, 120);
   const sessionId = text(source.sessionId, 160);
+  const scope = normalizeMemoryScope(source.scope, { contextType: 'personal', sessionId });
   const summary = sanitizeMemoryContent(source.summary, 6000);
   if (!roleId || !sessionId || !summary) return null;
   const updatedAt = timestamp(source.updatedAt, fallbackNow);
@@ -153,6 +161,7 @@ export function sanitizeConversationSummary(value: unknown, fallbackNow = Date.n
     id: text(source.id, 160) || createMemoryId('summary', updatedAt),
     roleId,
     sessionId,
+    scope: { ...scope, sessionId: scope.sessionId ?? sessionId },
     summary,
     openTopics: safeList(source.openTopics),
     unfinishedQuestions: safeList(source.unfinishedQuestions),

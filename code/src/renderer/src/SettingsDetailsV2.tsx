@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { CubismRuntimeCommand, DisplaySummary, CubismDebugCommand, PublicAppState } from '../../shared/ipc';
 import type { CubismRuntimeCapabilities, CubismRuntimeMetrics, CubismRuntimeResult } from '../../shared/cubism';
-import type { Live2DModelState } from '../../shared/live2d';
+import type { Live2DAdapterConfig, Live2DModelState } from '../../shared/live2d';
 import type { PresentationEvent } from '../../shared/presentation';
 import type { AgentEvent, AgentTask } from '../../shared/agent';
 import type { SessionMessage } from '../../shared/session';
@@ -14,6 +14,7 @@ import { SETTINGS_CARDS, type SettingsPageId } from './settings-schema';
 import { CompanionChat } from './CompanionChat';
 import { GlassSelect } from './GlassSelect';
 import { classifyRuntimeAsset, type RuntimeAssetState } from './cubism-runtime-capability-state';
+import { Live2DAdapterEditor } from './Live2DAdapterEditor';
 
 const live2dStatusLabels: Record<Live2DModelState['status'], string> = {
   not_configured: '未配置', ready: '检查通过', ready_with_warnings: '通过，但有提醒', missing: '缺少文件', invalid: '入口无效', unreadable: '文件不可读'
@@ -64,6 +65,7 @@ export interface SettingsDetailsV2Props {
   presentationDraft: PresentationSettings;
   roleDraft: RolePackage;
   live2dPreview: Live2DModelState | null;
+  live2dAdapterDraft?: Live2DAdapterConfig | null;
   debugMetrics: CubismRuntimeMetrics | null;
   runtimeCapabilities: CubismRuntimeCapabilities | null;
   runtimeResult: CubismRuntimeResult | null;
@@ -94,6 +96,7 @@ export interface SettingsDetailsV2Props {
   onChooseModel: (kind: 'file' | 'directory') => void;
   onInspectModel: () => void;
   onSaveSettings: () => void;
+  onAdapterChange?: (adapter: Live2DAdapterConfig) => void;
   onSwitchModel: (id: string) => void;
   onRemoveModel: (id: string) => void;
   onViewportChange: (patch: Partial<ModelViewportSettings>) => void;
@@ -181,7 +184,7 @@ function ModelDetails(props: SettingsDetailsV2Props): JSX.Element {
     <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">LIVE2D MODEL</span><h2>导入与切换</h2></div><span className={`status-pill status-${model.status}`}>{live2dStatusLabels[model.status]}</span></div><p className="detail-note">模型源文件保持外部只读引用，不复制到项目，也不打包进 EXE。ZIP 只解压到用户数据缓存，并保留原始来源路径。</p><div className="path-row"><input aria-label="Live2D 模型路径" value={props.settingsDraft.live2dModelPath ?? ''} placeholder="选择 .model3.json、模型目录或 ZIP" onChange={(event) => props.onSettingsChange({ live2dModelPath: event.target.value || null }, false)} /><button className="secondary-button" type="button" onClick={() => props.onChooseModel('file')}>选文件 / ZIP</button><button className="secondary-button" type="button" onClick={() => props.onChooseModel('directory')}>选目录</button></div><div className="status-callout"><strong>{model.message}</strong><span>{model.entryPath ?? '尚未选择模型'}</span><button className="secondary-button" type="button" onClick={props.onInspectModel} disabled={!props.settingsDraft.live2dModelPath}>重新检查</button></div><div className="tag-list"><span>表情 {model.expressions.length}</span><span>动作 {model.motions.length}</span><span>参数 {model.parameters.length}</span></div>{model.issues.length > 0 ? <p className="warning-text">{model.issues[0]}</p> : null}<div className="toolbar"><button className="primary-button" type="button" onClick={props.onSaveSettings}>保存并切换</button><button className="secondary-button" type="button" onClick={props.onFitViewport}>一键适配模型</button><button className="secondary-button" type="button" onClick={props.onCenterViewport}>一键恢复位置</button></div></div>
     <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">MODEL REGISTRY</span><h2>最近模型</h2></div><span className="section-status">{props.state.live2dModels.length} 个记录</span></div>{props.state.live2dModels.length === 0 ? <p className="detail-note">导入后会保留模型记录；外部目录和源 ZIP 不会被应用复制或改写。</p> : <div className="voice-list">{props.state.live2dModels.map((record) => { const current = currentPath === record.entryPath; return <div key={record.id} className="status-callout"><strong>{record.displayName}{current ? ' · 当前' : ''}</strong><span>{record.sourceKind.toUpperCase()} · {record.sourcePath} · {live2dStatusLabels[record.lastStatus]}</span><button className="secondary-button" type="button" disabled={current || record.lastStatus === 'invalid'} onClick={() => props.onSwitchModel(record.id)}>{current ? '当前模型' : '切换'}</button><button className="secondary-button" type="button" onClick={() => { if (window.confirm(`移除“${record.displayName}”的模型记录？外部源文件不会被删除。`)) props.onRemoveModel(record.id); }}>移除记录</button></div>; })}</div>}</div>
     <div className="detail-section"><h2>模型显示</h2><ToggleField label="显示模型水印" checked={props.settingsDraft.live2dShowWatermark} onChange={(value) => props.onSettingsChange({ live2dShowWatermark: value })} description="只调用模型自带的显示设置，不编辑模型文件。" />{model.license?.artCredit || model.license?.modelCredit ? <p className="license-note">人物绘制：{model.license.artCredit ?? '未记录'}；人物建模：{model.license.modelCredit ?? '未记录'}。公开展示时请按来源说明保留署名。</p> : null}</div>
-     <details className="advanced-settings"><summary>运行清单与调试</summary><div className="advanced-settings-body"><p className="detail-note">静态资源 {model.expressions.length} 表情 · {model.motions.length} 动作；{runtimeStatus}。</p><div className="tag-list">{model.expressions.map(expressionTag)}{model.motions.map(motionTag)}</div><div className="toolbar"><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'reset' })}>恢复中性</button><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'stop_expression' })}>停止表情</button><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'stop_motion' })}>停止动作</button></div><p className="detail-note" role="status">{executionStatus ? `当前执行：表情 ${executionStatus.activeExpression ?? '无'} · 动作 ${executionStatus.activeMotion ? `${executionStatus.activeMotion.group}[${executionStatus.activeMotion.index}] / ${executionStatus.activeMotion.priority}` : '无'}` : runtimeStatus}</p>{props.runtimeResult && !props.runtimeResult.ok ? <p className="warning-text" role="alert">{props.runtimeResult.phase} · {props.runtimeResult.code}：{props.runtimeResult.message}</p> : null}</div></details><PresentationAdvanced {...props} />
+     <details className="advanced-settings"><summary>运行清单与调试</summary><div className="advanced-settings-body"><p className="detail-note">静态资源 {model.expressions.length} 表情 · {model.motions.length} 动作；{runtimeStatus}。</p><div className="tag-list">{model.expressions.map(expressionTag)}{model.motions.map(motionTag)}</div><div className="toolbar"><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'reset' })}>恢复中性</button><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'stop_expression' })}>停止表情</button><button className="secondary-button" type="button" onClick={() => props.onRuntimeCommand({ type: 'stop_motion' })}>停止动作</button></div><p className="detail-note" role="status">{executionStatus ? `当前执行：表情 ${executionStatus.activeExpression ?? '无'} · 动作 ${executionStatus.activeMotion ? `${executionStatus.activeMotion.group}[${executionStatus.activeMotion.index}] / ${executionStatus.activeMotion.priority}` : '无'}` : runtimeStatus}</p>{props.runtimeResult && !props.runtimeResult.ok ? <p className="warning-text" role="alert">{props.runtimeResult.phase} · {props.runtimeResult.code}：{props.runtimeResult.message}</p> : null}</div></details>{props.live2dAdapterDraft && props.onAdapterChange ? <div className="detail-section"><Live2DAdapterEditor adapter={props.live2dAdapterDraft} model={model} runtimeCapabilities={capabilities} onChange={props.onAdapterChange} onDebug={(patch) => props.onDebug({ type: 'parameter', patch })} onRuntimeCommand={props.onRuntimeCommand} /></div> : null}<PresentationAdvanced {...props} />
   </>;
 }
 
