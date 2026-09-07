@@ -142,3 +142,4 @@ Agent 不再根据用户消息中的“修改/读取”等措辞推断最终权�
 - 目标远程：`https://github.com/stardawn2326/StarChat`
 - 目标分支：`master`
 - 仓库可以保持私有；最终提交哈希以推送后的 Git 核验为准。
+- Phase A RC2 / Phase B 实施提交：`53d3669a000bbd57397c32bafd1b6faf37c11778`
