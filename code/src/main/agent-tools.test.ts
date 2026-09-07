@@ -12,8 +12,8 @@ describe('agent explicit tool allowlist', () => {
     writeFileSync(join(root, 'src', 'a.txt'), 'a', 'utf8');
     const tools = createAgentTools(new WorkspaceGuard(root));
     expect(tools.map((tool) => tool.name)).toEqual([
-      'list_directory', 'read_file', 'search_text', 'apply_patch', 'apply_file_changes', 'run_verification',
-      'git_status', 'git_diff', 'request_user_approval', 'request_user_input'
+      'list_directory', 'read_file', 'search_text', 'git_status', 'git_diff',
+      'request_user_approval', 'request_user_input', 'apply_patch', 'apply_file_changes', 'run_verification'
     ]);
     expect(tools.some((tool) => /shell|exec|command|network|delete|move/i.test(tool.name))).toBe(false);
     expect(tools.find((tool) => tool.name === 'apply_patch')?.requiresApproval).toBe(true);
@@ -37,5 +37,30 @@ describe('agent explicit tool allowlist', () => {
       target: 'src/a.txt',
       preview: { files: ['src/a.txt'], patch, additions: 1, deletions: 1 }
     });
+  });
+
+  it('registers tools from the trust matrix instead of inferring write intent from prose', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-tools-matrix-'));
+    const names = (options: Parameters<typeof createAgentTools>[2]) => createAgentTools(new WorkspaceGuard(root), runVerification, options).map((tool) => tool.name);
+    expect(names({ allowWrite: false, allowExecution: false })).toEqual([
+      'list_directory', 'read_file', 'search_text', 'git_status', 'git_diff', 'request_user_approval', 'request_user_input'
+    ]);
+    expect(names({ allowWrite: true, allowExecution: false })).toContain('apply_patch');
+    expect(names({ allowWrite: true, allowExecution: true })).toContain('run_verification');
+    expect(names({ allowWrite: false, allowExecution: false })).not.toContain('run_verification');
+  });
+
+  it('reserves a write only after a valid preview reaches the approval boundary', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-tools-reservation-'));
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src', 'a.txt'), 'before\n', 'utf8');
+    const beforeWrite = vi.fn();
+    const applyPatch = createAgentTools(new WorkspaceGuard(root), runVerification, { beforeWrite })
+      .find((tool) => tool.name === 'apply_patch');
+    expect(() => applyPatch?.approval?.({ patch: 'not a patch' })).toThrow();
+    expect(beforeWrite).not.toHaveBeenCalled();
+    const patch = '*** Begin Patch\n*** Update File: src/a.txt\n@@\n-before\n+after\n*** End Patch';
+    applyPatch?.approval?.({ patch }, { taskId: 'task', invocationId: 'call', signal: new AbortController().signal });
+    expect(beforeWrite).toHaveBeenCalledWith('apply_patch', expect.objectContaining({ taskId: 'task', invocationId: 'call' }));
   });
 });

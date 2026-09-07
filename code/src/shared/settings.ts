@@ -10,6 +10,7 @@ export interface AppSettings {
   temperature: number;
   maxTokens: number;
   systemPrompt: string;
+  longTermMemoryEnabled: boolean;
   alwaysOnTop: boolean;
   themePreference: ThemePreference;
   live2dModelPath: string | null;
@@ -82,6 +83,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   temperature: 0.7,
   maxTokens: 800,
   systemPrompt: '',
+  longTermMemoryEnabled: true,
   alwaysOnTop: true,
   themePreference: DEFAULT_THEME_PREFERENCE,
   live2dModelPath: null,
@@ -225,6 +227,7 @@ export function sanitizeAppSettings(input: Partial<AppSettings>): AppSettings {
       ? Math.min(8192, Math.max(64, Math.round(maxTokens)))
       : DEFAULT_APP_SETTINGS.maxTokens,
     systemPrompt: typeof input.systemPrompt === 'string' ? input.systemPrompt.trim() : '',
+    longTermMemoryEnabled: input.longTermMemoryEnabled !== false,
     alwaysOnTop: input.alwaysOnTop !== false,
     themePreference: sanitizeThemePreference(input.themePreference),
     live2dModelPath:

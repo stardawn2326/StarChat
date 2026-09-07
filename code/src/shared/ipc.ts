@@ -6,6 +6,7 @@ import type { CubismParameterPatch, CubismRuntimeMetrics } from './cubism';
 import type { PresentationSettings } from './presentation-contract';
 import type { CompanionSummary } from './companion';
 import type { VoiceProfile } from './voice-profile';
+import type { ProfileMemory } from './memory';
 import type { AgentEvent, AgentMode, AgentStartResponse, AgentTask } from './agent';
 import type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchOpenUrlResult, WorkbenchShareResult, WorkbenchVerificationResult, WorkbenchVerificationScript } from './workbench';
 
@@ -18,6 +19,7 @@ export interface PublicAppState {
   live2dModels: Live2DModelRecord[];
   companion: CompanionSummary;
   voices: VoiceProfile[];
+  memories: ProfileMemory[];
 }
 
 export interface SaveSettingsRequest {

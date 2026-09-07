@@ -69,7 +69,8 @@ describe('StarChat workbench functionality contracts', () => {
     expect(mainSource).toContain("settingsWindow.on('resize'");
     expect(preloadSource).toContain('window:is-maximized');
     expect(preloadSource).toContain('window:maximized-changed');
-    expect(workbenchServiceSource).toContain("execFileSync('git'");
+    expect(workbenchServiceSource).toContain("from './git-runner'");
+    expect(workbenchServiceSource).not.toContain("execFileSync('git'");
     expect(mainSource).not.toContain('branchName = \'main\'');
   });
 

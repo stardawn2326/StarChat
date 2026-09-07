@@ -251,6 +251,7 @@ interface WorkbenchToolPanelProps {
   diffPreview: WorkbenchDiffPreview | null;
   verification: WorkbenchVerificationResult | null;
   tasks: readonly AgentTask[];
+  workspaceTrust: WorkspaceTrustState;
   busy: boolean;
   onClose: () => void;
   onRefresh: () => void;
@@ -306,6 +307,7 @@ function WorkbenchToolPanel(props: WorkbenchToolPanelProps): JSX.Element {
   const [browserStatus, setBrowserStatus] = useState('');
   const [commitMessage, setCommitMessage] = useState('');
   const [commitStatus, setCommitStatus] = useState('');
+  const canCommit = props.workspaceTrust === 'trusted-execution';
   useEffect(() => {
     if (!props.tasks.some((task) => task.id === selectedTaskId)) setSelectedTaskId(props.tasks[0]?.id ?? null);
   }, [props.tasks, selectedTaskId]);
@@ -327,7 +329,11 @@ function WorkbenchToolPanel(props: WorkbenchToolPanelProps): JSX.Element {
   };
   const commitStaged = async (): Promise<void> => {
     const message = commitMessage.trim();
-    if (!message || !window.confirm(`提交当前已暂存变更？\n\n${message}\n\nStarChat 不会自动暂存或推送。`)) return;
+    if (!canCommit) {
+      setCommitStatus('请先在环境信息中启用 trusted-execution。');
+      return;
+    }
+    if (!message || !window.confirm(`提交当前已暂存变更？\n\n${message}\n\n提交可能执行 Git Hooks；StarChat 不会自动暂存或推送。`)) return;
     try {
       const result = await window.starchat.workbench.gitCommit({ message });
       setCommitStatus(result.ok ? `提交完成：${result.message}` : result.output || '提交失败');
@@ -349,7 +355,7 @@ function WorkbenchToolPanel(props: WorkbenchToolPanelProps): JSX.Element {
     return <section className="wb-tool-panel" data-workbench-tool="source" aria-label="源代码管理">
       <ToolPanelHeader kicker="SOURCE CONTROL" title="源代码管理" busy={props.busy} onRefresh={props.onRefresh} onClose={props.onClose} />
       <div className="wb-source-overview"><strong>{workbenchGitStatusLabel(source?.status ?? props.inspection?.environment.gitStatus ?? 'unavailable')}</strong><span>{source?.branch ?? (source?.head ? `分离 HEAD @ ${source.head}` : '未识别分支')} · {source?.changedFiles.length ?? 0} 个变更</span></div>
-      <div className="wb-source-commit"><input aria-label="Git 提交说明" value={commitMessage} maxLength={120} onChange={(event) => setCommitMessage(event.target.value)} placeholder="提交已暂存变更（不会自动暂存）" /><button className="primary-button" type="button" disabled={!commitMessage.trim()} onClick={() => void commitStaged()}>提交</button>{commitStatus ? <span role="status">{commitStatus}</span> : null}</div>
+      <div className="wb-source-commit"><input aria-label="Git 提交说明" value={commitMessage} maxLength={120} onChange={(event) => setCommitMessage(event.target.value)} placeholder="提交已暂存变更（不会自动暂存）" /><button className="primary-button" type="button" disabled={!canCommit || !commitMessage.trim()} onClick={() => void commitStaged()}>提交</button>{commitStatus ? <span role="status">{commitStatus}</span> : <small>{canCommit ? 'trusted-execution · 提交可能执行 Git Hooks' : '需 trusted-execution 才可提交'}</small>}</div>
       <div className="wb-tool-split"><nav className="wb-resource-tree" aria-label="变更文件列表">{(source?.changedFiles ?? []).map((path) => <button type="button" key={path} onClick={() => props.onPreviewDiff(path)}><WorkbenchIcon name="source" size={15} /><span>{path}</span></button>)}{source?.changedFiles.length === 0 ? <p className="wb-tool-empty">当前没有可显示的未提交变更。</p> : null}</nav><article className="wb-file-preview wb-diff-preview" aria-label="Git 差异预览">{props.diffPreview ? <><header><strong>{props.diffPreview.path}</strong><span>只读 diff{props.diffPreview.truncated ? ' · 已截断' : ''}</span></header><pre tabIndex={0}>{props.diffPreview.patch || '该文件没有工作树差异。'}</pre></> : <div className="wb-tool-empty"><WorkbenchIcon name="source" size={24} /><p>选择变更文件查看只读差异。</p></div>}</article></div>
     </section>;
   }
@@ -592,7 +598,7 @@ export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _m
     '--wb-frame-bottom-inset': scaleLength(12),
     '--wb-character-width': scaleLength(initialLayout.characterWidth)
   } as CSSProperties;
-  const toolPanel = activePage === null && activeTool ? <WorkbenchToolPanel activeTool={activeTool} inspection={inspection} filePreview={filePreview} diffPreview={diffPreview} verification={verification} tasks={agentTasks} busy={toolBusy} onClose={() => onToolAction?.(activeTool)} onRefresh={onRefreshInspection} onOpenResource={onOpenResource} onPreviewFile={onPreviewFile} onPreviewDiff={onPreviewDiff} onVerify={onVerify} onCancelTask={onCancelTask} onApproveTask={onApproveTask} onRetryTask={onRetryTask} onRespondTask={onRespondTask} /> : null;
+  const toolPanel = activePage === null && activeTool ? <WorkbenchToolPanel activeTool={activeTool} inspection={inspection} filePreview={filePreview} diffPreview={diffPreview} verification={verification} tasks={agentTasks} workspaceTrust={workspaceTrust} busy={toolBusy} onClose={() => onToolAction?.(activeTool)} onRefresh={onRefreshInspection} onOpenResource={onOpenResource} onPreviewFile={onPreviewFile} onPreviewDiff={onPreviewDiff} onVerify={onVerify} onCancelTask={onCancelTask} onApproveTask={onApproveTask} onRetryTask={onRetryTask} onRespondTask={onRespondTask} /> : null;
   return <div className="wb-shell" style={shellStyle} data-workbench="shell" data-workbench-structure="shared" data-workbench-visual="reference" data-workbench-theme="tokenized" data-workbench-mode={activePage === null ? 'workbench' : 'settings'} data-reference-layout={referenceLayout ? 'true' : 'false'} data-agent-available={agentAvailable} data-sidebar-state={sidebarCollapsed ? 'collapsed' : 'expanded'} data-right-rail-state={rightRailCollapsed ? 'collapsed' : 'expanded'} data-bottom-panel={bottomPanelOpen ? 'open' : 'closed'} data-sidebar-width={sidebarWidth} data-right-rail-width={effectiveRightRailWidth} data-bottom-panel-height={effectiveBottomPanelHeight}>
     <Topbar sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} sidebarToggleRef={sidebarToggleRef} onMinimize={onMinimize} onMaximize={onMaximize} onClose={onClose} isMaximized={isMaximized} theme={theme} onToggleTheme={onToggleTheme} />
     {activePage === null ? <Sidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} onNewConversation={onNewConversation} workspaceLabel={workspaceLabel} sessionTitle={sessionTitle} sessionMeta={sessionMetaLabel ?? workbenchSessionMeta(sessionMessageCount, false)} referenceFixture={referenceFixture} workspaces={workspaces} sessions={sessions} activeWorkspaceId={activeWorkspaceId} activeSessionId={activeSessionId} onChooseWorkspace={onChooseWorkspace} onSelectWorkspace={onSelectWorkspace} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onDeleteSession={onDeleteSession} /> : <SettingsSidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} />}

@@ -65,6 +65,8 @@ import { CubismRuntimeSession } from './cubism-runtime-session';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
 import { SessionStore } from './session-store';
+import { MemoryStore } from './memory-store';
+import { MemoryService } from './memory-service';
 import type { SessionRenameRequest, SessionSnapshot, WorkspaceTrustState } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
@@ -88,6 +90,7 @@ let live2dRegistry: Live2DModelRegistry;
 let agentStore: AgentStore;
 let agentService: AgentService;
 let sessionStore: SessionStore;
+let memoryService: MemoryService;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -340,7 +343,8 @@ function getPublicState(): PublicAppState {
     live2d,
     live2dModels: registry.list(),
     companion: companionSummary(companion, role.personality.relationshipStages),
-    voices: voiceProfileStore.list()
+    voices: voiceProfileStore.list(),
+    memories: memoryService?.listProfile(role.id) ?? []
   };
 }
 
@@ -353,11 +357,30 @@ function sendChatEvent(sender: Electron.WebContents, event: ChatEvent): void {
 function sendAgentEvent(event: AgentEvent): void {
   if (event.type === 'complete') {
     const task = agentStore?.get(event.taskId);
-    if (task) publishSessionSnapshot(sessionStore.appendMessage(task.sessionId, { role: 'assistant', content: event.result.summary }));
+    if (task) {
+      publishSessionSnapshot(sessionStore.appendMessage(task.sessionId, { role: 'assistant', content: event.result.summary }));
+      recordMemoryForSession(task.roleId, task.sessionId);
+    }
   }
   const sender = agentTaskSenders.get(event.taskId);
   if (sender && !sender.isDestroyed()) sender.send('agent:event', event);
   if (event.type === 'complete' || event.type === 'error') agentTaskSenders.delete(event.taskId);
+}
+
+function recordMemoryForSession(roleId: string, sessionId: string): void {
+  if (!memoryService || !sessionStore) return;
+  const session = sessionStore.snapshot().sessions.find((item) => item.id === sessionId);
+  if (!session) return;
+  try {
+    memoryService.recordConversation(roleId, sessionId, session.messages.map((message) => ({
+      role: message.role,
+      content: message.content,
+      createdAt: message.createdAt
+    })));
+    sendStateChanged();
+  } catch (error) {
+    console.warn('Memory persistence skipped:', error);
+  }
 }
 
 function publishSessionSnapshot(snapshot = sessionStore.snapshot()): SessionSnapshot {
@@ -1220,8 +1243,12 @@ async function runChat(
 
   const snapshot = getStore().createPersonalityRequestSnapshot();
   const before = getStore().readCompanionState(snapshot.roleId);
+  const memoryEnabled = settings.longTermMemoryEnabled;
+  const companionPromptState = memoryEnabled ? before : { ...before, memories: [] };
+  const structuredMemoryContext = memoryService?.contextFor({ roleId: snapshot.roleId, query: message, limit: 5 }) ?? '暂无可用长期记忆；不要编造用户经历。';
   const messages: ChatMessage[] = [
-    { role: 'system', content: buildCompanionSystemPrompt(snapshot, before) },
+    { role: 'system', content: buildCompanionSystemPrompt(snapshot, companionPromptState) },
+    { role: 'system', content: `结构化长期记忆（${memoryEnabled ? '仅在自然相关时参考' : '已关闭'}）：\n${structuredMemoryContext}` },
     ...(settings.systemPrompt ? [{ role: 'system', content: settings.systemPrompt } as ChatMessage] : []),
     ...normalizeHistory(request.history).filter((item) => item.role !== 'system'),
     { role: 'user', content: message }
@@ -1248,6 +1275,7 @@ async function runChat(
   }
   const nextCompanion = getStore().saveCompanionState(recordCompanionExchange(before, snapshot, message, responseText));
   publishSessionSnapshot(sessionStore.appendMessage(request.sessionId, { role: 'assistant', content: responseText }));
+  recordMemoryForSession(snapshot.roleId, request.sessionId);
   sendChatEvent(sender, { type: 'complete', requestId, response: responseText, companion: companionSummary(nextCompanion, snapshot.relationshipStages) });
   sendStateChanged();
 }
@@ -1316,6 +1344,11 @@ function flushPendingCubismRuntimeCommands(): void {
 }
 
 function registerIpc(): void {
+  const windows = (): { settingsWindow: BrowserWindow | null; petWindow: BrowserWindow | null } => ({ settingsWindow, petWindow });
+  const isSettingsSender = (sender: Electron.WebContents): boolean => isIpcWindow(sender, 'settings', windows());
+  const isPetSender = (sender: Electron.WebContents): boolean => isIpcWindow(sender, 'pet', windows());
+  const isAppWindowSender = (sender: Electron.WebContents): boolean => isSettingsSender(sender) || isPetSender(sender);
+
   ipcMain.handle('state:get', (event) => {
     const windows = { settingsWindow, petWindow };
     if (!isIpcWindow(event.sender, 'settings', windows) && !isIpcWindow(event.sender, 'pet', windows)) {
@@ -1408,7 +1441,9 @@ function registerIpc(): void {
   ipcMain.handle('workbench:git-commit', async (event, request: { message?: unknown }) => {
     requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     if (typeof request?.message !== 'string') throw new Error('Git 提交请求无效');
-    return commitWorkbenchStaged(activeWorkbenchContext().workspaceRoot, request.message, new AbortController().signal);
+    const context = activeWorkbenchContext();
+    requireTrustedWorkspaceExecution(context);
+    return commitWorkbenchStaged(context.workspaceRoot, request.message, new AbortController().signal);
   });
   ipcMain.handle('workbench:share', (event) => {
     requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
@@ -1492,6 +1527,26 @@ function registerIpc(): void {
       promptText: profile.promptText,
       promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
     });
+  });
+  ipcMain.handle('memory:list', (event) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    const role = getStore().readActiveRolePackage();
+    return memoryService?.listProfile(role.id) ?? [];
+  });
+  ipcMain.handle('memory:delete', (event, request: { id?: unknown }): PublicAppState => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || typeof request.id !== 'string' || !request.id.trim()) throw new Error('记忆删除请求无效');
+    const role = getStore().readActiveRolePackage();
+    memoryService?.deleteProfile(role.id, request.id.trim());
+    sendStateChanged();
+    return getPublicState();
+  });
+  ipcMain.handle('memory:clear', (event): PublicAppState => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    const role = getStore().readActiveRolePackage();
+    memoryService?.clearRoleMemory(role.id);
+    sendStateChanged();
+    return getPublicState();
   });
   ipcMain.handle('settings:save', async (event, request: SaveSettingsRequest) => {
     requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
@@ -1613,7 +1668,7 @@ function registerIpc(): void {
     return result.filePath ?? null;
   });
   ipcMain.on('cubism:debug-command', (event, command: CubismDebugCommand) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !isSafeCubismDebugCommand(command)) {
+    if (!isSettingsSender(event.sender) || !isSafeCubismDebugCommand(command)) {
       return;
     }
     if (petWindow && !petWindow.isDestroyed()) {
@@ -1621,7 +1676,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle('cubism:runtime-command', (event, command: CubismRuntimeCommand): Promise<CubismRuntimeResult> => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !isSafeCubismRuntimeCommand(command)) {
+    if (!isSettingsSender(event.sender) || !isSafeCubismRuntimeCommand(command)) {
       throw new Error('无效的 Cubism runtime 命令');
     }
     if (!petWindow || petWindow.isDestroyed()) {
@@ -1639,7 +1694,7 @@ function registerIpc(): void {
     });
   });
   ipcMain.on('cubism:runtime-result', (event, payload: CubismRuntimeCommandResult) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !payload || typeof payload.requestId !== 'string') {
+    if (!isPetSender(event.sender) || !payload || typeof payload.requestId !== 'string') {
       return;
     }
     const pending = pendingCubismRuntimeCommands.get(payload.requestId);
@@ -1660,19 +1715,18 @@ function registerIpc(): void {
     settleCubismRuntimePending(payload.requestId, payload.result);
   });
   ipcMain.on('pet:runtime-command-ready', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    if (!isPetSender(event.sender)) return;
     petRuntimeCommandSubscribed = true;
     flushPendingCubismRuntimeCommands();
   });
   ipcMain.on('cubism:metrics', (event, request: CubismDebugMetricRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !isSafeCubismMetrics(request)) {
+    if (!isPetSender(event.sender) || !isSafeCubismMetrics(request)) {
       return;
     }
     latestCubismMetrics = request.metrics;
   });
   ipcMain.handle('cubism:metrics', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow !== settingsWindow && sourceWindow !== petWindow) {
+    if (!isAppWindowSender(event.sender)) {
       return null;
     }
     return latestCubismMetrics;
@@ -1721,9 +1775,13 @@ function registerIpc(): void {
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
-  ipcMain.handle('display:list', () => screen.getAllDisplays().map(displaySummary));
+  ipcMain.handle('display:list', (event) => {
+    requireIpcWindow(event.sender, 'settings', windows());
+    return screen.getAllDisplays().map(displaySummary);
+  });
   ipcMain.handle('window:visibility', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
+    if (!isAppWindowSender(event.sender)) throw new Error('未知窗口不可读取窗口状态');
+    const sourceWindow = isPetSender(event.sender) ? petWindow : settingsWindow;
     return {
       role: sourceWindow === petWindow ? 'pet' : 'settings',
       petVisible: Boolean(petWindow && !petWindow.isDestroyed() && petWindow.isVisible()),
@@ -1731,23 +1789,32 @@ function registerIpc(): void {
     };
   });
   ipcMain.on('window:minimize', (event) => {
-    BrowserWindow.fromWebContents(event.sender)?.minimize();
+    if (!isAppWindowSender(event.sender)) return;
+    (isPetSender(event.sender) ? petWindow : settingsWindow)?.minimize();
   });
   ipcMain.on('window:close', (event) => {
-    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!isAppWindowSender(event.sender)) return;
+    const window = isPetSender(event.sender) ? petWindow : settingsWindow;
     if (window === settingsWindow) {
       settingsWindow?.hide();
     } else if (window === petWindow) {
       petWindow?.hide();
     }
   });
-  ipcMain.on('settings:show', () => {
+  ipcMain.on('settings:show', (event) => {
+    if (!isAppWindowSender(event.sender)) return;
     showSettingsWindow();
   });
-  ipcMain.on('settings:hide', () => settingsWindow?.hide());
-  ipcMain.on('settings:toggle', toggleSettings);
+  ipcMain.on('settings:hide', (event) => {
+    if (!isAppWindowSender(event.sender)) return;
+    settingsWindow?.hide();
+  });
+  ipcMain.on('settings:toggle', (event) => {
+    if (!isAppWindowSender(event.sender)) return;
+    toggleSettings();
+  });
   ipcMain.on('pet:runtime-ready', (event, request?: { entryPath?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) {
+    if (!isPetSender(event.sender)) {
       return;
     }
     petRendererReady = true;
@@ -1760,7 +1827,7 @@ function registerIpc(): void {
     maybeShowPetWindow();
   });
   ipcMain.on('pet:runtime-failed', (event, request?: Live2DRuntimeFailure) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) return;
+    if (!isPetSender(event.sender)) return;
     petRendererReady = true;
     cubismRuntimeSession.markFailed(request?.entryPath ?? null);
     if (request && (request.stage === 'load' || request.stage === 'initialize' || request.stage === 'render')) {
@@ -1769,16 +1836,14 @@ function registerIpc(): void {
     maybeShowPetWindow();
   });
   ipcMain.on('pet:show', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
+    if (isAppWindowSender(event.sender)) {
       setWorkbenchCharacterVisible(false);
       showPetWindowInactive();
       petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
   });
   ipcMain.on('pet:toggle', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow !== settingsWindow && sourceWindow !== petWindow) return;
+    if (!isAppWindowSender(event.sender)) return;
     if (petWindow?.isVisible()) {
       petWindow.hide();
       setWorkbenchCharacterVisible(true);
@@ -1788,20 +1853,18 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:center', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
+    if (isAppWindowSender(event.sender)) {
       centerPetWindow();
     }
   });
   ipcMain.handle('pet:bounds', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow !== settingsWindow && sourceWindow !== petWindow) {
+    if (!isAppWindowSender(event.sender)) {
       return null;
     }
     return petWindow && !petWindow.isDestroyed() ? petWindow.getBounds() : null;
   });
   ipcMain.on('pet:preview-bounds', (event, input: WindowBounds) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !petWindow || petWindow.isDestroyed()) {
+    if (!isSettingsSender(event.sender) || !petWindow || petWindow.isDestroyed()) {
       return;
     }
     if (![input?.x, input?.y, input?.width, input?.height].every(Number.isFinite)) {
@@ -1813,12 +1876,12 @@ function registerIpc(): void {
     sendPetBoundsChanged();
   });
   ipcMain.on('pet:context-menu', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) === petWindow) {
+    if (isPetSender(event.sender)) {
       showPetContextMenu();
     }
   });
   ipcMain.on('pet:set-input-mode', (event, mode: PetInputMode) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow) {
+    if (!isPetSender(event.sender)) {
       return;
     }
     if (mode === 'interactive' || mode === 'passthrough') {
@@ -1826,19 +1889,18 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:toggle-model-edit', (event) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
+    if (isAppWindowSender(event.sender)) {
       togglePetModelEditMode();
     }
   });
   ipcMain.on('pet:pointer-cancel', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) === petWindow) {
+    if (isPetSender(event.sender)) {
       cancelPetPointerTransactions();
     }
   });
   ipcMain.on('pet:drag-start', (event, point: PetDragPoint) => {
     if (
-      BrowserWindow.fromWebContents(event.sender) === petWindow &&
+      isPetSender(event.sender) &&
       petInteractionEnabled(getStore().readSettings()) &&
       Number.isFinite(point?.screenX) &&
       Number.isFinite(point?.screenY) &&
@@ -1855,14 +1917,14 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:drag-move', (event, point: PetDragPoint) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petDragStart || !petWindow) {
+    if (!isPetSender(event.sender) || !petDragStart || !petWindow) {
       return;
     }
     const nextBounds = nextPetDragBounds(petDragStart.bounds, petDragStart.point, point);
     petWindow.setBounds(nextBounds);
   });
   ipcMain.on('pet:drag-end', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petDragStart) {
+    if (!isPetSender(event.sender) || !petDragStart) {
       return;
     }
     petDragStart = null;
@@ -1870,7 +1932,7 @@ function registerIpc(): void {
     persistPetBounds(true);
   });
   ipcMain.on('pet:resize-start', (event, request: PetResizeStart) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || !petInteractionEnabled(getStore().readSettings())) return;
+    if (!isPetSender(event.sender) || !petWindow || !petInteractionEnabled(getStore().readSettings())) return;
     if (!request || !Number.isFinite(request.screenX) || !Number.isFinite(request.screenY) || !['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'].includes(request.edge)) return;
     // A new valid resize is authoritative. If a pointerup was lost, do not
     // let an old drag or resize transaction permanently block the next gesture.
@@ -1878,7 +1940,7 @@ function registerIpc(): void {
     petResizeStart = { request, bounds: petWindow.getBounds(), display: selectedDisplay() };
   });
   ipcMain.on('pet:resize-move', (event, point: PetDragPoint) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petWindow || petDragStart || !petResizeStart) return;
+    if (!isPetSender(event.sender) || !petWindow || petDragStart || !petResizeStart) return;
     if (!Number.isFinite(point?.screenX) || !Number.isFinite(point?.screenY)) return;
     const next = nextPetResizeBounds(petResizeStart.bounds, petResizeStart.request, point, petResizeStart.request.edge);
     const safeNext = safePetBounds(next, petResizeStart.display);
@@ -1888,15 +1950,14 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('pet:resize-end', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== petWindow || !petResizeStart) return;
+    if (!isPetSender(event.sender) || !petResizeStart) return;
     petResizeStart = null;
     persistPetBounds(true);
     sendPetBoundsChanged();
     arrangeInteractionTestWindow();
   });
   ipcMain.on('presentation:emit', (event, payload: PresentationEvent) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow !== settingsWindow || !isSafePresentationEvent(payload)) {
+    if (!isSettingsSender(event.sender) || !isSafePresentationEvent(payload)) {
       return;
     }
     if (petWindow && !petWindow.isDestroyed()) {
@@ -1907,20 +1968,19 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('starchat:settings-preview', (event, detail: SettingsPreviewDetail) => {
-    const source = BrowserWindow.fromWebContents(event.sender);
-    if (source === petWindow && detail?.domain === 'settings') {
+    if (isPetSender(event.sender) && detail?.domain === 'settings') {
       if (!detail.patch || Object.keys(detail.patch).some((key) => key !== 'modelViewportByModel')) return;
       settingsWindow?.webContents.send('starchat:settings-preview', detail);
       return;
     }
-    if (source === settingsWindow && detail?.domain === 'settings') {
+    if (isSettingsSender(event.sender) && detail?.domain === 'settings') {
       if (!detail.patch || typeof detail.patch !== 'object') return;
       const allowed = new Set(['cursorTrackingEnabled', 'cursorEyeWeight', 'cursorHeadWeight', 'cursorBodyWeight', 'cursorSmoothing', 'cursorMaxStep', 'cursorRangeX', 'cursorRangeY', 'cursorIdleMotion']);
       if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;
       petWindow?.webContents.send('starchat:settings-preview', detail);
       return;
     }
-    if (source !== settingsWindow || !detail || detail.domain !== 'presentation') return;
+    if (!isSettingsSender(event.sender) || !detail || detail.domain !== 'presentation') return;
     if (!detail.patch || typeof detail.patch !== 'object') return;
     const allowed = new Set(['bodyFollowStrength', 'bodyLag', 'inertiaStrength', 'idleSwayStrength', 'physicsEnabled']);
     if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;
@@ -1992,6 +2052,11 @@ if (singleInstanceLock) {
     agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
+    const memoryStore = new MemoryStore(join(userDataDir, 'memory.json'));
+    memoryService = new MemoryService({
+      store: memoryStore,
+      enabled: () => settingsStore.readSettings().longTermMemoryEnabled
+    });
     agentService = new AgentService({
       store: agentStore,
       resolveExecutionContext: (sessionId) => sessionStore.sessionContext(sessionId ?? sessionStore.snapshot().activeSessionId ?? ''),
@@ -2057,13 +2122,7 @@ app.on('before-quit', () => {
   for (const controller of activeRequests.values()) {
     controller.abort();
   }
-  if (agentService) {
-    for (const task of agentService.list()) {
-      if (['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(task.status)) {
-        void agentService.cancel(task.id).catch(() => undefined);
-      }
-    }
-  }
+  agentService?.shutdown();
   agentTaskSenders.clear();
 });
 

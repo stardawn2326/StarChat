@@ -1,6 +1,6 @@
-import type { AgentTool } from './agent-runtime';
+import type { AgentTool, AgentToolContext } from './agent-runtime';
 import { WorkspaceGuard } from './agent-security';
-import { assertGitRootMatchesWorkspace } from './git-boundary';
+import { runGitReadOnly } from './git-runner';
 import { verificationCommand, isVerificationScript } from './project-detector';
 import { runControlledProcess } from './process-runner';
 
@@ -54,9 +54,7 @@ function spawnVerification(command: string, args: string[], cwd: string, signal:
 }
 
 function gitReadOnly(root: string, args: string[], signal: AbortSignal): Promise<string> {
-  if (args.some((arg) => !['status', '--short', 'diff', '--stat', '--name-only'].includes(arg))) throw new Error('Git 工具参数不在只读白名单');
-  assertGitRootMatchesWorkspace(root);
-  return runControlledProcess({ command: 'git', args, cwd: root, signal, timeoutMs: 30_000, maxOutputBytes: 64 * 1024, allowedCommands: ['git'] }).then((result) => {
+  return runGitReadOnly(root, args, signal).then((result) => {
     if (result.code !== 0) throw new Error(cappedOutput(result.output) || `Git 只读检查失败（${result.code}）`);
     return cappedOutput(result.output);
   });
@@ -64,10 +62,13 @@ function gitReadOnly(root: string, args: string[], signal: AbortSignal): Promise
 
 export interface AgentToolOptions {
   beforeVerification?: (script: string) => void;
+  beforeWrite?: (toolName: string, context: AgentToolContext) => void;
+  allowWrite?: boolean;
+  allowExecution?: boolean;
 }
 
 export function createAgentTools(guard: WorkspaceGuard, executeVerification: typeof runVerification = runVerification, options: AgentToolOptions = {}): AgentTool[] {
-  return [
+  const readTools: AgentTool[] = [
     {
       name: 'list_directory', description: '列出授权工作区内的目录项。', schema: { type: 'object', properties: { path: { type: 'string' } }, additionalProperties: false },
       run: async (input) => guard.listDirectory(typeof input === 'object' && input ? (input as { path?: unknown }).path as string ?? '' : '')
@@ -79,40 +80,6 @@ export function createAgentTools(guard: WorkspaceGuard, executeVerification: typ
     {
       name: 'search_text', description: '在授权工作区内受控搜索文本。', schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, path: { type: 'string' } }, additionalProperties: false },
       run: async (input) => { const args = record(input); return guard.searchText(stringArg(args.query, 'query', 500), typeof args.path === 'string' ? args.path : ''); }
-    },
-    {
-      name: 'apply_patch', description: '预览并在用户批准精确计划后应用受控补丁。', schema: { type: 'object', required: ['patch'], properties: { patch: { type: 'string', maxLength: 512000 } }, additionalProperties: false },
-      requiresApproval: true,
-      approval: (input) => {
-        const patch = stringArg(record(input).patch, 'patch', 512 * 1024);
-        const preview = guard.previewPatch(patch);
-        return {
-          target: preview.files.join(', '),
-          plan: preview.summary,
-          preview: { files: preview.files, patch, ...patchLineCounts(patch) }
-        };
-      },
-      run: async (input) => guard.previewPatch(stringArg(record(input).patch, 'patch', 512 * 1024)),
-      runApproved: async (input) => { const patch = stringArg(record(input).patch, 'patch', 512 * 1024); return guard.applyApprovedPatch(patch, patch); }
-    } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> },
-    {
-      name: 'apply_file_changes', description: '预览创建、更新或删除文件的精确计划，并在用户批准后应用。', schema: { type: 'object', required: ['changes'], properties: { changes: { type: 'array', maxItems: 50, items: { type: 'object' } } }, additionalProperties: false },
-      requiresApproval: true,
-      approval: (input) => {
-        const changes = record(input).changes;
-        const preview = guard.previewFileChanges(changes);
-        return { target: preview.files.join(', '), plan: preview.summary, preview };
-      },
-      run: async (input) => guard.previewFileChanges(record(input).changes),
-      runApproved: async (input) => {
-        const changes = record(input).changes;
-        const plan = JSON.stringify(changes);
-        return guard.applyApprovedFileChanges(plan, plan);
-      }
-    } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> },
-    {
-      name: 'run_verification', description: '运行白名单中的项目测试、类型检查或构建脚本。', schema: { type: 'object', required: ['script'], properties: { script: { type: 'string', enum: [...VERIFICATION_SCRIPTS] } }, additionalProperties: false },
-      run: async (input, context) => { const script = stringArg(record(input).script, 'script', 80); options.beforeVerification?.(script); return executeVerification(guard.root, script, context.signal); }
     },
     {
       name: 'git_status', description: '只读查看当前授权工作区 Git 状态。', schema: { type: 'object', additionalProperties: false },
@@ -134,5 +101,53 @@ export function createAgentTools(guard: WorkspaceGuard, executeVerification: typ
       inputPrompt: (input) => stringArg(record(input).prompt, 'prompt', 10_000),
       run: async (input) => ({ userInput: input })
     }
+  ];
+
+  const writeTools: AgentTool[] = [
+    {
+      name: 'apply_patch', description: '预览并在用户批准精确计划后应用受控补丁。', schema: { type: 'object', required: ['patch'], properties: { patch: { type: 'string', maxLength: 512000 } }, additionalProperties: false },
+      requiresApproval: true,
+      approval: (input, context) => {
+        const patch = stringArg(record(input).patch, 'patch', 512 * 1024);
+        const preview = guard.previewPatch(patch);
+        if (context) options.beforeWrite?.('apply_patch', context);
+        return {
+          target: preview.files.join(', '),
+          plan: preview.summary,
+          preview: { files: preview.files, patch, ...patchLineCounts(patch) }
+        };
+      },
+      run: async (input) => guard.previewPatch(stringArg(record(input).patch, 'patch', 512 * 1024)),
+      runApproved: async (input) => { const patch = stringArg(record(input).patch, 'patch', 512 * 1024); return guard.applyApprovedPatch(patch, patch); }
+    } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> },
+    {
+      name: 'apply_file_changes', description: '预览创建、更新或删除文件的精确计划，并在用户批准后应用。', schema: { type: 'object', required: ['changes'], properties: { changes: { type: 'array', maxItems: 50, items: { type: 'object' } } }, additionalProperties: false },
+      requiresApproval: true,
+      approval: (input, context) => {
+        const changes = record(input).changes;
+        const preview = guard.previewFileChanges(changes);
+        if (context) options.beforeWrite?.('apply_file_changes', context);
+        return { target: preview.files.join(', '), plan: preview.summary, preview };
+      },
+      run: async (input) => guard.previewFileChanges(record(input).changes),
+      runApproved: async (input) => {
+        const changes = record(input).changes;
+        const plan = JSON.stringify(changes);
+        return guard.applyApprovedFileChanges(plan, plan);
+      }
+    } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> }
+  ];
+
+  const executionTools: AgentTool[] = [
+    {
+      name: 'run_verification', description: '运行白名单中的项目测试、类型检查或构建脚本。', schema: { type: 'object', required: ['script'], properties: { script: { type: 'string', enum: [...VERIFICATION_SCRIPTS] } }, additionalProperties: false },
+      run: async (input, context) => { const script = stringArg(record(input).script, 'script', 80); options.beforeVerification?.(script); return executeVerification(guard.root, script, context.signal); }
+    }
+  ];
+
+  return [
+    ...readTools,
+    ...(options.allowWrite === false ? [] : writeTools),
+    ...(options.allowExecution === false ? [] : executionTools)
   ];
 }

@@ -33,7 +33,7 @@ describe('StarChat Agent workbench integration boundary', () => {
     expect(consoleSource).toContain("import { Live2DCanvas } from './Live2DCanvas';");
     expect(consoleSource).toContain('window.starchat.presentation.onEvent');
     expect(rendererBootstrapSource).toContain("if (role === 'pet' || role === 'settings')");
-    expect(mainSource).toContain("if (sourceWindow !== settingsWindow || !isSafePresentationEvent(payload))");
+    expect(mainSource).toContain("if (!isSettingsSender(event.sender) || !isSafePresentationEvent(payload))");
     expect(mainSource).toContain("settingsWindow.webContents.send('presentation:event', payload)");
   });
 

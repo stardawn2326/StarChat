@@ -18,6 +18,7 @@ export type SettingsPageId =
 export type WorkbenchPage = SettingsPageId | 'settings' | null;
 
 import type { PresentationSettings } from '../../shared/presentation-contract';
+import type { WorkspaceTrustState } from '../../shared/session';
 
 export interface SettingsCardDefinition {
   id: SettingsPageId;
@@ -41,7 +42,7 @@ export const SETTINGS_CARDS: readonly SettingsCardDefinition[] = [
   { id: 'permissions', title: '权限', icon: '✓', group: 'agent', description: '工作区边界、写入审批与隐私', summary: () => '最小权限 · 写入前审批' },
   { id: 'terminal', title: '终端', icon: '›_', group: 'integration', description: '受控真实命令与验证脚本', summary: () => 'Git 只读 · 项目验证' },
   { id: 'browser', title: '浏览器', icon: '◎', group: 'integration', description: '安全打开 http/https 网页', summary: () => '系统浏览器隔离' },
-  { id: 'git', title: 'Git', icon: '⌘', group: 'integration', description: '状态、差异与已暂存提交', summary: () => '不自动暂存 · 不自动推送' },
+  { id: 'git', title: 'Git', icon: '⌘', group: 'integration', description: '状态、差异与已暂存提交', summary: () => '已暂存提交 · 需工作区信任' },
   { id: 'behavior', title: '高级行为', icon: '⌘', group: 'personal', description: '桌宠交互、光标跟随与闲置活动', summary: ({ tracking }) => tracking ? '光标跟随已开启' : '光标跟随已关闭' }
 ];
 
@@ -77,6 +78,7 @@ export interface WorkbenchCapabilityContext {
   activeTaskCount: number;
   hasModel: boolean;
   modelLabel?: string;
+  workspaceTrust?: WorkspaceTrustState;
 }
 
 export function getWorkbenchCapabilities(context: WorkbenchCapabilityContext): readonly WorkbenchCapabilitySnapshot[] {
@@ -165,9 +167,11 @@ export function getWorkbenchCapabilities(context: WorkbenchCapabilityContext): r
       id: 'git-write',
       label: 'Git 写入',
       icon: '↯',
-      description: '未启用 commit、push 或其他 Git 写操作',
-      state: 'disabled',
-      statusLabel: '未启用'
+      description: context.workspaceTrust === 'trusted-execution'
+        ? '仅提交用户已暂存的变更；提交可能执行 Git Hooks，不自动暂存、不自动推送'
+        : '需 trusted-execution；只提交用户已暂存的变更，不自动暂存、不自动推送',
+      state: context.workspaceTrust === 'trusted-execution' ? 'available' : 'limited',
+      statusLabel: context.workspaceTrust === 'trusted-execution' ? '可提交已暂存内容' : '需信任'
     }
   ];
 }

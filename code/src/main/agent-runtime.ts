@@ -21,7 +21,7 @@ export interface AgentTool {
   schema: Record<string, unknown>;
   requiresApproval?: boolean;
   requestsInput?: boolean;
-  approval?: (args: unknown) => { target: string; plan: string; preview?: AgentChangePreview };
+  approval?: (args: unknown, context?: AgentToolContext) => { target: string; plan: string; preview?: AgentChangePreview };
   inputPrompt?: (args: unknown) => string;
   run: (args: unknown, context: AgentToolContext) => Promise<unknown>;
   runApproved?: (args: unknown, context: AgentToolContext) => Promise<unknown>;
@@ -183,7 +183,8 @@ export class AgentRuntime {
     }
     const args = parsed.value;
     if (tool.requiresApproval) {
-      const plan = tool.approval?.(args) ?? { target: tool.name, plan: `执行 ${tool.name} 的精确计划` };
+      const toolContext = { taskId: this.taskId, invocationId: call.id, signal };
+      const plan = tool.approval?.(args, toolContext) ?? { target: tool.name, plan: `执行 ${tool.name} 的精确计划` };
       this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'waiting_for_approval', summary: '等待用户批准' });
       this.pending = { call, tool, args, messages: [...this.messages], route };
       return { status: 'waiting_for_approval', approval: { invocationId: call.id, toolName: call.name, ...plan } };

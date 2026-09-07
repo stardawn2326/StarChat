@@ -9,6 +9,8 @@ import { AgentTaskPanel } from './AgentTaskPanel';
 import type { SessionMessage } from '../../shared/session';
 import { AGENT_TASK_STATUS_LABELS, currentAgentStep, estimateContextUsage, isActiveAgentTaskStatus } from './agent-ui-model';
 import { WorkbenchIcon } from './WorkbenchIcon';
+import { BrowserSpeechRecognitionProvider } from './stt-provider';
+import { BasicVad } from './vad';
 import {
   EmotionCueGate,
   LipSyncEnvelope,
@@ -172,6 +174,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   const [hideHistoricalAgentTask, setHideHistoricalAgentTask] = useState(false);
   const [showEarlierMessages, setShowEarlierMessages] = useState(false);
   const [taskDetailsOpen, setTaskDetailsOpen] = useState(!compact);
+  const [isListening, setIsListening] = useState(false);
   const activeId = useRef<string | null>(null);
   const disposedRef = useRef(false);
   const assistantText = useRef('');
@@ -191,8 +194,14 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   const cancelCueLeadRef = useRef<CancelPlayback>(null);
   const replyStartedRef = useRef(false);
   const lastAgentEventRef = useRef<AgentEvent | null>(null);
+  const sttProviderRef = useRef<BrowserSpeechRecognitionProvider | null>(null);
+  const vadRef = useRef(new BasicVad({ silenceMs: 1400 }));
+  const voiceBaseDraftRef = useRef('');
+  const voiceInterimRef = useRef('');
+  if (!sttProviderRef.current) sttProviderRef.current = new BrowserSpeechRecognitionProvider();
   settingsRef.current = state.settings;
   mappingsRef.current = state.role.presentation.semanticMappings;
+  const voiceAvailable = sttProviderRef.current.isAvailable();
 
   const latestAgentTask = agentTasks.find((task) => task.roleId === state.role.id) ?? null;
   const agentTask = selectedAgentTaskId
@@ -227,6 +236,51 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     if (!expressionGateRef.current.hasPending()) return;
     clearEmotionFlushTimer();
     emotionFlushTimerRef.current = window.setTimeout(flushPendingEmotion, 1700);
+  };
+
+  const stopVoiceInput = (): void => {
+    sttProviderRef.current?.stop();
+    vadRef.current.stop();
+    voiceInterimRef.current = '';
+    setIsListening(false);
+  };
+
+  const toggleVoiceInput = (): void => {
+    if (isListening) {
+      stopVoiceInput();
+      return;
+    }
+    const provider = sttProviderRef.current;
+    if (!provider?.isAvailable()) {
+      setError('当前运行环境未提供手动语音识别');
+      return;
+    }
+    voiceBaseDraftRef.current = draft.trim();
+    voiceInterimRef.current = '';
+    setError(null);
+    vadRef.current.start();
+    provider.start({
+      onText: (text, isFinal) => {
+        vadRef.current.markVoice();
+        if (isFinal) {
+          const base = voiceBaseDraftRef.current;
+          const next = [base, text].filter(Boolean).join(base ? ' ' : '');
+          voiceBaseDraftRef.current = next;
+          voiceInterimRef.current = '';
+          setDraft(next);
+          return;
+        }
+        voiceInterimRef.current = text;
+        const base = voiceBaseDraftRef.current;
+        setDraft([base, voiceInterimRef.current].filter(Boolean).join(base ? ' ' : ''));
+      },
+      onError: (message) => setError(message),
+      onEnd: () => {
+        vadRef.current.stop();
+        setIsListening(false);
+      }
+    });
+    setIsListening(true);
   };
 
   const cancelSpeech = (): void => {
@@ -355,10 +409,19 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
       const request = activeId.current;
       if (request) void window.starchat.chat.cancel(request);
       activeId.current = null;
-      setRequestId(null);
-      cancelSpeech();
-    };
+       setRequestId(null);
+       cancelSpeech();
+       stopVoiceInput();
+     };
   }, []);
+
+  useEffect(() => {
+    if (!isListening) return undefined;
+    const timer = window.setInterval(() => {
+      if (vadRef.current.tick()) stopVoiceInput();
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [isListening]);
 
   useEffect(() => {
     if (!agentEvent || agentEvent === lastAgentEventRef.current) return;
@@ -433,6 +496,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
       onRequestWorkspace();
       return;
     }
+    stopVoiceInput();
     cancelSpeech();
     emitDialogue('start');
     emitDialogue('listening');
@@ -465,6 +529,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
       if (isAgentTask) void window.starchat.agent.cancel(requestId);
       else void window.starchat.chat.cancel(requestId);
     }
+    stopVoiceInput();
     cancelSpeech();
     activeId.current = null;
     setRequestId(null);
@@ -518,8 +583,8 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
       <div className={`companion-composer agent-composer${referenceFixture ? ' is-reference-fixture' : ''}`} data-agent-ui="composer">
       <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件状态">{referenceFixture ? <><span className="agent-attachment-slot agent-attachment-preview"><span className="agent-attachment-code-preview" aria-hidden="true" /><span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span><span className="agent-attachment-slot agent-attachment-label">分销 45秒<span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span></> : <span className="agent-attachment-empty">当前仅支持文本消息，未添加附件</span>}</div></div>
       <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} disabled={!sessionId} placeholder={!sessionId ? '正在准备个人会话' : workspaceAvailable ? '向 StarChat 发送消息' : '个人对话；Agent 任务需选择工作区'} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
-       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button>{referenceFixture ? <span className="agent-composer-control" data-agent-composer-control="approval" aria-label="审批入口预览"><WorkbenchIcon name="agentStep" size={14} />帮我批准</span> : null}{waitingForApproval ? <button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />批准</button> : null}<span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model" title={`当前模型：${modelLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature" title={`生成强度：${temperatureLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入未启用" disabled title="语音输入尚未接入"><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!sessionId || !draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="sendUp" size={22} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
+       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button>{referenceFixture ? <span className="agent-composer-control" data-agent-composer-control="approval" aria-label="审批入口预览"><WorkbenchIcon name="agentStep" size={14} />帮我批准</span> : null}{waitingForApproval ? <button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />批准</button> : null}<span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model" title={`当前模型：${modelLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature" title={`生成强度：${temperatureLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className={`agent-composer-control is-mic${isListening ? ' is-active' : ''}`} type="button" data-agent-composer-control="mic" aria-label={isListening ? '停止语音输入' : voiceAvailable ? '开始语音输入' : '语音输入不可用'} disabled={!voiceAvailable && !isListening} onClick={toggleVoiceInput} title={isListening ? '停止语音输入' : voiceAvailable ? '手动语音输入，不会自动发送' : '当前运行环境未提供手动语音识别'}><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!sessionId || !draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="sendUp" size={22} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
     </div>
-    {!compact ? <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p> : null}
+    {!compact ? <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。输入支持手动语音识别，静音后停止，不会自动发送。</p> : null}
   </div>;
 }

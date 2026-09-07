@@ -107,6 +107,8 @@ export interface SettingsDetailsV2Props {
   onApiKeyChange: (value: string) => void;
   onSaveService: () => void;
   onClearApiKey: () => void;
+  onDeleteMemory?: (id: string) => void;
+  onClearMemories?: () => void;
 }
 
 function RangeField({ label, value, min, max, step, unit = '', onChange, reset }: { label: string; value: number; min: number; max: number; step: number; unit?: string; onChange: (value: number) => void; reset?: () => void }): JSX.Element {
@@ -216,8 +218,10 @@ function CapabilityStatus({ title, status, description }: { title: string; statu
 
 function GeneralDetails(props: SettingsDetailsV2Props): JSX.Element {
   const settings = props.settingsDraft;
+  const memories = props.state.memories ?? [];
   return <>
-    <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">GENERAL</span><h2>应用与桌宠</h2></div><span className="section-status">本地配置</span></div><ToggleField label="始终置顶" checked={settings.alwaysOnTop} onChange={(value) => props.onSettingsChange({ alwaysOnTop: value })} description="只影响透明桌宠窗口。" /><ToggleField label="光标跟随" checked={settings.cursorTrackingEnabled} onChange={(value) => props.onSettingsChange({ cursorTrackingEnabled: value })} description="使用当前 Live2D runtime 已实现的平滑跟随。" /><div className="quick-actions"><button className="secondary-button" type="button" onClick={() => window.starchat.app.togglePet()}>显示 / 隐藏桌宠</button><button className="secondary-button" type="button" onClick={() => window.starchat.pet.center()}>恢复桌宠位置</button></div></div>
+    <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">GENERAL</span><h2>应用与桌宠</h2></div><span className="section-status">本地配置</span></div><ToggleField label="始终置顶" checked={settings.alwaysOnTop} onChange={(value) => props.onSettingsChange({ alwaysOnTop: value })} description="只影响透明桌宠窗口。" /><ToggleField label="光标跟随" checked={settings.cursorTrackingEnabled} onChange={(value) => props.onSettingsChange({ cursorTrackingEnabled: value })} description="使用当前 Live2D runtime 已实现的平滑跟随。" /><ToggleField label="长期记忆" checked={settings.longTermMemoryEnabled} onChange={(value) => props.onSettingsChange({ longTermMemoryEnabled: value })} description="只保存安全、明确的用户事实；敏感信息会被拒绝。" /><div className="quick-actions"><button className="secondary-button" type="button" onClick={() => window.starchat.app.togglePet()}>显示 / 隐藏桌宠</button><button className="secondary-button" type="button" onClick={() => window.starchat.pet.center()}>恢复桌宠位置</button></div></div>
+    <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">MEMORY</span><h2>已保存的用户记忆</h2></div><span className="section-status">{settings.longTermMemoryEnabled ? `${memories.length} 条` : '已关闭'}</span></div><p className="detail-note">仅保存明确表达的安全事实；API Key、密码、Token、私钥和证件信息会被拒绝。记忆不会自动发送消息，关闭后不再写入或召回。</p>{memories.length === 0 ? <p className="detail-note">暂无可管理的资料记忆。</p> : <div className="voice-list">{memories.map((memory) => <div className="status-callout" key={memory.id}><strong>{memory.content}</strong><span>{memory.kind} · 置信度 {Math.round(memory.confidence * 100)}%</span><button className="secondary-button" type="button" onClick={() => props.onDeleteMemory?.(memory.id)}>删除</button></div>)}</div>}<div className="toolbar"><button className="secondary-button" type="button" disabled={memories.length === 0} onClick={() => { if (window.confirm('清空当前角色的全部长期记忆？此操作不可撤销。')) props.onClearMemories?.(); }}>清空长期记忆</button></div></div>
     <div className="detail-section"><h2>默认工作方式</h2><CapabilityStatus title="工作台会话" status="已启用" description="项目工作区、会话和 Agent 任务按本地状态持久化。" /><CapabilityStatus title="外部模型资源" status="只读" description="Live2D 源文件保持外部引用，不复制、不修改。" /></div>
   </>;
 }
@@ -241,7 +245,7 @@ function AgentDetails(props: SettingsDetailsV2Props): JSX.Element {
 }
 
 function PermissionsDetails(_props: SettingsDetailsV2Props): JSX.Element {
-  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">PERMISSIONS</span><h2>权限边界</h2></div><span className="section-status">最小权限</span></div><CapabilityStatus title="工作区读取" status="授权目录内" description="路径经过真实路径解析，阻止越界与敏感文件读取。" /><CapabilityStatus title="文件写入" status="每次审批" description="仅在展示精确补丁、目标文件和增删行数后允许写入。" /><CapabilityStatus title="终端" status="白名单" description="只运行 Git 只读命令和项目声明的验证脚本。" /><CapabilityStatus title="浏览器" status="系统隔离" description="仅打开 http/https，不读取 Cookie、密码或网页内容。" /><CapabilityStatus title="Git 写入" status="显式确认" description="只提交已暂存变更；不自动暂存，不自动推送。" /></div>;
+  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">PERMISSIONS</span><h2>权限边界</h2></div><span className="section-status">最小权限</span></div><CapabilityStatus title="工作区读取" status="授权目录内" description="路径经过真实路径解析，阻止越界与敏感文件读取。" /><CapabilityStatus title="文件写入" status="每次审批" description="仅在展示精确补丁、目标文件和增删行数后允许写入。" /><CapabilityStatus title="终端" status="白名单" description="只运行 Git 只读命令和项目声明的验证脚本。" /><CapabilityStatus title="浏览器" status="系统隔离" description="仅打开 http/https，不读取 Cookie、密码或网页内容。" /><CapabilityStatus title="Git 写入" status="需 trusted-execution" description="仅提交已暂存变更；提交可能执行 Git Hooks；不自动暂存、不自动推送。" /></div>;
 }
 
 function TerminalDetails(_props: SettingsDetailsV2Props): JSX.Element {
@@ -253,7 +257,7 @@ function BrowserDetails(_props: SettingsDetailsV2Props): JSX.Element {
 }
 
 function GitDetails(_props: SettingsDetailsV2Props): JSX.Element {
-  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">SOURCE CONTROL</span><h2>Git</h2></div><span className="section-status">工作区限定</span></div><CapabilityStatus title="状态与差异" status="可用" description="读取当前分支、HEAD、变更列表、diff 摘要和单文件 diff。" /><CapabilityStatus title="提交" status="已暂存内容" description="提交前显示确认；StarChat 不会替你运行 git add。" /><CapabilityStatus title="推送与远程" status="关闭" description="V1 不执行 push、pull、fetch 或远程凭据操作。" /></div>;
+  return <div className="detail-section"><div className="section-heading"><div><span className="section-kicker">SOURCE CONTROL</span><h2>Git</h2></div><span className="section-status">工作区限定</span></div><CapabilityStatus title="状态与差异" status="可用" description="读取当前分支、HEAD、变更列表、diff 摘要和单文件 diff。" /><CapabilityStatus title="提交" status="trusted-execution" description="仅提交你已经暂存的变更；提交可能触发 Git Hooks，提交前显示确认。" /><CapabilityStatus title="暂存与远程" status="关闭" description="StarChat 不运行 git add，也不执行 push、pull、fetch 或远程凭据操作。" /></div>;
 }
 
 function BehaviorDetails(props: SettingsDetailsV2Props): JSX.Element {

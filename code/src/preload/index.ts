@@ -209,6 +209,11 @@ const bridge = {
     deleteVoice: (id: string): Promise<PublicAppState> => ipcRenderer.invoke('voices:delete', { id }),
     previewVoice: (id: string, text: string): Promise<string> => ipcRenderer.invoke('voices:preview', { id, text })
   },
+  memory: {
+    list: (): Promise<import('../shared/memory').ProfileMemory[]> => ipcRenderer.invoke('memory:list'),
+    delete: (id: string): Promise<PublicAppState> => ipcRenderer.invoke('memory:delete', { id }),
+    clear: (): Promise<PublicAppState> => ipcRenderer.invoke('memory:clear')
+  },
   pet: {
     show: (): void => ipcRenderer.send('pet:show'),
     center: (): void => ipcRenderer.send('pet:center'),

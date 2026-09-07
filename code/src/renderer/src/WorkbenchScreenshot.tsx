@@ -49,7 +49,8 @@ function createScreenshotState(theme: 'light' | 'dark', live2dEntry: string | nu
     },
     live2dModels: [],
     companion: { roleId: DEFAULT_ROLE_PACKAGE.id, interactionCount: 3, affinity: 38, stageIndex: 1, stageLabel: '熟悉', memoryCount: 2 },
-    voices: []
+    voices: [],
+    memories: []
   };
 }
 

@@ -25,6 +25,7 @@ function setup() {
   const service = new AgentService({
     store,
     workspaceRoot: root,
+    resolveExecutionContext: (sessionId) => ({ sessionId: sessionId ?? 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
     getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
     createModel: () => ({ complete: vi.fn(async () => response) }),
     executeVerification,

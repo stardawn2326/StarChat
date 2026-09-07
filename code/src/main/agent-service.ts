@@ -17,6 +17,7 @@ import { WorkspaceGuard } from './agent-security';
 import { routeTurn } from './agent-router';
 import type { SessionExecutionContext } from './session-store';
 import { detectProject } from './project-detector';
+import { WorkspaceLockManager } from './workspace-lock-manager';
 
 function redact(text: string): string {
   return text
@@ -42,12 +43,12 @@ export interface AgentServiceOptions {
   now?: () => number;
   maxReadOnlyConcurrency?: number;
   executeVerification?: (root: string, script: string, signal: AbortSignal) => Promise<VerificationResult>;
+  workspaceLockManager?: WorkspaceLockManager;
 }
 
 interface LiveTask {
   runtime: AgentRuntime;
   controller: AbortController;
-  readOnly: boolean;
   workspaceRoot: string;
   wrote: boolean;
   changedFiles: string[];
@@ -70,16 +71,14 @@ function active(status: AgentTaskStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'waiting_for_approval' || status === 'waiting_for_input';
 }
 
-function likelyWrite(message: string): boolean {
-  return /(修改|修复|实现|新增|删除|重构|补丁|写入|运行.*并修复)/iu.test(message);
-}
-
 export class AgentService {
   private readonly options: AgentServiceOptions;
   private readonly live = new Map<string, LiveTask>();
+  private readonly workspaceLocks: WorkspaceLockManager;
 
   constructor(options: AgentServiceOptions) {
     this.options = options;
+    this.workspaceLocks = options.workspaceLockManager ?? new WorkspaceLockManager();
   }
 
   private now(): number {
@@ -100,6 +99,22 @@ export class AgentService {
     task.status = status;
     if (error) task.error = redact(error);
     this.save(task);
+    if (!active(status)) this.releaseWriteLock(task.id);
+  }
+
+  private releaseWriteLock(taskId: string): void {
+    const live = this.live.get(taskId);
+    if (!live) return;
+    try {
+      this.workspaceLocks.releaseWrite(live.workspaceRoot, taskId);
+    } catch {
+      // A removed workspace cannot retain an in-memory reservation.
+    }
+  }
+
+  private cleanupLiveTask(taskId: string): void {
+    this.releaseWriteLock(taskId);
+    this.live.delete(taskId);
   }
 
   private recordTool(task: AgentTask, event: AgentToolExecutionEvent): void {
@@ -115,21 +130,23 @@ export class AgentService {
     }
     if (event.status === 'completed' || event.status === 'failed') invocation.finishedAt = now;
     const live = this.live.get(task.id);
-    if (live && ['apply_patch', 'apply_file_changes'].includes(event.toolName) && event.status === 'completed') live.wrote = true;
+    if (live && ['apply_patch', 'apply_file_changes'].includes(event.toolName) && event.status === 'completed') {
+      live.wrote = true;
+      try {
+        this.workspaceLocks.promoteWrite(live.workspaceRoot, task.id);
+      } catch {
+        // The reservation was acquired before approval; keep the event record even
+        // if the workspace disappeared while the approved write was finishing.
+      }
+    }
     task.invocations = invocations.slice(-100);
     if (event.status !== 'running') task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'tool', status: event.status === 'completed' ? 'completed' : event.status.startsWith('waiting') ? 'waiting' : 'failed', summary: `${event.toolName}：${event.summary}`, createdAt: now, finishedAt: event.status === 'completed' || event.status === 'failed' ? now : undefined, invocationId: event.invocationId });
     this.save(task);
   }
 
-  private assertConcurrency(roleId: string, readOnly: boolean): void {
+  private assertConcurrency(roleId: string): void {
     const tasks = this.options.store.list().filter((task) => task.roleId === roleId && active(task.status));
-    if (readOnly) {
-      const readOnlyActive = tasks.filter((task) => !likelyWrite(task.message)).length;
-      if (readOnlyActive >= (this.options.maxReadOnlyConcurrency ?? 3)) throw new Error('只读 Agent 任务已达到并发上限');
-      if (tasks.some((task) => likelyWrite(task.message))) throw new Error('当前角色已有写任务运行，请等待其完成');
-    } else if (tasks.length > 0) {
-      throw new Error('当前角色已有任务运行；写任务默认互斥。');
-    }
+    if (tasks.length >= (this.options.maxReadOnlyConcurrency ?? 3)) throw new Error('Agent 任务已达到并发上限');
   }
 
   async start(input: AgentStartRequest, precomputedRoute?: AgentRouteDecision, resumedFromTaskId?: string): Promise<AgentStartResponse> {
@@ -146,8 +163,7 @@ export class AgentService {
       classifyAmbiguous: this.options.classifyAmbiguous ? () => this.options.classifyAmbiguous!(request.message, context) : undefined
     });
     if (route.route !== 'agent') throw new Error('当前消息被路由为陪伴对话，请使用普通发送。');
-    const readOnly = !likelyWrite(request.message);
-    this.assertConcurrency(context.roleId, readOnly);
+    this.assertConcurrency(context.roleId);
     const task: AgentTask = {
       id: randomUUID(), sessionId: execution.sessionId, roleId: context.roleId,
       message: redact(request.message), mode, route, status: 'queued', createdAt: this.now(), updatedAt: this.now(), currentStep: 0,
@@ -157,21 +173,29 @@ export class AgentService {
     task.steps[0].taskId = task.id;
     this.options.store.save(task);
     this.emit({ type: 'task', task, taskId: task.id, timestamp: this.now() });
-    void this.execute(task, context, readOnly, execution);
+    void this.execute(task, context, execution);
     return { taskId: task.id, route };
   }
 
-  private async execute(task: AgentTask, context: AgentServiceContext, readOnly: boolean, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): Promise<void> {
+  private async execute(task: AgentTask, context: AgentServiceContext, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): Promise<void> {
     const controller = new AbortController();
     let runtime: AgentRuntime | null = null;
+    const trust = execution.trust ?? 'untrusted';
+    const allowWrite = trust !== 'read-only';
+    const allowExecution = trust === 'trusted-execution';
     try {
       if (this.options.store.get(task.id)?.status === 'cancelled') return;
       const guard = new WorkspaceGuard(execution.workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
       runtime = new AgentRuntime({
         model: this.options.createModel(context),
         tools: createAgentTools(guard, this.options.executeVerification ?? runVerification, {
+          allowWrite,
+          allowExecution,
+          beforeWrite: (_toolName) => {
+            this.workspaceLocks.acquireWrite(execution.workspaceRoot, task.id, this.now());
+          },
           beforeVerification: () => {
-            if (execution.trust && execution.trust !== 'trusted-execution') throw new Error('当前工作区未信任脚本执行，请先在环境信息中允许执行');
+            if (!allowExecution) throw new Error('当前工作区未信任脚本执行，请先在环境信息中允许执行');
           }
         }),
         maxSteps: 8,
@@ -179,7 +203,7 @@ export class AgentService {
         toolTimeoutMs: 30_000,
         onTool: (event) => this.recordTool(task, event)
       });
-      this.live.set(task.id, { runtime, controller, readOnly, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust: execution.trust });
+      this.live.set(task.id, { runtime, controller, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust });
       task.status = 'running';
       task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: 'StarChat 已接手，正在规划后台步骤。', createdAt: this.now() });
       task.currentStep = 1;
@@ -190,7 +214,7 @@ export class AgentService {
       this.setStatus(task, 'failed', error instanceof Error ? error.message : 'Agent 执行失败');
     } finally {
       const current = this.options.store.get(task.id);
-      if (!current || !['waiting_for_approval', 'waiting_for_input'].includes(current.status)) this.live.delete(task.id);
+      if (!current || !['waiting_for_approval', 'waiting_for_input'].includes(current.status)) this.cleanupLiveTask(task.id);
     }
   }
 
@@ -268,7 +292,7 @@ export class AgentService {
     live?.runtime.cancel();
     live?.controller.abort();
     if (active(task.status)) this.setStatus(task, 'cancelled', '用户取消了任务');
-    this.live.delete(taskId);
+    this.cleanupLiveTask(taskId);
   }
 
   async approve(taskId: string, requestId: string, approved: boolean): Promise<void> {
@@ -277,12 +301,13 @@ export class AgentService {
     const live = this.live.get(taskId);
     if (!live) throw new Error('应用重启后任务已中断，不能继续执行');
     task.status = 'running'; task.approval = undefined; this.save(task);
+    if (!approved) this.releaseWriteLock(taskId);
     try {
       await this.finishRuntime(task, await live.runtime.approve(approved, live.controller.signal));
     } catch (error) {
       this.setStatus(task, 'failed', error instanceof Error ? error.message : '审批后继续执行失败');
     }
-    if (this.options.store.get(taskId)?.status !== 'waiting_for_approval' && this.options.store.get(taskId)?.status !== 'waiting_for_input') this.live.delete(taskId);
+    if (this.options.store.get(taskId)?.status !== 'waiting_for_approval' && this.options.store.get(taskId)?.status !== 'waiting_for_input') this.cleanupLiveTask(taskId);
   }
 
   async respond(taskId: string, requestId: string, value: string): Promise<void> {
@@ -296,7 +321,7 @@ export class AgentService {
     } catch (error) {
       this.setStatus(task, 'failed', error instanceof Error ? error.message : '补充信息后继续执行失败');
     }
-    if (this.options.store.get(taskId)?.status !== 'waiting_for_approval' && this.options.store.get(taskId)?.status !== 'waiting_for_input') this.live.delete(taskId);
+    if (this.options.store.get(taskId)?.status !== 'waiting_for_approval' && this.options.store.get(taskId)?.status !== 'waiting_for_input') this.cleanupLiveTask(taskId);
   }
 
   async retry(taskId: string): Promise<AgentStartResponse> {
@@ -308,4 +333,16 @@ export class AgentService {
 
   list(): AgentTask[] { return this.options.store.list(); }
   get(taskId: string): AgentTask | null { return this.options.store.get(taskId); }
+
+  shutdown(): void {
+    for (const task of this.options.store.list()) {
+      if (!active(task.status)) continue;
+      const live = this.live.get(task.id);
+      live?.runtime.cancel();
+      live?.controller.abort();
+      this.setStatus(task, 'cancelled', '应用正在关闭，任务已停止');
+      this.cleanupLiveTask(task.id);
+    }
+    this.workspaceLocks.clear();
+  }
 }

@@ -1,6 +1,6 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
+import { runGitReadOnlySync } from './git-runner';
 
 function normalized(value: string): string {
   return value.replaceAll('\\', '/').replace(/\/+/gu, '/').replace(/\/$/u, '').toLocaleLowerCase();
@@ -10,13 +10,7 @@ export function gitRootForWorkspace(workspaceDirectory: string): string | null {
   if (!isAbsolute(workspaceDirectory) || !existsSync(workspaceDirectory)) throw new Error('授权工作区不存在');
   try {
     const workspaceRoot = realpathSync(workspaceDirectory);
-    const gitRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
-      cwd: workspaceRoot,
-      encoding: 'utf8',
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 64 * 1024
-    }).trim();
+    const gitRoot = runGitReadOnlySync(workspaceRoot, ['rev-parse', '--show-toplevel']);
     return gitRoot ? realpathSync(gitRoot) : null;
   } catch {
     return null;

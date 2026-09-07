@@ -179,7 +179,7 @@ describe('settings center components', () => {
     expect(ready.find((item) => item.id === 'source')).toMatchObject({ state: 'available' });
     expect(ready.find((item) => item.id === 'terminal')).toMatchObject({ state: 'available', statusLabel: '受控可用' });
     expect(ready.find((item) => item.id === 'browser')).toMatchObject({ state: 'available', statusLabel: '受控可用' });
-    expect(ready.find((item) => item.id === 'git-write')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
+    expect(ready.find((item) => item.id === 'git-write')).toMatchObject({ state: 'limited', statusLabel: '需信任' });
     expect(settingsAppSource).toContain('window.starchat.agent.list()');
     expect(settingsAppSource).toContain('agentAvailable={agentTasks !== null}');
     expect(settingsAppSource).toContain('onCancelTask');

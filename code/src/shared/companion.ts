@@ -1,6 +1,7 @@
 import type { PersonalityRequestSnapshot } from './personality-contract';
 import type { PresentationEvent } from './presentation';
 import type { RoleSemanticMapping } from './role-package';
+import { applyRelationshipEvent, createRelationshipState, sanitizeRelationshipState, type RelationshipState } from './relationship-engine';
 
 export interface CompanionMemory {
   id: string;
@@ -15,6 +16,7 @@ export interface CompanionState {
   affinity: number;
   stageIndex: number;
   memories: CompanionMemory[];
+  relationship: RelationshipState;
   updatedAt: number;
 }
 
@@ -30,7 +32,7 @@ export interface CompanionSummary {
 const MEMORY_PREFIX = /(?:^|[，。！？!?,\s])(我(?:叫|是|喜欢|讨厌|希望|习惯|住在|来自|的))/u;
 
 export function createCompanionState(roleId: string, now = Date.now()): CompanionState {
-  return { schemaVersion: 1, roleId, interactionCount: 0, affinity: 0, stageIndex: 0, memories: [], updatedAt: now };
+  return { schemaVersion: 1, roleId, interactionCount: 0, affinity: 0, stageIndex: 0, memories: [], relationship: createRelationshipState(roleId, now), updatedAt: now };
 }
 
 export function sanitizeCompanionState(input: unknown, roleId: string, stageCount: number): CompanionState {
@@ -45,6 +47,7 @@ export function sanitizeCompanionState(input: unknown, roleId: string, stageCoun
     affinity: Math.min(100, Math.max(0, Number(source.affinity) || 0)),
     stageIndex: Math.min(Math.max(0, stageCount - 1), Math.max(0, Math.round(Number(source.stageIndex) || 0))),
     memories,
+    relationship: sanitizeRelationshipState(source.relationship, roleId),
     updatedAt: Number.isFinite(source.updatedAt) ? Number(source.updatedAt) : Date.now()
   };
 }
@@ -70,7 +73,11 @@ export function recordCompanionExchange(
   const memories = memory && !current.memories.some((item) => item.content === memory.content)
     ? [...current.memories, memory].slice(-20)
     : current.memories;
-  return { ...current, roleId: snapshot.roleId, interactionCount: current.interactionCount + 1, affinity, stageIndex, memories, updatedAt: now };
+  const relationship = applyRelationshipEvent(
+    sanitizeRelationshipState(current.relationship, snapshot.roleId),
+    { type: 'conversation', now, userMessage, assistantMessage: _assistantMessage }
+  );
+  return { ...current, roleId: snapshot.roleId, interactionCount: current.interactionCount + 1, affinity, stageIndex, memories, relationship, updatedAt: now };
 }
 
 export function companionSummary(state: CompanionState, stages: readonly string[]): CompanionSummary {

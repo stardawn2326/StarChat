@@ -1,9 +1,9 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute, posix, relative, sep } from 'node:path';
 import type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchEnvironment, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from '../shared/workbench';
 import { WorkspaceGuard } from './agent-security';
 import { assertGitRootMatchesWorkspace } from './git-boundary';
+import { runGitCommit, runGitReadOnly, runGitReadOnlySync, resolveGitExecutable } from './git-runner';
 import { verificationCommand } from './project-detector';
 import { runControlledProcess } from './process-runner';
 
@@ -36,7 +36,12 @@ export async function runWorkbenchCommand(rootDirectory: string, input: string, 
   const definition = commandText.startsWith('pnpm run ')
     ? verificationCommand(workspaceRoot, commandText.slice('pnpm run '.length))
     : { command: staticDefinition.command, args: staticDefinition.args, cwd: workspaceRoot };
-  const result = await executor(definition.command, definition.args, definition.cwd, signal);
+  const result = isGit && executor === spawnWorkbenchProcess
+    ? await runGitReadOnly(definition.cwd, definition.args, signal)
+    : await executor(definition.command, definition.args, definition.cwd, signal);
+  if (isGit && result.code !== 0) {
+    return { command: commandText, ok: false, code: result.code, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
+  }
   return { command: commandText, ok: result.code === 0, code: result.code, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
 }
 
@@ -54,24 +59,12 @@ export async function commitWorkbenchStaged(rootDirectory: string, messageInput:
   if (!message || message.length > 120 || /[\r\n]/u.test(message)) throw new Error('提交说明必须为 1–120 个字符的单行文本');
   const { environment } = environmentFor(rootDirectory);
   if (!environment.gitRoot) throw new Error('当前工作区不是 Git 仓库');
-  const staged = runGit(environment.gitRoot, ['diff', '--cached', '--name-only']);
+  const staged = runGitReadOnlySync(environment.gitRoot, ['diff', '--cached', '--name-only']);
   if (!staged) throw new Error('没有已暂存的变更；StarChat 不会自动暂存文件');
-  const result = await executor('git', ['commit', '-m', message], environment.gitRoot, signal);
+  const result = executor === spawnWorkbenchProcess
+    ? await runGitCommit(environment.gitRoot, message, signal)
+    : await executor(resolveGitExecutable(), ['commit', '-m', message], environment.gitRoot, signal);
   return { ok: result.code === 0, message, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
-}
-
-function runGit(root: string, args: string[]): string | null {
-  try {
-    return execFileSync('git', args, {
-      cwd: root,
-      encoding: 'utf8',
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      maxBuffer: 512 * 1024
-    }).trim();
-  } catch {
-    return null;
-  }
 }
 
 function safeChangedFiles(status: string | null): string[] {
@@ -86,10 +79,10 @@ function safeChangedFiles(status: string | null): string[] {
 function environmentFor(rootDirectory: string): { environment: WorkbenchEnvironment; source: WorkbenchSourceSnapshot } {
   if (!isAbsolute(rootDirectory) || !existsSync(rootDirectory)) throw new Error('授权工作区不存在');
   const workspaceRoot = realpathSync(rootDirectory);
-  const gitRoot = assertGitRootMatchesWorkspace(workspaceRoot, runGit(workspaceRoot, ['rev-parse', '--show-toplevel']));
-  const statusText = gitRoot ? runGit(workspaceRoot, ['status', '--short', '--untracked-files=all']) : null;
-  const branch = gitRoot ? runGit(workspaceRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']) : null;
-  const head = gitRoot ? runGit(workspaceRoot, ['rev-parse', '--short', 'HEAD']) : null;
+  const gitRoot = assertGitRootMatchesWorkspace(workspaceRoot, runGitReadOnlySync(workspaceRoot, ['rev-parse', '--show-toplevel']));
+  const statusText = gitRoot ? runGitReadOnlySync(workspaceRoot, ['status', '--short', '--untracked-files=all']) : null;
+  const branch = gitRoot ? runGitReadOnlySync(workspaceRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']) : null;
+  const head = gitRoot ? runGitReadOnlySync(workspaceRoot, ['rev-parse', '--short', 'HEAD']) : null;
   const changedFiles = safeChangedFiles(statusText);
   const gitStatus: WorkbenchEnvironment['gitStatus'] = !gitRoot
     ? 'unavailable'
@@ -100,7 +93,7 @@ function environmentFor(rootDirectory: string): { environment: WorkbenchEnvironm
     branch,
     head,
     changedFiles,
-    diffStat: gitRoot ? (runGit(workspaceRoot, ['diff', '--stat']) ?? '') : ''
+    diffStat: gitRoot ? (runGitReadOnlySync(workspaceRoot, ['diff', '--stat']) ?? '') : ''
   };
   return { environment, source };
 }
@@ -157,7 +150,7 @@ export function readWorkbenchDiff(rootDirectory: string, requestedPath: string):
   if (!environment.gitRoot) throw new Error('当前工作区不是 Git 仓库');
   const gitPath = relative(environment.gitRoot, target).replaceAll(sep, '/');
   if (gitPath.startsWith('../')) throw new Error('文件不在当前 Git 工作树内');
-  const raw = runGit(environment.gitRoot, ['diff', '--no-ext-diff', '--', gitPath]);
+  const raw = runGitReadOnlySync(environment.gitRoot, ['diff', '--no-ext-diff', '--', gitPath]);
   if (raw === null) throw new Error('读取 Git 差异失败');
   const maximum = 128 * 1024;
   return { path, patch: raw.slice(0, maximum), truncated: raw.length > maximum };

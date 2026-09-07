@@ -124,6 +124,11 @@ declare global {
         deleteVoice(id: string): Promise<PublicAppState>;
         previewVoice(id: string, text: string): Promise<string>;
       };
+      memory: {
+        list(): Promise<import('../../shared/memory').ProfileMemory[]>;
+        delete(id: string): Promise<PublicAppState>;
+        clear(): Promise<PublicAppState>;
+      };
       pet: {
         show(): void;
         center(): void;

@@ -1,0 +1,142 @@
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import {
+  MEMORY_SCHEMA_VERSION,
+  sanitizeConversationSummary,
+  sanitizeEpisodicMemory,
+  sanitizeProfileMemory,
+  type ConversationSummary,
+  type EpisodicMemory,
+  type MemorySnapshot,
+  type ProfileMemory
+} from '../shared/memory';
+
+interface PersistedMemorySnapshot {
+  version?: number;
+  profile?: unknown[];
+  episodic?: unknown[];
+  summaries?: unknown[];
+}
+
+function clone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+export class MemoryStore {
+  private readonly filePath: string;
+  private profile: ProfileMemory[] = [];
+  private episodic: EpisodicMemory[] = [];
+  private summaries: ConversationSummary[] = [];
+
+  constructor(filePath: string) {
+    this.filePath = filePath;
+    mkdirSync(dirname(filePath), { recursive: true });
+    this.load();
+  }
+
+  snapshot(): MemorySnapshot {
+    return clone({
+      version: MEMORY_SCHEMA_VERSION,
+      profile: this.profile,
+      episodic: this.episodic,
+      summaries: this.summaries
+    });
+  }
+
+  listProfile(roleId: string): ProfileMemory[] {
+    return clone(this.profile.filter((memory) => memory.roleId === roleId).sort((a, b) => b.updatedAt - a.updatedAt));
+  }
+
+  saveProfile(input: unknown): ProfileMemory {
+    const memory = sanitizeProfileMemory(input);
+    if (!memory) throw new Error('资料记忆为空或包含敏感信息');
+    const duplicate = this.profile.find((item) => item.roleId === memory.roleId && item.kind === memory.kind && item.content === memory.content);
+    if (duplicate) {
+      duplicate.confidence = Math.max(duplicate.confidence, memory.confidence);
+      duplicate.updatedAt = memory.updatedAt;
+      this.flush();
+      return clone(duplicate);
+    }
+    this.profile = [...this.profile.filter((item) => item.id !== memory.id), memory].slice(-200);
+    this.flush();
+    return clone(memory);
+  }
+
+  deleteProfile(roleId: string, id: string): void {
+    this.profile = this.profile.filter((memory) => !(memory.roleId === roleId && memory.id === id));
+    this.flush();
+  }
+
+  listEpisodic(roleId: string, sessionId?: string): EpisodicMemory[] {
+    return clone(this.episodic
+      .filter((memory) => memory.roleId === roleId && (!sessionId || memory.sessionId === sessionId))
+      .sort((a, b) => b.occurredAt - a.occurredAt));
+  }
+
+  saveEpisodic(input: unknown): EpisodicMemory {
+    const memory = sanitizeEpisodicMemory(input);
+    if (!memory || memory.importance < 0.6) throw new Error('事件记忆未达到重要性阈值或包含敏感信息');
+    const duplicate = this.episodic.find((item) => item.roleId === memory.roleId && item.sessionId === memory.sessionId && item.content === memory.content);
+    if (duplicate) {
+      duplicate.importance = Math.max(duplicate.importance, memory.importance);
+      duplicate.occurredAt = Math.max(duplicate.occurredAt, memory.occurredAt);
+      this.flush();
+      return clone(duplicate);
+    }
+    this.episodic = [...this.episodic.filter((item) => item.id !== memory.id), memory].slice(-400);
+    this.flush();
+    return clone(memory);
+  }
+
+  getSummary(sessionId: string): ConversationSummary | null {
+    const summary = this.summaries.find((item) => item.sessionId === sessionId);
+    return summary ? clone(summary) : null;
+  }
+
+  listSummaries(roleId: string): ConversationSummary[] {
+    return clone(this.summaries.filter((summary) => summary.roleId === roleId).sort((a, b) => b.updatedAt - a.updatedAt));
+  }
+
+  saveSummary(input: unknown): ConversationSummary {
+    const summary = sanitizeConversationSummary(input);
+    if (!summary) throw new Error('对话摘要为空或包含敏感信息');
+    this.summaries = [...this.summaries.filter((item) => item.sessionId !== summary.sessionId), summary].slice(-200);
+    this.flush();
+    return clone(summary);
+  }
+
+  clearRole(roleId: string): void {
+    this.profile = this.profile.filter((memory) => memory.roleId !== roleId);
+    this.episodic = this.episodic.filter((memory) => memory.roleId !== roleId);
+    this.summaries = this.summaries.filter((summary) => summary.roleId !== roleId);
+    this.flush();
+  }
+
+  private load(): void {
+    if (!existsSync(this.filePath)) return;
+    try {
+      const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as PersistedMemorySnapshot;
+      if (parsed.version !== MEMORY_SCHEMA_VERSION) return;
+      this.profile = Array.isArray(parsed.profile)
+        ? parsed.profile.map((item) => sanitizeProfileMemory(item)).filter((item): item is ProfileMemory => Boolean(item)).slice(-200)
+        : [];
+      this.episodic = Array.isArray(parsed.episodic)
+        ? parsed.episodic.map((item) => sanitizeEpisodicMemory(item)).filter((item): item is EpisodicMemory => Boolean(item && item.importance >= 0.6)).slice(-400)
+        : [];
+      this.summaries = Array.isArray(parsed.summaries)
+        ? parsed.summaries.map((item) => sanitizeConversationSummary(item)).filter((item): item is ConversationSummary => Boolean(item)).slice(-200)
+        : [];
+    } catch {
+      this.profile = [];
+      this.episodic = [];
+      this.summaries = [];
+    }
+  }
+
+  private flush(): void {
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    const temporary = `${this.filePath}.tmp-${process.pid}-${Date.now()}`;
+    writeFileSync(temporary, JSON.stringify(this.snapshot(), null, 2), 'utf8');
+    renameSync(temporary, this.filePath);
+  }
+}
