@@ -91,7 +91,7 @@
 
 第一次生产构建在受限环境中遇到 `spawn EPERM`，确认属于 Windows 沙箱对子进程的限制；在提升权限后使用同一命令成功完成，未发现源码编译错误。
 
-首次 GitHub Actions 运行 `34120568793` 的测试阶段暴露了 Windows Runner 临时仓库的差异路径计算问题。已在 `ee19e4fac4b5821fc42af520f96acdeeef6f11e5` 中改为基于同一 `WorkspaceGuard` realpath 计算相对路径，并保留越界、绝对路径和 `..` 拒绝；随后在 `32f0507139c8e2aed65677a5585f02c309300bb1` 中将 Vitest 固定为官方 singleThread 模式并保持测试隔离，降低 Windows Runner 的 worker 异常退出概率。CI 工作流将普通测试、GitRunner 和品牌迁移测试分别放入独立 Vitest 进程；`ae3e3427261e7b353c0e289fe528b473ab001a19` 又将品牌迁移测试的临时目录名改为 ASCII，保留迁移语义并规避 Windows Runner 对 Unicode 临时路径的 worker 退出。三组总计仍覆盖 102 个测试文件、522 个测试。本机与 CI 同构的三段测试已重新通过，最终远端 run `34123998853` 已通过；仅有 GitHub Actions 使用的 Node.js 20 弃用提示，不影响本次结果。
+首次 GitHub Actions 运行 `34120568793` 的测试阶段暴露了 Windows Runner 临时仓库的差异路径计算问题。已在 `ee19e4fac4b5821fc42af520f96acdeeef6f11e5` 中改为基于同一 `WorkspaceGuard` realpath 计算相对路径，并保留越界、绝对路径和 `..` 拒绝；随后在 `32f0507139c8e2aed65677a5585f02c309300bb1` 中将 Vitest 固定为官方 singleThread 模式并保持测试隔离，降低 Windows Runner 的 worker 异常退出概率。CI 工作流将普通测试、GitRunner 和品牌迁移测试分别放入独立 Vitest 进程；`ae3e3427261e7b353c0e289fe528b473ab001a19` 又将品牌迁移测试的临时目录名改为 ASCII，保留迁移语义并规避 Windows Runner 对 Unicode 临时路径的 worker 退出。三组总计仍覆盖 102 个测试文件、522 个测试。本机与 CI 同构的三段测试已重新通过，源码与测试提交的 run `34123998853` 以及随后详情文档提交的 run `34124203016` 均已通过；仅有 GitHub Actions 使用的 Node.js 20 弃用提示，不影响本次结果。
 
 ## 四、Windows 产物
 
@@ -121,8 +121,9 @@
 - 目标 remote：`https://github.com/stardawn2326/StarChat.git`
 - 目标分支：`master`
 - 本轮源码与测试修复提交链包含：`4a9c6f0`、`ee19e4f`、`32f0507`、`ae3e342`。
-- 最终推送头：`2d4a8366c20208399d3ae900c9eebcbcd63df778`。
-- GitHub Actions：[`34123998853`](https://github.com/stardawn2326/StarChat/actions/runs/34123998853)，已通过。
+- 源码与测试最终推送头：`2d4a8366c20208399d3ae900c9eebcbcd63df778`。
+- 详情文档状态提交：`33cd4f80ad140dc5fbe3175fdc98375bbbc74770`。
+- GitHub Actions：[`34123998853`](https://github.com/stardawn2326/StarChat/actions/runs/34123998853) 与 [`34124203016`](https://github.com/stardawn2326/StarChat/actions/runs/34124203016)，均已通过。
 
 ## 七、尚需进行的人工验收
 
