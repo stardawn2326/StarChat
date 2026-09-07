@@ -6,7 +6,10 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     // Keep Git/process-heavy tests deterministic on Windows CI runners.
     pool: 'threads',
-    minWorkers: 1,
-    maxWorkers: 1
+    poolOptions: {
+      threads: {
+        singleThread: true
+      }
+    }
   }
 });
