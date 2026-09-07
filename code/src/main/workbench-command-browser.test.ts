@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { normalizeWorkbenchUrl, runWorkbenchCommand } from './workbench-service';
 
 describe('bounded terminal and browser workbench services', () => {
@@ -11,8 +12,9 @@ describe('bounded terminal and browser workbench services', () => {
 
   it('runs only bounded real commands in the authorized workspace', async () => {
     const executor = vi.fn(async () => ({ code: 0, output: 'ok' }));
-    await expect(runWorkbenchCommand(import.meta.dirname, 'git status --short', new AbortController().signal, executor)).resolves.toMatchObject({ ok: true, command: 'git status --short', output: 'ok' });
-    expect(executor).toHaveBeenCalledWith('git', ['status', '--short'], expect.stringContaining('src'), expect.any(AbortSignal));
+    const workspaceRoot = resolve(import.meta.dirname, '../../..');
+    await expect(runWorkbenchCommand(workspaceRoot, 'git status --short', new AbortController().signal, executor)).resolves.toMatchObject({ ok: true, command: 'git status --short', output: 'ok' });
+    expect(executor).toHaveBeenCalledWith('git', ['status', '--short'], workspaceRoot, expect.any(AbortSignal));
     await expect(runWorkbenchCommand(import.meta.dirname, 'Remove-Item anything', new AbortController().signal, executor)).rejects.toThrow(/不在受控白名单/);
   });
 });

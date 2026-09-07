@@ -9,6 +9,7 @@ import {
   Menu,
   nativeImage,
   protocol,
+  safeStorage,
   screen,
   shell,
   Tray
@@ -52,7 +53,7 @@ import type { PresentationEvent, PresentationLayer } from '../shared/presentatio
 import { clampPetWindowBounds, nextPetResizeBounds, sameWindowBounds, type PetBoundsChange, type PetPointerOperation, type WindowBounds } from '../shared/window-contract';
 import { petInteractionEnabled, petInteractionSettingsForEnabled } from '../shared/pet-interaction';
 import { streamChatCompletion, testChatConnection } from './api/openai-compatible';
-import { SettingsStore } from './settings-store';
+import { createSafeStorageAdapter, SettingsStore } from './settings-store';
 import { inspectExternalLive2DModel } from './live2d-importer';
 import { Live2DModelRegistry, Live2DModelRegistryError, type Live2DModelInspection } from './live2d-model-registry';
 import { nextPetDragBounds } from './window-drag';
@@ -64,11 +65,12 @@ import { CubismRuntimeSession } from './cubism-runtime-session';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
 import { SessionStore } from './session-store';
-import type { SessionRenameRequest, SessionSnapshot } from '../shared/session';
+import type { SessionRenameRequest, SessionSnapshot, WorkspaceTrustState } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
 import { commitWorkbenchStaged, formatWorkbenchShare, inspectWorkbench, normalizeWorkbenchUrl, previewWorkbenchFile, readWorkbenchDiff, runWorkbenchCommand } from './workbench-service';
 import { runVerification } from './agent-tools';
+import { isIpcWindow, requireIpcWindow } from './ipc-guard';
 import {
   resolveWorkbenchWindowState,
   WORKBENCH_MIN_SIZE
@@ -1155,6 +1157,18 @@ function bindAgentTaskSender(taskId: string, sender: Electron.WebContents): void
   if (task && !sender.isDestroyed()) sender.send('agent:event', { type: 'task', taskId, task, timestamp: Date.now() } satisfies AgentEvent);
 }
 
+function activeWorkbenchContext(): ReturnType<SessionStore['sessionContext']> {
+  const sessionId = sessionStore.snapshot().activeSessionId;
+  if (!sessionId) throw new Error('请先选择一个工作区会话');
+  const context = sessionStore.sessionContext(sessionId);
+  if (!context.workspaceRoot) throw new Error('当前是个人会话，请先选择工作区后再使用项目工具');
+  return context;
+}
+
+function requireTrustedWorkspaceExecution(context: ReturnType<typeof activeWorkbenchContext>): void {
+  if (context.trust !== 'trusted-execution') throw new Error('当前工作区未信任脚本执行，请在环境信息中允许执行后重试');
+}
+
 async function startRoutedChat(sender: Electron.WebContents, request: StartChatRequest): Promise<string> {
   const message = typeof request?.message === 'string' ? request.message.trim() : '';
   if (!message) throw new Error('消息不能为空');
@@ -1302,83 +1316,108 @@ function flushPendingCubismRuntimeCommands(): void {
 }
 
 function registerIpc(): void {
-  ipcMain.handle('state:get', () => getPublicState());
+  ipcMain.handle('state:get', (event) => {
+    const windows = { settingsWindow, petWindow };
+    if (!isIpcWindow(event.sender, 'settings', windows) && !isIpcWindow(event.sender, 'pet', windows)) {
+      throw new Error('未知窗口不可读取应用状态');
+    }
+    return getPublicState();
+  });
   ipcMain.handle('sessions:snapshot', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以读取会话');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     return sessionStore.snapshot();
   });
   ipcMain.handle('sessions:choose-workspace', async (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以选择工作区');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const selected = await dialog.showOpenDialog(settingsWindow!, { title: '选择 StarChat 工作区', properties: ['openDirectory'] });
     if (selected.canceled || !selected.filePaths[0]) return sessionStore.snapshot();
     return publishSessionSnapshot(sessionStore.authorizeWorkspace(selected.filePaths[0], agentContext().roleId));
   });
   ipcMain.handle('sessions:select-workspace', (event, workspaceId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof workspaceId !== 'string') throw new Error('工作区选择请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof workspaceId !== 'string') throw new Error('工作区选择请求无效');
     return publishSessionSnapshot(sessionStore.selectWorkspace(workspaceId, agentContext().roleId));
   });
   ipcMain.handle('sessions:create', (event, workspaceId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof workspaceId !== 'string') throw new Error('新建会话请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof workspaceId !== 'string') throw new Error('新建会话请求无效');
     return publishSessionSnapshot(sessionStore.createSession(workspaceId, agentContext().roleId));
   });
+  ipcMain.handle('sessions:create-personal', (event) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    return publishSessionSnapshot(sessionStore.createPersonalSession(agentContext().roleId));
+  });
+  ipcMain.handle('sessions:set-trust', (event, request: { workspaceId?: unknown; trust?: unknown }) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.workspaceId !== 'string' || !['untrusted', 'read-only', 'trusted-execution'].includes(String(request.trust))) throw new Error('工作区信任请求无效');
+    return publishSessionSnapshot(sessionStore.setWorkspaceTrust(request.workspaceId, request.trust as WorkspaceTrustState));
+  });
   ipcMain.handle('sessions:select', (event, sessionId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof sessionId !== 'string') throw new Error('会话选择请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof sessionId !== 'string') throw new Error('会话选择请求无效');
     return publishSessionSnapshot(sessionStore.selectSession(sessionId));
   });
   ipcMain.handle('sessions:rename', (event, request: SessionRenameRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.sessionId !== 'string' || typeof request.title !== 'string') throw new Error('会话重命名请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || typeof request.sessionId !== 'string' || typeof request.title !== 'string') throw new Error('会话重命名请求无效');
     return publishSessionSnapshot(sessionStore.renameSession(request.sessionId, request.title));
   });
   ipcMain.handle('sessions:delete', (event, sessionId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof sessionId !== 'string') throw new Error('会话删除请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof sessionId !== 'string') throw new Error('会话删除请求无效');
     return publishSessionSnapshot(sessionStore.deleteSession(sessionId, agentContext().roleId));
   });
   ipcMain.handle('workbench:inspect', (event, request: { kind?: unknown; path?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以读取工作区状态');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const kind = request?.kind === 'resources' || request?.kind === 'source' ? request.kind : null;
     if (!kind) throw new Error('工作区检查类型无效');
     if (request.path !== undefined && typeof request.path !== 'string') throw new Error('工作区路径无效');
-    return inspectWorkbench(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, kind, request.path ?? '');
+    return inspectWorkbench(activeWorkbenchContext().workspaceRoot, kind, request.path ?? '');
   });
   ipcMain.handle('workbench:preview-file', (event, request: { path?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.path !== 'string') throw new Error('文件预览请求无效');
-    return previewWorkbenchFile(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, request.path);
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.path !== 'string') throw new Error('文件预览请求无效');
+    return previewWorkbenchFile(activeWorkbenchContext().workspaceRoot, request.path);
   });
   ipcMain.handle('workbench:diff', (event, request: { path?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.path !== 'string') throw new Error('差异读取请求无效');
-    return readWorkbenchDiff(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, request.path);
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.path !== 'string') throw new Error('差异读取请求无效');
+    return readWorkbenchDiff(activeWorkbenchContext().workspaceRoot, request.path);
   });
   ipcMain.handle('workbench:verify', async (event, request: { script?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.script !== 'string') throw new Error('验证请求无效');
-    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
-    const verificationRoot = existsSync(join(workspaceRoot, 'package.json')) ? workspaceRoot : join(workspaceRoot, 'code');
-    return runVerification(verificationRoot, request.script, new AbortController().signal);
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.script !== 'string') throw new Error('验证请求无效');
+    const context = activeWorkbenchContext();
+    requireTrustedWorkspaceExecution(context);
+    return runVerification(context.workspaceRoot, request.script, new AbortController().signal);
   });
   ipcMain.handle('workbench:command', async (event, request: { command?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.command !== 'string') throw new Error('终端命令请求无效');
-    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
-    return runWorkbenchCommand(workspaceRoot, request.command, new AbortController().signal);
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.command !== 'string') throw new Error('终端命令请求无效');
+    const context = activeWorkbenchContext();
+    if (request.command.trim().toLocaleLowerCase().startsWith('pnpm ')) requireTrustedWorkspaceExecution(context);
+    return runWorkbenchCommand(context.workspaceRoot, request.command, new AbortController().signal);
   });
   ipcMain.handle('workbench:open-url', async (event, request: { url?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.url !== 'string') throw new Error('浏览器地址请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.url !== 'string') throw new Error('浏览器地址请求无效');
     const url = normalizeWorkbenchUrl(request.url);
     await shell.openExternal(url);
     return { ok: true as const, url };
   });
   ipcMain.handle('workbench:git-commit', async (event, request: { message?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.message !== 'string') throw new Error('Git 提交请求无效');
-    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
-    return commitWorkbenchStaged(workspaceRoot, request.message, new AbortController().signal);
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof request?.message !== 'string') throw new Error('Git 提交请求无效');
+    return commitWorkbenchStaged(activeWorkbenchContext().workspaceRoot, request.message, new AbortController().signal);
   });
   ipcMain.handle('workbench:share', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以分享环境摘要');
-    const summary = formatWorkbenchShare(inspectWorkbench(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, 'source'));
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    const summary = formatWorkbenchShare(inspectWorkbench(activeWorkbenchContext().workspaceRoot, 'source'));
     clipboard.writeText(summary.text);
     return summary;
   });
   ipcMain.handle('window:toggle-maximize', (event, requestedState?: unknown) => {
-    const targetWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以切换最大化');
+    const targetWindow = requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const shouldMaximize = typeof requestedState === 'boolean' ? requestedState : !targetWindow.isMaximized();
     if (shouldMaximize && !targetWindow.isMaximized()) targetWindow.maximize();
     if (!shouldMaximize && targetWindow.isMaximized()) targetWindow.unmaximize();
@@ -1388,12 +1427,11 @@ function registerIpc(): void {
     return maximized;
   });
   ipcMain.handle('window:is-maximized', (event) => {
-    const targetWindow = BrowserWindow.fromWebContents(event.sender);
-    if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以读取最大化状态');
+    const targetWindow = requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     return targetWindow.isMaximized();
   });
   ipcMain.handle('api:test-connection', async (event, request: ConnectionTestRequest): Promise<ConnectionTestResult> => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以测试服务连接');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const apiKey = typeof request?.apiKey === 'string' && request.apiKey.trim() ? request.apiKey.trim() : getStore().readSecrets().apiKey;
     if (!apiKey) throw new Error('请先输入或保存 API Key');
     const current = getStore().readSettings();
@@ -1401,7 +1439,7 @@ function registerIpc(): void {
     return { ok: true, message: '连接成功，服务已返回有效响应。' };
   });
   ipcMain.handle('tts:synthesize', async (event, request: { text?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口请求语音');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const text = typeof request?.text === 'string' ? request.text : '';
     const settings = getStore().readSettings();
     const profile = settings.cosyVoiceMode === 'zero-shot'
@@ -1415,7 +1453,7 @@ function registerIpc(): void {
     } : undefined);
   });
   ipcMain.handle('voices:import', async (event, request: { name?: unknown; promptText?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口导入音色');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const result = await dialog.showOpenDialog(settingsWindow!, {
       title: '选择 3–30 秒参考 WAV', properties: ['openFile'], filters: [{ name: 'WAV 音频', extensions: ['wav'] }]
     });
@@ -1430,21 +1468,21 @@ function registerIpc(): void {
     return getPublicState();
   });
   ipcMain.handle('voices:activate', (event, request: { id?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口切换音色');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const id = typeof request?.id === 'string' ? request.id : null;
     if (id && !voiceProfileStore.list().some((item) => item.id === id)) throw new Error('音色不存在');
     getStore().save({ cosyVoiceMode: id ? 'zero-shot' : 'sft', activeVoiceProfileId: id });
     sendStateChanged(); return getPublicState();
   });
   ipcMain.handle('voices:delete', (event, request: { id?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口删除音色');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const id = typeof request?.id === 'string' ? request.id : '';
     voiceProfileStore.delete(id);
     if (getStore().readSettings().activeVoiceProfileId === id) getStore().save({ cosyVoiceMode: 'sft', activeVoiceProfileId: null });
     sendStateChanged(); return getPublicState();
   });
   ipcMain.handle('voices:preview', async (event, request: { id?: unknown; text?: unknown }) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只允许设置窗口试听音色');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const profile = voiceProfileStore.list().find((item) => item.id === request?.id);
     if (!profile) throw new Error('音色不存在');
     const settings = getStore().readSettings();
@@ -1455,7 +1493,8 @@ function registerIpc(): void {
       promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
     });
   });
-  ipcMain.handle('settings:save', async (_event, request: SaveSettingsRequest) => {
+  ipcMain.handle('settings:save', async (event, request: SaveSettingsRequest) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const store = getStore();
     const previousSettings = store.readSettings();
     const candidate = {
@@ -1525,18 +1564,14 @@ function registerIpc(): void {
     return pending ?? getPublicState();
   });
   ipcMain.handle('roles:save', (event, request: RoleSaveRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以保存角色包');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const role = validateRolePackage(request?.role);
     getStore().saveRolePackage(role);
     if (getStore().readSettings().activeRoleId === role.id) sendStateChanged();
     return getPublicState();
   });
   ipcMain.handle('roles:activate', (event, request: RoleIdRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以切换角色包');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const role = getStore().readRolePackages().find((item) => item.id === request?.id);
     if (!role) throw new Error('角色包不存在');
     getStore().save({ activeRoleId: role.id });
@@ -1544,9 +1579,7 @@ function registerIpc(): void {
     return getPublicState();
   });
   ipcMain.handle('roles:delete', (event, request: RoleIdRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以删除角色包');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     if (isBuiltinRoleId(request?.id ?? '')) throw new Error('内置角色不可删除，请先复制为自定义角色');
     getStore().deleteRolePackage(request?.id ?? '');
     if (getStore().readSettings().activeRoleId === request?.id) getStore().save({ activeRoleId: DEFAULT_ROLE_PACKAGE.id });
@@ -1554,9 +1587,7 @@ function registerIpc(): void {
     return getPublicState();
   });
   ipcMain.handle('roles:import', async (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以导入角色包');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const result = await dialog.showOpenDialog(settingsWindow!, {
       title: '导入 StarChat 角色包',
       properties: ['openFile'],
@@ -1570,9 +1601,7 @@ function registerIpc(): void {
     return getPublicState();
   });
   ipcMain.handle('roles:export', async (event, request: RoleIdRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以导出角色包');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const role = getStore().readRolePackages().find((item) => item.id === request?.id);
     if (!role) throw new Error('角色包不存在');
     const result = await dialog.showSaveDialog(settingsWindow!, {
@@ -1648,7 +1677,8 @@ function registerIpc(): void {
     }
     return latestCubismMetrics;
   });
-  ipcMain.handle('live2d:inspect', (_event, request: { path: string }) => {
+  ipcMain.handle('live2d:inspect', (event, request: { path: string }) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const path = request?.path ?? '';
     if (path.toLowerCase().endsWith('.zip')) {
       return getLive2DRegistry().importSelection(path).state;
@@ -1656,18 +1686,14 @@ function registerIpc(): void {
     return inspectExternalLive2DModel(path);
   });
   ipcMain.handle('live2d:import', (event, request: { path?: unknown }): Live2DModelImportResult => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以导入外部 Live2D 模型');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const path = typeof request?.path === 'string' ? request.path : '';
     if (!path.trim()) throw new Error('没有选择外部 Live2D 模型');
     const imported = getLive2DRegistry().importSelection(path);
     return { ...imported, models: getLive2DRegistry().list() };
   });
   ipcMain.handle('live2d:remove', (event, request: Live2DModelIdRequest): PublicAppState => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
-      throw new Error('只有设置窗口可以移除外部 Live2D 模型记录');
-    }
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const record = getLive2DRegistry().list().find((candidate) => candidate.id === request?.id);
     if (!record) throw new Error('模型记录不存在');
     if (getStore().readSettings().live2dModelPath === record.entryPath) {
@@ -1678,7 +1704,8 @@ function registerIpc(): void {
     sendStateChanged();
     return getPublicState();
   });
-  ipcMain.handle('live2d:choose-file', async () => {
+  ipcMain.handle('live2d:choose-file', async (event) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const result = await dialog.showOpenDialog({
       title: '选择 Live2D model3.json 或 ZIP 模型包',
       properties: ['openFile'],
@@ -1686,7 +1713,8 @@ function registerIpc(): void {
     });
     return result.canceled ? null : result.filePaths[0] ?? null;
   });
-  ipcMain.handle('live2d:choose-directory', async () => {
+  ipcMain.handle('live2d:choose-directory', async (event) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const result = await dialog.showOpenDialog({
       title: '选择 Live2D 模型目录',
       properties: ['openDirectory']
@@ -1899,45 +1927,50 @@ function registerIpc(): void {
     petWindow?.webContents.send('starchat:settings-preview', detail);
   });
   ipcMain.handle('chat:start', (event, request: StartChatRequest) => {
-    const sourceWindow = BrowserWindow.fromWebContents(event.sender);
-    if (sourceWindow !== settingsWindow) throw new Error('只有设置窗口可以开始对话');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     return startRoutedChat(event.sender, request);
   });
   ipcMain.handle('chat:cancel', async (event, requestId: string) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof requestId !== 'string') return;
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof requestId !== 'string') return;
     activeRequests.get(requestId)?.abort();
     if (!activeRequests.has(requestId)) await getAgentService().cancel(requestId).catch(() => undefined);
   });
   ipcMain.handle('agent:start', async (event, request: AgentStartRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以开始 Agent 任务');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const started = await getAgentService().start(sanitizeAgentStartRequest(request));
     bindAgentTaskSender(started.taskId, event.sender);
     return started;
   });
   ipcMain.handle('agent:retry', async (event, taskId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 重试请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof taskId !== 'string') throw new Error('Agent 重试请求无效');
     const started = await getAgentService().retry(taskId);
     bindAgentTaskSender(started.taskId, event.sender);
     return started;
   });
   ipcMain.handle('agent:cancel', async (event, taskId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
     await getAgentService().cancel(taskId);
   });
   ipcMain.handle('agent:approve', async (event, request: AgentApproveRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.approved !== 'boolean') throw new Error('Agent 审批请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.approved !== 'boolean') throw new Error('Agent 审批请求无效');
     await getAgentService().approve(request.taskId, request.requestId, request.approved);
   });
   ipcMain.handle('agent:respond', async (event, request: AgentRespondRequest) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.value !== 'string') throw new Error('Agent 输入请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || typeof request.taskId !== 'string' || typeof request.requestId !== 'string' || typeof request.value !== 'string') throw new Error('Agent 输入请求无效');
     await getAgentService().respond(request.taskId, request.requestId, request.value);
   });
   ipcMain.handle('agent:list', (event) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以读取 Agent 任务');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     return getAgentService().list();
   });
   ipcMain.handle('agent:get', (event, taskId: unknown) => {
-    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
     return getAgentService().get(taskId);
   });
 }
@@ -1953,14 +1986,15 @@ if (singleInstanceLock) {
       join(appDataDir, '白音AI助手'),
       join(appDataDir, 'baoyin')
     ]);
-    settingsStore = new SettingsStore(userDataDir);
+    settingsStore = new SettingsStore(userDataDir, createSafeStorageAdapter(safeStorage));
     voiceProfileStore = new VoiceProfileStore(userDataDir);
     live2dRegistry = new Live2DModelRegistry(userDataDir);
     agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
+    sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
     agentService = new AgentService({
       store: agentStore,
-      resolveExecutionContext: (sessionId) => sessionStore.executionContext(sessionId ?? ''),
+      resolveExecutionContext: (sessionId) => sessionStore.sessionContext(sessionId ?? sessionStore.snapshot().activeSessionId ?? ''),
       getContext: agentContext,
       createModel: (context) => {
         if (!context.apiKey) throw new Error('请先在设置中保存 API Key，Agent 才能执行模型步骤');

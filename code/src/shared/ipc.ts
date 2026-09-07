@@ -101,7 +101,12 @@ export interface StartChatRequest {
   sessionId: string;
 }
 
-export type { AuthorizedWorkspace, SessionMessage, SessionMessageAppendRequest, SessionRenameRequest, SessionSnapshot, WorkbenchSession } from './session';
+export type { AuthorizedWorkspace, SessionMessage, SessionMessageAppendRequest, SessionRenameRequest, SessionSnapshot, WorkbenchSession, WorkspaceTrustState } from './session';
+
+export interface SessionTrustRequest {
+  workspaceId: string;
+  trust: import('./session').WorkspaceTrustState;
+}
 
 export interface AgentApproveRequest {
   taskId: string;

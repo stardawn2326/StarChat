@@ -63,6 +63,7 @@ interface AgentConsoleProps {
   onModeChange: (mode: AgentMode) => void;
   onNewConversation?: () => void;
   onMessageSent?: (message: string) => void;
+  onRequestWorkspace?: () => void;
   onShowPet?: () => void;
   characterVisible?: boolean;
   contextUsageOverride?: number;
@@ -98,7 +99,7 @@ interface CharacterDragState {
   moved: boolean;
 }
 
-export function AgentConsole({ state, agentTasks, agentEvent, onModeChange, onNewConversation, onMessageSent, onShowPet = () => undefined, characterVisible = true, contextUsageOverride, referenceFixture = false, initialMessages = [], sessionId = '', workspaceAvailable = true }: AgentConsoleProps): JSX.Element {
+export function AgentConsole({ state, agentTasks, agentEvent, onModeChange, onNewConversation, onMessageSent, onRequestWorkspace = () => undefined, onShowPet = () => undefined, characterVisible = true, contextUsageOverride, referenceFixture = false, initialMessages = [], sessionId = '', workspaceAvailable = true }: AgentConsoleProps): JSX.Element {
   const referenceScale = referenceFixture ? Math.min(window.innerWidth / 1622, window.innerHeight / 969) : 1;
   const referenceCharacterWidth = 332.265625 * referenceScale;
   const characterResetWidth = referenceFixture ? referenceCharacterWidth : defaultWorkbenchLayoutState({ width: window.innerWidth, height: window.innerHeight }).characterWidth;
@@ -282,7 +283,7 @@ export function AgentConsole({ state, agentTasks, agentEvent, onModeChange, onNe
             {referenceFixture ? <div className="wb-plan-actions" aria-label="轨迹操作"><span className="wb-plan-action"><WorkbenchIcon name="copy" size={17} /></span><span className="wb-plan-action"><WorkbenchIcon name="thumbsUp" size={17} /></span><span className="wb-plan-action"><WorkbenchIcon name="thumbsDown" size={17} /></span><span className="wb-plan-action"><WorkbenchIcon name="refresh" size={17} /></span></div> : <div className="wb-plan-actions" aria-label="轨迹状态"><span>{agentEvent ? `最近事件：${agentEvent.type}` : '等待任务事件'}</span></div>}
           </div>
         </div> : null}
-        <CompanionChat state={state} agentTasks={agentTasks} agentEvent={agentEvent} onModeChange={onModeChange} onNewConversation={onNewConversation} onMessageSent={onMessageSent} showRouteControl={false} compact={!referenceFixture} showStatusSummary={false} contextUsageOverride={contextUsageOverride} referenceFixture={referenceFixture} initialMessages={initialMessages} sessionId={sessionId} workspaceAvailable={workspaceAvailable} />
+        <CompanionChat state={state} agentTasks={agentTasks} agentEvent={agentEvent} onModeChange={onModeChange} onNewConversation={onNewConversation} onMessageSent={onMessageSent} onRequestWorkspace={onRequestWorkspace} showRouteControl={false} compact={!referenceFixture} showStatusSummary={false} contextUsageOverride={contextUsageOverride} referenceFixture={referenceFixture} initialMessages={initialMessages} sessionId={sessionId} workspaceAvailable={workspaceAvailable} />
       </div>
     </div>
   </section>;

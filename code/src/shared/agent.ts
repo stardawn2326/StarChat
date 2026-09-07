@@ -73,6 +73,11 @@ export interface AgentChangePreview {
   deletions: number;
 }
 
+export type AgentFileChange =
+  | { type: 'create'; path: string; content: string }
+  | { type: 'update'; path: string; content: string }
+  | { type: 'delete'; path: string };
+
 export interface ToolInvocation {
   id: string;
   taskId: string;

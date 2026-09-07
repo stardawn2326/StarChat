@@ -216,6 +216,7 @@ function App(): JSX.Element {
   const modelViewport = useMemo(() => modelViewportForPath(settings, settings.live2dModelPath), [settings]);
   const activeWorkspace = sessionSnapshot.workspaces.find((workspace) => workspace.id === sessionSnapshot.activeWorkspaceId) ?? null;
   const activeSession = sessionSnapshot.sessions.find((session) => session.id === sessionSnapshot.activeSessionId) ?? null;
+  const workspaceAvailable = Boolean(activeWorkspace && activeSession?.contextType === 'workspace');
   const visibleAgentTasks = (agentTasks ?? []).filter((task) => task.sessionId === activeSession?.id);
   const activeAgentEvent = agentEvent && visibleAgentTasks.some((task) => task.id === agentEvent.taskId) ? agentEvent : null;
 
@@ -337,8 +338,11 @@ function App(): JSX.Element {
   };
 
   const startNewConversation = async (): Promise<void> => {
-    if (!activeWorkspace) return;
-    try { applySessionSelection(await window.starchat.sessions.create(activeWorkspace.id)); }
+    try {
+      applySessionSelection(activeWorkspace
+        ? await window.starchat.sessions.create(activeWorkspace.id)
+        : await window.starchat.sessions.createPersonal());
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : '新建会话失败'); }
   };
 
@@ -355,6 +359,12 @@ function App(): JSX.Element {
   const selectWorkspace = async (workspaceId: string): Promise<void> => {
     try { applySessionSelection(await window.starchat.sessions.selectWorkspace(workspaceId)); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '切换工作区失败'); }
+  };
+
+  const setWorkspaceTrust = async (trust: import('../../shared/session').WorkspaceTrustState): Promise<void> => {
+    if (!activeWorkspace) return;
+    try { setSessionSnapshot(await window.starchat.sessions.setTrust({ workspaceId: activeWorkspace.id, trust })); }
+    catch (reason) { setError(reason instanceof Error ? reason.message : '工作区信任设置失败'); }
   };
 
   const selectSession = async (sessionId: string): Promise<void> => {
@@ -650,10 +660,10 @@ function App(): JSX.Element {
   if (!appState || !roleDraft) return <div className="loading-card">正在唤醒 StarChat 工作台…</div>;
 
   const workbenchContent = page === null
-      ? <AgentConsole key={conversationKey} state={appState} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onShowPet={() => { setWorkbenchCharacterVisible(false); window.starchat.app.showPet(); }} characterVisible={workbenchCharacterVisible} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={Boolean(activeWorkspace && activeSession)} />
+      ? <AgentConsole key={conversationKey} state={appState} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onRequestWorkspace={() => void chooseWorkspace()} onShowPet={() => { setWorkbenchCharacterVisible(false); window.starchat.app.showPet(); }} characterVisible={workbenchCharacterVisible} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={workspaceAvailable} />
       : page === 'settings'
       ? <SettingsHome state={appState} presentation={presentationDraft} />
-      : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={Boolean(activeWorkspace && activeSession)} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.starchat.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.starchat.presentation.emit(event)} onDebug={(command) => window.starchat.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
+      : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onRequestWorkspace={() => void chooseWorkspace()} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={workspaceAvailable} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings)} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.starchat.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.starchat.presentation.emit(event)} onDebug={(command) => window.starchat.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings)} onClearApiKey={() => void persistSettings(settings, true)} />;
 
      return <main className="app-shell settings-center-shell">
        <AgentWorkbench
@@ -670,7 +680,7 @@ function App(): JSX.Element {
          onNewConversation={() => void startNewConversation()}
          sessionTitle={sessionTitle}
          sessionMessageCount={sessionMessageCount}
-         workspaceLabel={activeWorkspace?.label ?? pathLabel(workbenchInspection?.environment.gitRoot ?? workbenchInspection?.environment.workspaceRoot)}
+         workspaceLabel={activeWorkspace?.label ?? (activeSession?.contextType === 'personal' ? '个人空间' : pathLabel(workbenchInspection?.environment.gitRoot ?? workbenchInspection?.environment.workspaceRoot))}
          workspaces={sessionSnapshot.workspaces}
          sessions={sessionSnapshot.sessions}
          activeWorkspaceId={sessionSnapshot.activeWorkspaceId}
@@ -680,6 +690,8 @@ function App(): JSX.Element {
          onSelectSession={(id) => void selectSession(id)}
          onRenameSession={(id) => void renameSession(id)}
          onDeleteSession={(id) => void deleteSession(id)}
+         workspaceTrust={activeWorkspace?.trust}
+         onSetWorkspaceTrust={(trust) => void setWorkspaceTrust(trust)}
          environment={workbenchInspection?.environment ?? null}
          inspection={workbenchInspection}
          activeTool={activeWorkbenchTool}

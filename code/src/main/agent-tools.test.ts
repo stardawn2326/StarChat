@@ -12,7 +12,7 @@ describe('agent explicit tool allowlist', () => {
     writeFileSync(join(root, 'src', 'a.txt'), 'a', 'utf8');
     const tools = createAgentTools(new WorkspaceGuard(root));
     expect(tools.map((tool) => tool.name)).toEqual([
-      'list_directory', 'read_file', 'search_text', 'apply_patch', 'run_verification',
+      'list_directory', 'read_file', 'search_text', 'apply_patch', 'apply_file_changes', 'run_verification',
       'git_status', 'git_diff', 'request_user_approval', 'request_user_input'
     ]);
     expect(tools.some((tool) => /shell|exec|command|network|delete|move/i.test(tool.name))).toBe(false);

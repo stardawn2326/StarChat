@@ -11,13 +11,27 @@ export interface AuthorizedWorkspace {
   id: string;
   path: string;
   label: string;
+  trust: WorkspaceTrustState;
   createdAt: number;
   updatedAt: number;
 }
 
+export type WorkspaceTrustState = 'untrusted' | 'read-only' | 'trusted-execution';
+
+export const WORKSPACE_TRUST_STATES: readonly WorkspaceTrustState[] = [
+  'untrusted',
+  'read-only',
+  'trusted-execution'
+];
+
+export const PERSONAL_WORKSPACE_ID = 'personal:default';
+
+export type SessionContextType = 'personal' | 'workspace';
+
 export interface WorkbenchSession {
   id: string;
   workspaceId: string;
+  contextType: SessionContextType;
   roleId: string;
   title: string;
   messages: SessionMessage[];

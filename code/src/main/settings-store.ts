@@ -21,7 +21,47 @@ import {
 } from './window-state';
 
 interface StoredSecrets {
-  apiKey: string;
+  version?: 2;
+  apiKeyCiphertext?: string;
+  apiKey?: string;
+}
+
+export interface SecretStorage {
+  isAvailable(): boolean;
+  encrypt(value: string): string;
+  decrypt(value: string): string;
+}
+
+interface ElectronSafeStorageLike {
+  isEncryptionAvailable(): boolean;
+  encryptString(value: string): Buffer;
+  decryptString(value: Buffer): string;
+}
+
+class UnavailableSecretStorage implements SecretStorage {
+  isAvailable(): boolean { return false; }
+  encrypt(_value: string): string { throw new Error('系统安全存储不可用'); }
+  decrypt(_value: string): string { throw new Error('系统安全存储不可用'); }
+}
+
+export function createSafeStorageAdapter(storage: ElectronSafeStorageLike): SecretStorage {
+  return {
+    isAvailable: () => storage.isEncryptionAvailable(),
+    encrypt: (value) => storage.encryptString(value).toString('base64'),
+    decrypt: (value) => storage.decryptString(Buffer.from(value, 'base64'))
+  };
+}
+
+export function createMemorySecretStorage(): SecretStorage {
+  return {
+    isAvailable: () => true,
+    encrypt: (value) => Buffer.from(`starchat-test:${value}`, 'utf8').toString('base64'),
+    decrypt: (value) => {
+      const decoded = Buffer.from(value, 'base64').toString('utf8');
+      if (!decoded.startsWith('starchat-test:')) throw new Error('密钥密文无效');
+      return decoded.slice('starchat-test:'.length);
+    }
+  };
 }
 
 function readJson<T>(filePath: string, fallback: T): T {
@@ -43,7 +83,7 @@ export class SettingsStore {
   private readonly companionStatePath: string;
   private readonly workbenchWindowStatePath: string;
 
-  constructor(private readonly baseDir: string) {
+  constructor(private readonly baseDir: string, private readonly secretStorage: SecretStorage = new UnavailableSecretStorage()) {
     this.settingsPath = join(baseDir, 'settings.json');
     this.secretsPath = join(baseDir, 'secrets.json');
     this.live2dAdapterPath = join(baseDir, 'live2d-adapter.json');
@@ -90,8 +130,20 @@ export class SettingsStore {
   }
 
   readSecrets(): SensitiveSettings {
-    const stored = readJson<StoredSecrets>(this.secretsPath, { apiKey: '' });
-    return { apiKey: typeof stored.apiKey === 'string' ? stored.apiKey : '' };
+    const stored = readJson<StoredSecrets>(this.secretsPath, {});
+    if (typeof stored.apiKeyCiphertext === 'string' && stored.apiKeyCiphertext) {
+      if (!this.secretStorage.isAvailable()) return { apiKey: '' };
+      try {
+        return { apiKey: this.secretStorage.decrypt(stored.apiKeyCiphertext) };
+      } catch {
+        return { apiKey: '' };
+      }
+    }
+    const legacyApiKey = typeof stored.apiKey === 'string' ? stored.apiKey : '';
+    if (legacyApiKey && this.secretStorage.isAvailable()) {
+      this.writeSecrets(legacyApiKey);
+    }
+    return { apiKey: legacyApiKey };
   }
 
   hasApiKey(): boolean {
@@ -172,6 +224,9 @@ export class SettingsStore {
     clearApiKey = false,
     live2dAdapter?: Live2DAdapterConfig | null
   ): AppSettings {
+    if (typeof apiKey === 'string' && apiKey.trim() && !this.secretStorage.isAvailable()) {
+      throw new Error('系统安全存储不可用，API Key 未保存');
+    }
     mkdirSync(this.baseDir, { recursive: true });
     const nextSettings = sanitizeAppSettings({ ...this.readSettings(), ...settings });
     writeFileSync(this.settingsPath, JSON.stringify(nextSettings, null, 2), 'utf8');
@@ -181,10 +236,19 @@ export class SettingsStore {
     }
 
     if (clearApiKey) {
-      writeFileSync(this.secretsPath, JSON.stringify({ apiKey: '' }, null, 2), 'utf8');
+      this.writeSecrets('');
     } else if (typeof apiKey === 'string' && apiKey.trim()) {
-      writeFileSync(this.secretsPath, JSON.stringify({ apiKey: apiKey.trim() }, null, 2), 'utf8');
+      this.writeSecrets(apiKey.trim());
     }
     return nextSettings;
+  }
+
+  private writeSecrets(apiKey: string): void {
+    mkdirSync(this.baseDir, { recursive: true });
+    if (!this.secretStorage.isAvailable()) {
+      writeFileSync(this.secretsPath, JSON.stringify({ version: 2, apiKeyCiphertext: '' }, null, 2), 'utf8');
+      return;
+    }
+    writeFileSync(this.secretsPath, JSON.stringify({ version: 2, apiKeyCiphertext: this.secretStorage.encrypt(apiKey) }, null, 2), 'utf8');
   }
 }

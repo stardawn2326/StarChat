@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -53,5 +53,28 @@ describe('agent workspace security', () => {
     expect(() => guard.applyApprovedPatch(patch, patch.replace('agent', 'other'))).toThrow(/计划/);
     guard.applyApprovedPatch(patch, patch);
     expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nagent\n');
+  });
+
+  it('previews and applies create, update and delete only after exact approval', () => {
+    const root = workspace();
+    writeFileSync(join(root, 'src', 'remove.txt'), 'remove me\n', 'utf8');
+    const guard = new WorkspaceGuard(root);
+    const changes = [
+      { type: 'create' as const, path: 'src/new.txt', content: 'new file\n' },
+      { type: 'update' as const, path: 'src/note.txt', content: 'updated file\n' },
+      { type: 'delete' as const, path: 'src/remove.txt' }
+    ];
+    const preview = guard.previewFileChanges(changes);
+
+    expect(preview.files).toEqual(['src/new.txt', 'src/note.txt', 'src/remove.txt']);
+    expect(preview.patch).toContain('*** Create File: src/new.txt');
+    expect(existsSync(join(root, 'src', 'new.txt'))).toBe(false);
+    expect(() => guard.applyApprovedFileChanges(preview.plan, preview.plan.replace('updated file', 'tampered file'))).toThrow(/计划/);
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+
+    guard.applyApprovedFileChanges(preview.plan, preview.plan);
+    expect(readFileSync(join(root, 'src', 'new.txt'), 'utf8')).toBe('new file\n');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('updated file\n');
+    expect(existsSync(join(root, 'src', 'remove.txt'))).toBe(false);
   });
 });

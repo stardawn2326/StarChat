@@ -4679,3 +4679,48 @@ html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbe
   border-radius: 9px !important;
   font-size: 12px !important;
 }
+
+/* Workspace execution trust stays inside the same compact environment surface. */
+.wb-shell[data-workbench-visual="reference"] .wb-trust-control {
+  display: grid;
+  gap: 9px;
+  padding-top: 11px;
+  border-top: 1px solid var(--wb-border-frame);
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-control > div:first-child {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-control strong {
+  color: var(--wb-text-main);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold, 600);
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-control span {
+  color: var(--wb-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-actions {
+  display: flex;
+  gap: 7px;
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-actions .secondary-button {
+  min-height: 29px;
+  flex: 1;
+  padding: 5px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+.wb-shell[data-workbench-visual="reference"] .wb-trust-actions .secondary-button:disabled {
+  opacity: .56;
+}

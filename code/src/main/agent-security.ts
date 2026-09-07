@@ -7,9 +7,11 @@ import {
   realpathSync,
   renameSync,
   statSync,
+  unlinkSync,
   writeFileSync
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import type { AgentFileChange } from '../shared/agent';
 
 const DEFAULT_MAX_READ_BYTES = 128 * 1024;
 const DEFAULT_MAX_RESULTS = 50;
@@ -100,6 +102,61 @@ export interface PatchPreview {
   files: string[];
   summary: string;
   plan: string;
+  patch: string;
+  additions: number;
+  deletions: number;
+}
+
+const MAX_FILE_CHANGE_BYTES = 512 * 1024;
+const MAX_FILE_CHANGE_COUNT = 50;
+
+function sanitizeFileChanges(input: unknown): AgentFileChange[] {
+  if (!Array.isArray(input) || input.length === 0 || input.length > MAX_FILE_CHANGE_COUNT) throw new Error('文件变更计划数量无效');
+  let totalBytes = 0;
+  const changes: AgentFileChange[] = [];
+  const paths = new Set<string>();
+  for (const value of input) {
+    if (!value || typeof value !== 'object') throw new Error('文件变更计划格式无效');
+    const candidate = value as { type?: unknown; path?: unknown; content?: unknown };
+    const path = patchPath(typeof candidate.path === 'string' ? candidate.path : '');
+    if (paths.has(path)) throw new Error(`文件变更计划包含重复路径：${path}`);
+    paths.add(path);
+    if (candidate.type === 'delete') {
+      changes.push({ type: 'delete', path });
+      continue;
+    }
+    if ((candidate.type !== 'create' && candidate.type !== 'update') || typeof candidate.content !== 'string' || candidate.content.length > 256 * 1024) {
+      throw new Error('文件变更内容无效或过大');
+    }
+    totalBytes += TEXT_ENCODER.encode(candidate.content).byteLength;
+    if (totalBytes > MAX_FILE_CHANGE_BYTES) throw new Error('文件变更计划过大');
+    changes.push({ type: candidate.type, path, content: candidate.content });
+  }
+  return changes;
+}
+
+function changePatch(change: AgentFileChange, previous: string | null): { lines: string[]; additions: number; deletions: number } {
+  if (change.type === 'create') {
+    const lines = change.content.replaceAll('\r\n', '\n').split('\n').map((line) => `+${line}`);
+    return { lines, additions: lines.length, deletions: 0 };
+  }
+  const beforeLines = (previous ?? '').replaceAll('\r\n', '\n').split('\n');
+  const afterLines = change.type === 'delete' ? [] : change.content.replaceAll('\r\n', '\n').split('\n');
+  return {
+    lines: [...beforeLines.map((line) => `-${line}`), ...afterLines.map((line) => `+${line}`)],
+    additions: afterLines.length,
+    deletions: beforeLines.length
+  };
+}
+
+function patchCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split(/\r?\n/u)) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return { additions, deletions };
 }
 
 export interface WorkspaceGuardOptions {
@@ -213,7 +270,57 @@ export class WorkspaceGuard {
       applyPatchText(this.readText(file.path), file.hunks);
       return file.path.replaceAll('\\', '/');
     });
-    return { files, summary: `将更新 ${files.length} 个文件：${files.join('、')}`, plan: patch };
+    return { files, summary: `将更新 ${files.length} 个文件：${files.join('、')}`, plan: patch, patch, ...patchCounts(patch) };
+  }
+
+  previewFileChanges(input: unknown): PatchPreview {
+    const changes = sanitizeFileChanges(input);
+    let additions = 0;
+    let deletions = 0;
+    const sections: string[] = ['*** Begin File Changes'];
+    for (const change of changes) {
+      const target = this.resolve(change.path);
+      const exists = existsSync(target);
+      if (change.type === 'create' && exists) throw new Error(`待创建文件已存在：${change.path}`);
+      if (change.type !== 'create' && (!exists || !statSync(target).isFile())) throw new Error(`待修改文件不存在或不是文件：${change.path}`);
+      const previous = change.type === 'create' ? null : this.readText(change.path);
+      const patch = changePatch(change, previous);
+      additions += patch.additions;
+      deletions += patch.deletions;
+      sections.push(`*** ${change.type === 'create' ? 'Create' : change.type === 'update' ? 'Update' : 'Delete'} File: ${change.path}`, ...patch.lines);
+    }
+    sections.push('*** End File Changes');
+    return {
+      files: changes.map((change) => change.path.replaceAll('\\', '/')),
+      summary: `将${changes.map((change) => change.type === 'create' ? '创建' : change.type === 'update' ? '更新' : '删除').join('、')} ${changes.length} 个文件：${changes.map((change) => change.path).join('、')}`,
+      plan: JSON.stringify(changes),
+      patch: sections.join('\n'),
+      additions,
+      deletions
+    };
+  }
+
+  applyApprovedFileChanges(expectedPlan: string, approvedPlan: string): PatchPreview {
+    if (expectedPlan !== approvedPlan) throw new Error('批准计划与待执行计划不一致，必须重新审批');
+    let changes: AgentFileChange[];
+    try {
+      changes = sanitizeFileChanges(JSON.parse(expectedPlan));
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : '文件变更计划无效');
+    }
+    const preview = this.previewFileChanges(changes);
+    for (const change of changes) {
+      const target = this.resolve(change.path);
+      if (change.type === 'delete') {
+        unlinkSync(target);
+        continue;
+      }
+      mkdirSync(dirname(target), { recursive: true });
+      const temporary = `${target}.starchat-agent-${process.pid}-${Date.now()}.tmp`;
+      writeFileSync(temporary, change.content, 'utf8');
+      renameSync(temporary, target);
+    }
+    return preview;
   }
 
   applyApprovedPatch(expectedPlan: string, approvedPlan: string): PatchPreview {

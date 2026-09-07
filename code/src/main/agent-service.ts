@@ -1,6 +1,4 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type {
   AgentEvent,
   AgentResult,
@@ -17,6 +15,8 @@ import { AgentRuntime, type AgentModel, type AgentToolExecutionEvent } from './a
 import { createAgentTools, runVerification, type VerificationResult } from './agent-tools';
 import { WorkspaceGuard } from './agent-security';
 import { routeTurn } from './agent-router';
+import type { SessionExecutionContext } from './session-store';
+import { detectProject } from './project-detector';
 
 function redact(text: string): string {
   return text
@@ -34,7 +34,7 @@ export interface AgentServiceContext {
 export interface AgentServiceOptions {
   store: AgentStore;
   workspaceRoot?: string;
-  resolveExecutionContext?: (sessionId?: string) => { sessionId: string; workspaceRoot: string };
+  resolveExecutionContext?: (sessionId?: string) => Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>;
   getContext: () => AgentServiceContext;
   createModel: (context: AgentServiceContext) => AgentModel;
   classifyAmbiguous?: (message: string, context: AgentServiceContext) => Promise<'agent' | 'companion'>;
@@ -51,15 +51,14 @@ interface LiveTask {
   workspaceRoot: string;
   wrote: boolean;
   changedFiles: string[];
+  trust?: SessionExecutionContext['trust'];
 }
 
 function automaticVerificationScript(workspaceRoot: string): string | null {
-  const packagePath = join(workspaceRoot, 'package.json');
-  if (!existsSync(packagePath)) return null;
   try {
-    const parsed = JSON.parse(readFileSync(packagePath, 'utf8')) as { scripts?: Record<string, unknown> };
+    const project = detectProject(workspaceRoot);
     for (const script of ['typecheck', 'test', 'build']) {
-      if (typeof parsed.scripts?.[script] === 'string') return script;
+      if (typeof project.scripts[script] === 'string') return script;
     }
   } catch {
     return null;
@@ -116,7 +115,7 @@ export class AgentService {
     }
     if (event.status === 'completed' || event.status === 'failed') invocation.finishedAt = now;
     const live = this.live.get(task.id);
-    if (live && event.toolName === 'apply_patch' && event.status === 'completed') live.wrote = true;
+    if (live && ['apply_patch', 'apply_file_changes'].includes(event.toolName) && event.status === 'completed') live.wrote = true;
     task.invocations = invocations.slice(-100);
     if (event.status !== 'running') task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'tool', status: event.status === 'completed' ? 'completed' : event.status.startsWith('waiting') ? 'waiting' : 'failed', summary: `${event.toolName}：${event.summary}`, createdAt: now, finishedAt: event.status === 'completed' || event.status === 'failed' ? now : undefined, invocationId: event.invocationId });
     this.save(task);
@@ -139,7 +138,7 @@ export class AgentService {
     const execution = this.options.resolveExecutionContext
       ? this.options.resolveExecutionContext(request.sessionId)
       : { sessionId: request.sessionId ?? `${context.roleId}:default`, workspaceRoot: this.options.workspaceRoot ?? '' };
-    if (!execution.workspaceRoot) throw new Error('请先选择授权工作区');
+    if (!execution.workspaceRoot) throw new Error('Agent 任务需要先选择授权工作区；个人会话仍可直接进行陪伴对话');
     const mode = request.mode ?? context.settings.assistantMode;
     const route = precomputedRoute ?? await routeTurn({
       mode,
@@ -158,18 +157,29 @@ export class AgentService {
     task.steps[0].taskId = task.id;
     this.options.store.save(task);
     this.emit({ type: 'task', task, taskId: task.id, timestamp: this.now() });
-    void this.execute(task, context, readOnly, execution.workspaceRoot);
+    void this.execute(task, context, readOnly, execution);
     return { taskId: task.id, route };
   }
 
-  private async execute(task: AgentTask, context: AgentServiceContext, readOnly: boolean, workspaceRoot: string): Promise<void> {
+  private async execute(task: AgentTask, context: AgentServiceContext, readOnly: boolean, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): Promise<void> {
     const controller = new AbortController();
     let runtime: AgentRuntime | null = null;
     try {
       if (this.options.store.get(task.id)?.status === 'cancelled') return;
-      const guard = new WorkspaceGuard(workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
-      runtime = new AgentRuntime({ model: this.options.createModel(context), tools: createAgentTools(guard), maxSteps: 8, overallTimeoutMs: 10 * 60_000, toolTimeoutMs: 30_000, onTool: (event) => this.recordTool(task, event) });
-      this.live.set(task.id, { runtime, controller, readOnly, workspaceRoot, wrote: false, changedFiles: [] });
+      const guard = new WorkspaceGuard(execution.workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
+      runtime = new AgentRuntime({
+        model: this.options.createModel(context),
+        tools: createAgentTools(guard, this.options.executeVerification ?? runVerification, {
+          beforeVerification: () => {
+            if (execution.trust && execution.trust !== 'trusted-execution') throw new Error('当前工作区未信任脚本执行，请先在环境信息中允许执行');
+          }
+        }),
+        maxSteps: 8,
+        overallTimeoutMs: 10 * 60_000,
+        toolTimeoutMs: 30_000,
+        onTool: (event) => this.recordTool(task, event)
+      });
+      this.live.set(task.id, { runtime, controller, readOnly, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust: execution.trust });
       task.status = 'running';
       task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: 'StarChat 已接手，正在规划后台步骤。', createdAt: this.now() });
       task.currentStep = 1;
@@ -213,22 +223,28 @@ export class AgentService {
       if (live?.wrote) {
         const script = automaticVerificationScript(live.workspaceRoot);
         if (script) {
-          let verification: VerificationResult;
-          try {
-            verification = await (this.options.executeVerification ?? runVerification)(live.workspaceRoot, script, live.controller.signal);
-          } catch (error) {
-            verification = { script, ok: false, output: error instanceof Error ? error.message : '自动验证无法启动' };
-          }
-          task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'verification', status: verification.ok ? 'completed' : 'failed', summary: `自动验证 ${script}：${verification.ok ? '通过' : '失败'}`, createdAt: this.now(), finishedAt: this.now() });
-          task.result = { ...result.result, summary: redact(result.result.summary), changedFiles: live.changedFiles, verification };
-          if (!verification.ok) {
-            task.status = 'failed';
-            task.error = `文件已写入，但自动验证失败：pnpm run ${script}`;
-            task.approval = undefined;
-            task.input = undefined;
-            this.save(task);
-            this.emit({ type: 'error', taskId: task.id, message: task.error, timestamp: this.now() });
-            return;
+          if (live.trust && live.trust !== 'trusted-execution') {
+            const verification: VerificationResult = { script, ok: false, output: '自动验证未运行：当前工作区未信任脚本执行。请在环境信息中允许执行后重试验证。' };
+            task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'verification', status: 'waiting', summary: `自动验证 ${script}：等待工作区信任`, createdAt: this.now(), finishedAt: this.now() });
+            task.result = { ...result.result, summary: redact(result.result.summary), changedFiles: live.changedFiles, verification };
+          } else {
+            let verification: VerificationResult;
+            try {
+              verification = await (this.options.executeVerification ?? runVerification)(live.workspaceRoot, script, live.controller.signal);
+            } catch (error) {
+              verification = { script, ok: false, output: error instanceof Error ? error.message : '自动验证无法启动' };
+            }
+            task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'verification', status: verification.ok ? 'completed' : 'failed', summary: `自动验证 ${script}：${verification.ok ? '通过' : '失败'}`, createdAt: this.now(), finishedAt: this.now() });
+            task.result = { ...result.result, summary: redact(result.result.summary), changedFiles: live.changedFiles, verification };
+            if (!verification.ok) {
+              task.status = 'failed';
+              task.error = `文件已写入，但自动验证失败：pnpm run ${script}`;
+              task.approval = undefined;
+              task.input = undefined;
+              this.save(task);
+              this.emit({ type: 'error', taskId: task.id, message: task.error, timestamp: this.now() });
+              return;
+            }
           }
         }
       }

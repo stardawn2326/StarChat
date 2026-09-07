@@ -1,8 +1,11 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { extname, isAbsolute, posix, relative, sep } from 'node:path';
 import type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchEnvironment, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from '../shared/workbench';
 import { WorkspaceGuard } from './agent-security';
+import { assertGitRootMatchesWorkspace } from './git-boundary';
+import { verificationCommand } from './project-detector';
+import { runControlledProcess } from './process-runner';
 
 const SENSITIVE_PATH = /(^|[\\/])(?:\.env(?:\.|$)|[^\\/]*(?:secret|api[-_]?key|credential|\.pem$|\.key$)|id_rsa|\.ssh(?:[\\/]|$)|\.aws(?:[\\/]|$))/iu;
 const MAX_PROCESS_OUTPUT = 64 * 1024;
@@ -10,15 +13,7 @@ const MAX_PROCESS_OUTPUT = 64 * 1024;
 type WorkbenchExecutor = (command: string, args: string[], cwd: string, signal: AbortSignal) => Promise<{ code: number; output: string }>;
 
 function spawnWorkbenchProcess(command: string, args: string[], cwd: string, signal: AbortSignal): Promise<{ code: number; output: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, signal });
-    let output = '';
-    const append = (chunk: Buffer): void => { output = `${output}${chunk.toString('utf8')}`.slice(-MAX_PROCESS_OUTPUT); };
-    child.stdout?.on('data', append);
-    child.stderr?.on('data', append);
-    child.once('error', reject);
-    child.once('close', (code) => resolve({ code: code ?? 1, output }));
-  });
+  return runControlledProcess({ command, args, cwd, signal, timeoutMs: command.toLocaleLowerCase().includes('pnpm') ? 5 * 60_000 : 30_000, maxOutputBytes: MAX_PROCESS_OUTPUT, allowedCommands: [command] }).then((result) => ({ code: result.code, output: result.output }));
 }
 
 const WORKBENCH_COMMANDS: Readonly<Record<string, { command: string; args: string[] }>> = {
@@ -33,13 +28,15 @@ const WORKBENCH_COMMANDS: Readonly<Record<string, { command: string; args: strin
 
 export async function runWorkbenchCommand(rootDirectory: string, input: string, signal: AbortSignal, executor: WorkbenchExecutor = spawnWorkbenchProcess): Promise<WorkbenchCommandResult> {
   const commandText = input.trim().replace(/\s+/gu, ' ');
-  const definition = WORKBENCH_COMMANDS[commandText];
-  if (!definition) throw new Error('命令不在受控白名单；可运行 Git 只读命令或项目验证脚本');
+  const staticDefinition = WORKBENCH_COMMANDS[commandText];
+  if (!staticDefinition) throw new Error('命令不在受控白名单；可运行 Git 只读命令或项目验证脚本');
   const workspaceRoot = realpathSync(rootDirectory);
-  const commandRoot = commandText.startsWith('pnpm ') && !existsSync(`${workspaceRoot}${sep}package.json`) && existsSync(`${workspaceRoot}${sep}code${sep}package.json`)
-    ? `${workspaceRoot}${sep}code`
-    : workspaceRoot;
-  const result = await executor(definition.command, definition.args, commandRoot, signal);
+  const isGit = commandText.startsWith('git ');
+  if (isGit) assertGitRootMatchesWorkspace(workspaceRoot);
+  const definition = commandText.startsWith('pnpm run ')
+    ? verificationCommand(workspaceRoot, commandText.slice('pnpm run '.length))
+    : { command: staticDefinition.command, args: staticDefinition.args, cwd: workspaceRoot };
+  const result = await executor(definition.command, definition.args, definition.cwd, signal);
   return { command: commandText, ok: result.code === 0, code: result.code, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
 }
 
@@ -89,7 +86,7 @@ function safeChangedFiles(status: string | null): string[] {
 function environmentFor(rootDirectory: string): { environment: WorkbenchEnvironment; source: WorkbenchSourceSnapshot } {
   if (!isAbsolute(rootDirectory) || !existsSync(rootDirectory)) throw new Error('授权工作区不存在');
   const workspaceRoot = realpathSync(rootDirectory);
-  const gitRoot = runGit(workspaceRoot, ['rev-parse', '--show-toplevel']);
+  const gitRoot = assertGitRootMatchesWorkspace(workspaceRoot, runGit(workspaceRoot, ['rev-parse', '--show-toplevel']));
   const statusText = gitRoot ? runGit(workspaceRoot, ['status', '--short', '--untracked-files=all']) : null;
   const branch = gitRoot ? runGit(workspaceRoot, ['symbolic-ref', '--quiet', '--short', 'HEAD']) : null;
   const head = gitRoot ? runGit(workspaceRoot, ['rev-parse', '--short', 'HEAD']) : null;

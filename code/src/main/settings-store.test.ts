@@ -5,7 +5,7 @@ import { BUILTIN_ROLE_PACKAGES, DEFAULT_ROLE_PACKAGE } from '../shared/default-r
 import { cloneRolePackage, createBlankRolePackage } from '../shared/role-package';
 import { DEFAULT_APP_SETTINGS } from '../shared/settings';
 import { createCompanionState } from '../shared/companion';
-import { SettingsStore } from './settings-store';
+import { createMemorySecretStorage, SettingsStore } from './settings-store';
 
 const testRoot = join(process.cwd(), '.settings-store-test-data');
 
@@ -128,5 +128,26 @@ describe('SettingsStore role persistence', () => {
     const restored = new SettingsStore(testRoot).readCompanionState(DEFAULT_ROLE_PACKAGE.id);
     expect(restored.interactionCount).toBe(3);
     expect(restored.memories[0]?.content).toBe('用户喜欢紫色');
+  });
+
+  it('stores API keys through the system-secret adapter without plaintext persistence', () => {
+    const secretStorage = createMemorySecretStorage();
+    const store = new SettingsStore(testRoot, secretStorage);
+    store.save({}, 'secret-value');
+
+    const persisted = JSON.parse(readFileSync(join(testRoot, 'secrets.json'), 'utf8')) as Record<string, unknown>;
+    expect(persisted.apiKey).toBeUndefined();
+    expect(typeof persisted.apiKeyCiphertext).toBe('string');
+    expect(new SettingsStore(testRoot, secretStorage).readSecrets()).toEqual({ apiKey: 'secret-value' });
+  });
+
+  it('migrates a legacy plaintext API key when encrypted storage is available', () => {
+    writeFileSync(join(testRoot, 'secrets.json'), JSON.stringify({ version: 1, apiKey: 'legacy-value' }), 'utf8');
+    const secretStorage = createMemorySecretStorage();
+
+    expect(new SettingsStore(testRoot, secretStorage).readSecrets()).toEqual({ apiKey: 'legacy-value' });
+    const persisted = JSON.parse(readFileSync(join(testRoot, 'secrets.json'), 'utf8')) as Record<string, unknown>;
+    expect(persisted.apiKey).toBeUndefined();
+    expect(typeof persisted.apiKeyCiphertext).toBe('string');
   });
 });

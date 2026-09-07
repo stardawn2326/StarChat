@@ -26,7 +26,7 @@ describe('workbench service', () => {
   });
 
   it('reports the actual repository state without inventing a branch', () => {
-    const inspection = inspectWorkbench(resolve(import.meta.dirname, '../..'), 'source');
+    const inspection = inspectWorkbench(resolve(import.meta.dirname, '../../..'), 'source');
     expect(inspection.source).toBeDefined();
     expect(inspection.environment.gitRoot).not.toBeNull();
     expect(['clean', 'changed', 'detached', 'unavailable']).toContain(inspection.environment.gitStatus);
@@ -43,6 +43,15 @@ describe('workbench service', () => {
     expect(inspection.resourcePath).toBe('src/nested');
     expect(inspection.resourceParentPath).toBe('src');
     expect(inspection.resources).toEqual([{ path: 'src/nested/index.ts', kind: 'file' }]);
+  });
+
+  it('rejects a nested directory when its Git root is outside the authorized workspace', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-workbench-boundary-'));
+    temporaryRoots.push(root);
+    mkdirSync(join(root, 'nested'), { recursive: true });
+    execFileSync('git', ['init'], { cwd: root, stdio: 'ignore' });
+
+    expect(() => inspectWorkbench(join(root, 'nested'), 'source')).toThrow(/Git 根目录必须与已授权工作区一致/);
   });
 
   it('previews safe text files with bounded metadata and rejects path escape', () => {

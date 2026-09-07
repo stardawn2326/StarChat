@@ -1,8 +1,9 @@
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { SessionStore } from './session-store';
+import { PERSONAL_WORKSPACE_ID } from '../shared/session';
 
 function setup() {
   const root = mkdtempSync(join(tmpdir(), 'starchat-sessions-'));
@@ -22,6 +23,48 @@ describe('workbench workspace and session store', () => {
     expect(next.activeWorkspaceId).toBe(next.workspaces[0].id);
     expect(next.activeSessionId).toBe(next.sessions[0].id);
     expect(existsSync(file)).toBe(true);
+  });
+
+  it('keeps personal conversation separate from workspace execution and persists trust state', () => {
+    const { root, file } = setup();
+    const store = new SessionStore(file);
+    const personal = store.ensurePersonalSession('starchat.default');
+    const personalId = personal.activeSessionId!;
+
+    expect(personal.activeWorkspaceId).toBeNull();
+    expect(store.sessionContext(personalId)).toMatchObject({
+      sessionId: personalId,
+      workspaceId: PERSONAL_WORKSPACE_ID,
+      contextType: 'personal',
+      workspaceRoot: ''
+    });
+    store.appendMessage(personalId, { role: 'user', content: '只进行陪伴对话' });
+
+    const workspace = store.authorizeWorkspace(root, 'starchat.default');
+    const workspaceId = workspace.activeWorkspaceId!;
+    expect(store.sessionContext(personalId).contextType).toBe('personal');
+    store.selectSession(personalId);
+    expect(store.snapshot().activeWorkspaceId).toBeNull();
+
+    store.setWorkspaceTrust(workspaceId, 'trusted-execution');
+    const restored = new SessionStore(file);
+    expect(restored.snapshot().workspaces.find((item) => item.id === workspaceId)?.trust).toBe('trusted-execution');
+    expect(restored.snapshot().sessions.find((item) => item.id === personalId)?.messages[0]?.content).toBe('只进行陪伴对话');
+  });
+
+  it('migrates version one workspaces with an untrusted execution default', () => {
+    const { root, file } = setup();
+    writeFileSync(file, JSON.stringify({
+      version: 1,
+      workspaces: [{ id: 'workspace-1', path: root, label: '旧工作区', createdAt: 1, updatedAt: 1 }],
+      sessions: [{ id: 'session-1', workspaceId: 'workspace-1', roleId: 'starchat.default', title: '旧会话', messages: [], createdAt: 1, updatedAt: 1 }],
+      activeWorkspaceId: 'workspace-1',
+      activeSessionId: 'session-1'
+    }), 'utf8');
+
+    const store = new SessionStore(file);
+    expect(store.sessionContext('session-1')).toMatchObject({ contextType: 'workspace', trust: 'untrusted' });
+    expect(store.snapshot().workspaces[0]?.trust).toBe('untrusted');
   });
 
   it('persists workspace selection and session CRUD across restart', () => {

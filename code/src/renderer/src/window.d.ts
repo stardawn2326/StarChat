@@ -68,6 +68,8 @@ declare global {
         chooseWorkspace(): Promise<import('../../shared/session').SessionSnapshot>;
         selectWorkspace(workspaceId: string): Promise<import('../../shared/session').SessionSnapshot>;
         create(workspaceId: string): Promise<import('../../shared/session').SessionSnapshot>;
+        createPersonal(): Promise<import('../../shared/session').SessionSnapshot>;
+        setTrust(request: import('../../shared/ipc').SessionTrustRequest): Promise<import('../../shared/session').SessionSnapshot>;
         select(sessionId: string): Promise<import('../../shared/session').SessionSnapshot>;
         rename(request: import('../../shared/session').SessionRenameRequest): Promise<import('../../shared/session').SessionSnapshot>;
         delete(sessionId: string): Promise<import('../../shared/session').SessionSnapshot>;

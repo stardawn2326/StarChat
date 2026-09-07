@@ -7,7 +7,7 @@ import { SETTINGS_CARDS, type SettingsPageId, type WorkbenchPage } from './setti
 import { WorkbenchIcon, type WorkbenchIconName } from './WorkbenchIcon';
 import { WorkbenchResizeHandle } from './WorkbenchResizeHandle';
 import type { ResolvedTheme } from '../../shared/theme';
-import type { AuthorizedWorkspace, WorkbenchSession } from '../../shared/session';
+import type { AuthorizedWorkspace, WorkbenchSession, WorkspaceTrustState } from '../../shared/session';
 import {
   WORKBENCH_LAYOUT_LIMITS,
   maxBottomPanelHeight,
@@ -121,10 +121,12 @@ function SidebarSessionRow({ label, meta, active = false, collapsed, onClick, on
 
 export function Sidebar({ activePage, onNavigate, onNewConversation, collapsed, workspaceLabel, sessionTitle, sessionMeta, referenceFixture = false, workspaces, sessions, activeWorkspaceId, activeSessionId, onChooseWorkspace, onSelectWorkspace, onSelectSession, onRenameSession, onDeleteSession }: SidebarProps): JSX.Element {
   const settingsActive = activePage !== null;
+  const personalSessions = sessions.filter((session) => session.contextType === 'personal');
   return <aside id="workbench-sidebar" className={`wb-sidebar ${collapsed ? 'is-collapsed' : 'is-expanded'}`} data-agent-domain="sessions" data-workbench="sidebar" data-workbench-region="sidebar" aria-hidden={collapsed} aria-label="StarChat 项目与会话导航">
-    <button className="wb-new-chat" type="button" tabIndex={collapsed ? -1 : 0} disabled={!activeWorkspaceId && !referenceFixture} onClick={onNewConversation}><WorkbenchIcon name="newChat" size={24} />新对话</button>
+    <button className="wb-new-chat" type="button" tabIndex={collapsed ? -1 : 0} onClick={onNewConversation}><WorkbenchIcon name="newChat" size={24} />新对话</button>
     <div className="wb-sidebar-heading"><strong>工作区</strong><span className="wb-sidebar-heading-actions"><IconButton label="搜索工作区" disabled tabIndex={collapsed ? -1 : 0}><WorkbenchIcon name="search" size={21} /></IconButton><IconButton label="筛选工作区" disabled tabIndex={collapsed ? -1 : 0}><WorkbenchIcon name="strength" size={21} /></IconButton><IconButton label="添加工作区" tabIndex={collapsed ? -1 : 0} onClick={onChooseWorkspace}><WorkbenchIcon name="folderPlus" size={22} /></IconButton></span></div>
     <div className="wb-project-tree">
+      {personalSessions.length > 0 ? <div className="wb-workspace-group wb-personal-space"><SidebarProjectRow label="个人空间" collapsed={collapsed} active={!activeWorkspaceId} onClick={() => { onSelectSession(personalSessions[0].id); onNavigate(null); }} />{personalSessions.map((session) => <SidebarSessionRow key={session.id} label={session.title} collapsed={collapsed} meta={workbenchSessionMeta(session.messages.length, false)} active={session.id === activeSessionId && activePage === null} onClick={() => { onSelectSession(session.id); onNavigate(null); }} onRename={() => onRenameSession(session.id)} onDelete={() => onDeleteSession(session.id)} />)}</div> : null}
       {workspaces.map((workspace) => <div className="wb-workspace-group" key={workspace.id}><SidebarProjectRow label={workspace.label} collapsed={collapsed} active={workspace.id === activeWorkspaceId} onClick={() => { onSelectWorkspace(workspace.id); onNavigate(null); }} />{sessions.filter((session) => session.workspaceId === workspace.id).map((session) => <SidebarSessionRow key={session.id} label={session.title} collapsed={collapsed} meta={workbenchSessionMeta(session.messages.length, false)} active={session.id === activeSessionId && activePage === null} onClick={() => { onSelectSession(session.id); onNavigate(null); }} onRename={() => onRenameSession(session.id)} onDelete={() => onDeleteSession(session.id)} />)}</div>)}
       {workspaces.length === 0 && !referenceFixture ? <button className="wb-workspace-empty" type="button" onClick={onChooseWorkspace}><WorkbenchIcon name="folderPlus" size={20} /><span><strong>选择工作区</strong><small>授权项目目录后开始</small></span></button> : null}
       {referenceFixture ? <div className="wb-reference-secondary-workspace" data-workbench-reference="secondary-workspace">
@@ -377,9 +379,9 @@ function WorkbenchToolPanel(props: WorkbenchToolPanelProps): JSX.Element {
   </section>;
 }
 
-interface EnvironmentPopoverProps { onClose: () => void; environment: WorkbenchEnvironment | null; referenceFixture?: boolean; }
+interface EnvironmentPopoverProps { onClose: () => void; environment: WorkbenchEnvironment | null; workspaceTrust?: WorkspaceTrustState; onSetWorkspaceTrust?: (trust: WorkspaceTrustState) => void; referenceFixture?: boolean; }
 
-function EnvironmentPopover({ onClose, environment, referenceFixture = false }: EnvironmentPopoverProps): JSX.Element {
+function EnvironmentPopover({ onClose, environment, workspaceTrust = 'untrusted', onSetWorkspaceTrust = () => undefined, referenceFixture = false }: EnvironmentPopoverProps): JSX.Element {
   const branch = environment?.branch ?? (environment?.head ? `分离 HEAD @ ${environment.head}` : '未识别');
   if (referenceFixture) {
     return <aside className="wb-environment-popover wb-environment-popover-reference" data-workbench="environment-popover" data-workbench-reference="environment" aria-label="环境信息" role="dialog">
@@ -406,12 +408,13 @@ function EnvironmentPopover({ onClose, environment, referenceFixture = false }: 
       <span><WorkbenchIcon name="share" size={15} />{environment ? workbenchGitStatusLabel(environment.gitStatus) : '正在读取 Git 状态'}</span>
     </div>
     <div className="wb-environment-source"><div><strong>工作区路径</strong></div><span className="wb-environment-code"><WorkbenchIcon name="folder" size={15} />{environment?.workspaceRoot ?? '等待授权工作区'}</span></div>
+    <div className="wb-trust-control" data-workspace-trust={workspaceTrust}><div><strong>执行权限</strong><span>{workspaceTrust === 'trusted-execution' ? '已允许脚本执行' : workspaceTrust === 'read-only' ? '仅允许读取' : '默认未信任'}</span></div><div className="wb-trust-actions"><button type="button" className="secondary-button" disabled={workspaceTrust === 'trusted-execution'} onClick={() => onSetWorkspaceTrust('trusted-execution')}>允许脚本</button><button type="button" className="secondary-button" disabled={workspaceTrust === 'read-only'} onClick={() => onSetWorkspaceTrust('read-only')}>仅读取</button></div></div>
   </aside>;
 }
 
-interface CenterFrameProps { activePage: WorkbenchPage; children: ReactNode; initialEnvironmentOpen?: boolean; environment: WorkbenchEnvironment | null; onShare?: () => Promise<string>; bottomPanelOpen: boolean; onToggleBottomPanel: () => void; rightRailCollapsed: boolean; onToggleRightRail: () => void; rightRailToggleRef: RefObject<HTMLButtonElement>; onToolAction?: (action: WorkbenchToolAction) => void; centerTitle?: string; referenceEnvironment?: boolean; }
+interface CenterFrameProps { activePage: WorkbenchPage; children: ReactNode; initialEnvironmentOpen?: boolean; environment: WorkbenchEnvironment | null; workspaceTrust?: WorkspaceTrustState; onSetWorkspaceTrust?: (trust: WorkspaceTrustState) => void; onShare?: () => Promise<string>; bottomPanelOpen: boolean; onToggleBottomPanel: () => void; rightRailCollapsed: boolean; onToggleRightRail: () => void; rightRailToggleRef: RefObject<HTMLButtonElement>; onToolAction?: (action: WorkbenchToolAction) => void; centerTitle?: string; referenceEnvironment?: boolean; }
 
-function CenterFrame({ activePage, children, initialEnvironmentOpen = false, environment, onShare, bottomPanelOpen, onToggleBottomPanel, rightRailCollapsed, onToggleRightRail, rightRailToggleRef, onToolAction, centerTitle, referenceEnvironment = false }: CenterFrameProps): JSX.Element {
+function CenterFrame({ activePage, children, initialEnvironmentOpen = false, environment, workspaceTrust, onSetWorkspaceTrust, onShare, bottomPanelOpen, onToggleBottomPanel, rightRailCollapsed, onToggleRightRail, rightRailToggleRef, onToolAction, centerTitle, referenceEnvironment = false }: CenterFrameProps): JSX.Element {
   const [environmentOpen, setEnvironmentOpen] = useState(initialEnvironmentOpen);
   const [shareStatus, setShareStatus] = useState('');
   const environmentTriggerRef = useRef<HTMLButtonElement>(null);
@@ -456,7 +459,7 @@ function CenterFrame({ activePage, children, initialEnvironmentOpen = false, env
              <IconButton label={rightRailCollapsed ? '展开侧边工具栏' : '折叠侧边工具栏'} data-workbench="right-rail-toggle" ref={rightRailToggleRef} aria-expanded={!rightRailCollapsed} aria-controls="workbench-right-rail" onClick={onToggleRightRail}><WorkbenchIcon name="columns" size={24} /></IconButton>
           </div>
         </header> : null}
-        {activePage === null && environmentOpen ? <div ref={environmentPopoverRef}><EnvironmentPopover environment={environment} referenceFixture={referenceEnvironment} onClose={closeEnvironment} /></div> : null}
+        {activePage === null && environmentOpen ? <div ref={environmentPopoverRef}><EnvironmentPopover environment={environment} workspaceTrust={workspaceTrust} onSetWorkspaceTrust={onSetWorkspaceTrust} referenceFixture={referenceEnvironment} onClose={closeEnvironment} /></div> : null}
         {shareStatus ? <p className="wb-action-status" role="status">{shareStatus}</p> : null}
         <div className={`wb-center-content ${activePage === null ? 'is-agent-home' : 'is-settings'}`}>{children}</div>
       </div>
@@ -499,6 +502,8 @@ interface AgentWorkbenchProps {
   onSelectSession?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string) => void;
   onDeleteSession?: (sessionId: string) => void;
+  workspaceTrust?: WorkspaceTrustState;
+  onSetWorkspaceTrust?: (trust: WorkspaceTrustState) => void;
   environment?: WorkbenchEnvironment | null;
   inspection?: WorkbenchInspection | null;
   activeTool?: ActiveWorkbenchTool | null;
@@ -529,7 +534,7 @@ interface AgentWorkbenchProps {
   children: ReactNode;
 }
 
-export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _modelLabel, theme = 'light', onToggleTheme = () => undefined, bottomPanelOpen = false, agentAvailable = true, agentTasks = [], onNavigate, onToggleBottomPanel, onNewConversation = () => onNavigate(null), sessionTitle = '当前会话', sessionMetaLabel, sessionMessageCount = 0, workspaceLabel = '本地工作区', workspaces = [], sessions = [], activeWorkspaceId = null, activeSessionId = null, onChooseWorkspace = () => undefined, onSelectWorkspace = () => undefined, onSelectSession = () => undefined, onRenameSession = () => undefined, onDeleteSession = () => undefined, environment = null, inspection = null, activeTool = null, filePreview = null, diffPreview = null, verification = null, toolBusy = false, onToolAction, onRefreshInspection = () => undefined, onOpenResource = () => undefined, onPreviewFile = () => undefined, onPreviewDiff = () => undefined, onVerify = () => undefined, onApproveTask, onRetryTask = (task) => { void window.starchat.agent.retry(task.id); }, onRespondTask, onShare, onCancelTask, onMinimize = () => undefined, onClose = () => undefined, onMaximize, isMaximized = false, initialEnvironmentOpen = false, centerTitle, referenceEnvironment = false, referenceLayout = false, referenceFixture = false, children }: AgentWorkbenchProps): JSX.Element {
+export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _modelLabel, theme = 'light', onToggleTheme = () => undefined, bottomPanelOpen = false, agentAvailable = true, agentTasks = [], onNavigate, onToggleBottomPanel, onNewConversation = () => onNavigate(null), sessionTitle = '当前会话', sessionMetaLabel, sessionMessageCount = 0, workspaceLabel = '本地工作区', workspaces = [], sessions = [], activeWorkspaceId = null, activeSessionId = null, onChooseWorkspace = () => undefined, onSelectWorkspace = () => undefined, onSelectSession = () => undefined, onRenameSession = () => undefined, onDeleteSession = () => undefined, workspaceTrust = 'untrusted', onSetWorkspaceTrust = () => undefined, environment = null, inspection = null, activeTool = null, filePreview = null, diffPreview = null, verification = null, toolBusy = false, onToolAction, onRefreshInspection = () => undefined, onOpenResource = () => undefined, onPreviewFile = () => undefined, onPreviewDiff = () => undefined, onVerify = () => undefined, onApproveTask, onRetryTask = (task) => { void window.starchat.agent.retry(task.id); }, onRespondTask, onShare, onCancelTask, onMinimize = () => undefined, onClose = () => undefined, onMaximize, isMaximized = false, initialEnvironmentOpen = false, centerTitle, referenceEnvironment = false, referenceLayout = false, referenceFixture = false, children }: AgentWorkbenchProps): JSX.Element {
   const initialLayout = useMemo(() => referenceLayout ? REFERENCE_WORKBENCH_LAYOUT : readWorkbenchLayoutState(), [referenceLayout]);
   const [viewport, setViewport] = useState(rendererViewport);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialLayout.sidebarCollapsed);
@@ -593,7 +598,7 @@ export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _m
     {activePage === null ? <Sidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} onNewConversation={onNewConversation} workspaceLabel={workspaceLabel} sessionTitle={sessionTitle} sessionMeta={sessionMetaLabel ?? workbenchSessionMeta(sessionMessageCount, false)} referenceFixture={referenceFixture} workspaces={workspaces} sessions={sessions} activeWorkspaceId={activeWorkspaceId} activeSessionId={activeSessionId} onChooseWorkspace={onChooseWorkspace} onSelectWorkspace={onSelectWorkspace} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onDeleteSession={onDeleteSession} /> : <SettingsSidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} />}
     {!sidebarCollapsed ? <div className="wb-resizer-slot wb-sidebar-resizer" data-workbench-resizer="sidebar"><WorkbenchResizeHandle axis="vertical" value={sidebarWidth} minimum={WORKBENCH_LAYOUT_LIMITS.sidebar.minimum} maximum={WORKBENCH_LAYOUT_LIMITS.sidebar.maximum} resetValue={initialLayout.sidebarWidth} label="调整左侧栏宽度" controls="workbench-sidebar" onChange={resizeSidebar} /></div> : null}
     <div className="wb-main-grid" data-settings-workspace={activePage === null ? undefined : 'replacement'}>
-      <CenterFrame activePage={activePage} centerTitle={centerTitle} referenceEnvironment={referenceEnvironment} initialEnvironmentOpen={initialEnvironmentOpen} environment={environment} onShare={onShare} bottomPanelOpen={bottomPanelOpen} onToggleBottomPanel={onToggleBottomPanel} rightRailCollapsed={rightRailCollapsed} onToggleRightRail={toggleRightRail} rightRailToggleRef={rightRailToggleRef} onToolAction={onToolAction}>{toolPanel ?? children}</CenterFrame>
+      <CenterFrame activePage={activePage} centerTitle={centerTitle} referenceEnvironment={referenceEnvironment} initialEnvironmentOpen={initialEnvironmentOpen} environment={environment} workspaceTrust={workspaceTrust} onSetWorkspaceTrust={onSetWorkspaceTrust} onShare={onShare} bottomPanelOpen={bottomPanelOpen} onToggleBottomPanel={onToggleBottomPanel} rightRailCollapsed={rightRailCollapsed} onToggleRightRail={toggleRightRail} rightRailToggleRef={rightRailToggleRef} onToolAction={onToolAction}>{toolPanel ?? children}</CenterFrame>
       {activePage === null && !rightRailCollapsed ? <div className="wb-resizer-slot wb-right-rail-resizer" data-workbench-resizer="right-rail"><WorkbenchResizeHandle axis="vertical" direction={-1} value={effectiveRightRailWidth} minimum={WORKBENCH_LAYOUT_LIMITS.rightRail.minimum} maximum={referenceLayout ? WORKBENCH_LAYOUT_LIMITS.rightRail.maximum : maxRightRailWidth(viewport.width, sidebarCollapsed ? 0 : sidebarWidth)} resetValue={initialLayout.rightRailWidth} label="调整右侧工具栏宽度" controls="workbench-right-rail" onChange={resizeRightRail} /></div> : null}
       {activePage === null ? <RightRail collapsed={rightRailCollapsed} onNavigate={onNavigate} onToolAction={onToolAction ?? (referenceEnvironment ? () => undefined : undefined)} /> : null}
     </div>

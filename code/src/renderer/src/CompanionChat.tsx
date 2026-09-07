@@ -26,6 +26,7 @@ interface CompanionChatProps {
   onModeChange?: (mode: AgentMode) => void;
   onNewConversation?: () => void;
   onMessageSent?: (message: string) => void;
+  onRequestWorkspace?: () => void;
   showRouteControl?: boolean;
   compact?: boolean;
   showStatusSummary?: boolean;
@@ -162,7 +163,7 @@ function segmentPresentation(
   return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
-export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onNewConversation: _onNewConversation, onMessageSent, showRouteControl = true, compact = false, showStatusSummary = true, contextUsageOverride, referenceFixture = false, initialMessages = [], sessionId = '', workspaceAvailable = true }: CompanionChatProps): JSX.Element {
+export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onNewConversation: _onNewConversation, onMessageSent, onRequestWorkspace = () => undefined, showRouteControl = true, compact = false, showStatusSummary = true, contextUsageOverride, referenceFixture = false, initialMessages = [], sessionId = '', workspaceAvailable = true }: CompanionChatProps): JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>(() => initialMessages.map(({ role, content }) => ({ role, content })));
   const [draft, setDraft] = useState('');
   const [requestId, setRequestId] = useState<string | null>(null);
@@ -426,7 +427,12 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
 
   const send = async (): Promise<void> => {
     const message = draft.trim();
-    if (!message || requestId || !workspaceAvailable || !sessionId) return;
+    if (!message || requestId || !sessionId) return;
+    if (state.settings.assistantMode === 'agent' && !workspaceAvailable) {
+      setError('Agent 任务需要先选择工作区，个人会话仍可继续普通对话。');
+      onRequestWorkspace();
+      return;
+    }
     cancelSpeech();
     emitDialogue('start');
     emitDialogue('listening');
@@ -499,7 +505,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     </div> : null}
     {showRouteControl ? <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div> : null}
     <div className="companion-messages" data-agent-ui="messages" aria-live="polite" aria-label="对话消息">
-      {!workspaceAvailable ? <div className="agent-workspace-empty" role="status"><strong>请先选择工作区</strong><span>授权一个项目目录后，才能创建持久会话并运行 Agent。</span></div> : null}
+       {!workspaceAvailable && state.settings.assistantMode === 'agent' ? <div className="agent-workspace-empty" role="status"><strong>请先选择工作区运行 Agent</strong><span>当前是个人会话；授权项目目录后即可运行文件、测试和构建任务。</span><button type="button" className="secondary-button" onClick={onRequestWorkspace}>选择工作区</button></div> : null}
       {workspaceAvailable && messages.length === 0 && showRouteControl ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
       {hiddenMessageCount > 0 ? <button className="companion-history-disclosure" type="button" onClick={() => setShowEarlierMessages(true)}>显示较早的 {hiddenMessageCount} 条消息</button> : null}
       {visibleMessages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${hiddenMessageCount + index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
@@ -511,8 +517,8 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     </details> : null}
       <div className={`companion-composer agent-composer${referenceFixture ? ' is-reference-fixture' : ''}`} data-agent-ui="composer">
       <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件状态">{referenceFixture ? <><span className="agent-attachment-slot agent-attachment-preview"><span className="agent-attachment-code-preview" aria-hidden="true" /><span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span><span className="agent-attachment-slot agent-attachment-label">分销 45秒<span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span></> : <span className="agent-attachment-empty">当前仅支持文本消息，未添加附件</span>}</div></div>
-      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} disabled={!workspaceAvailable} placeholder={workspaceAvailable ? '向 StarChat 发送消息' : '请先选择工作区'} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
-       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button>{referenceFixture ? <span className="agent-composer-control" data-agent-composer-control="approval" aria-label="审批入口预览"><WorkbenchIcon name="agentStep" size={14} />帮我批准</span> : null}{waitingForApproval ? <button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />批准</button> : null}<span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model" title={`当前模型：${modelLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature" title={`生成强度：${temperatureLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入未启用" disabled title="语音输入尚未接入"><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!workspaceAvailable || !draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="sendUp" size={22} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
+      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} disabled={!sessionId} placeholder={!sessionId ? '正在准备个人会话' : workspaceAvailable ? '向 StarChat 发送消息' : '个人对话；Agent 任务需选择工作区'} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
+       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button>{referenceFixture ? <span className="agent-composer-control" data-agent-composer-control="approval" aria-label="审批入口预览"><WorkbenchIcon name="agentStep" size={14} />帮我批准</span> : null}{waitingForApproval ? <button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />批准</button> : null}<span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model" title={`当前模型：${modelLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature" title={`生成强度：${temperatureLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入未启用" disabled title="语音输入尚未接入"><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!sessionId || !draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="sendUp" size={22} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
     </div>
     {!compact ? <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p> : null}
   </div>;
