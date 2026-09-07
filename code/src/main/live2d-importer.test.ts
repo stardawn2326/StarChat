@@ -20,7 +20,7 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function createFixture(): string {
-  const root = mkdtempSync(join(tmpdir(), 'baoyin-live2d-'));
+  const root = mkdtempSync(join(tmpdir(), 'starchat-live2d-'));
   fixtureRoots.push(root);
   mkdirSync(join(root, 'textures'));
   writeFileSync(join(root, 'fixture.moc3'), Buffer.from('moc3-test'));

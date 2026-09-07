@@ -15,7 +15,7 @@ $exePath = if ($UseSourceBuild) {
   (Get-ChildItem -LiteralPath (Join-Path $projectRoot 'outputs') -File | Where-Object { $_.Name -like '*0.1.0.exe' } | Select-Object -First 1).FullName
 }
 $commandIdentity = if ($UseSourceBuild) { $sourceMain } else { $exePath }
-$marker = '--baoyin-interaction-test'
+$marker = '--starchat-interaction-test'
 if (-not $UserDataDirectory) { $UserDataDirectory = Join-Path $projectRoot 'outputs\debug-userdata-personality-v1' }
 if (-not $LogPath) { $LogPath = Join-Path $projectRoot 'outputs\personality-v1-single-instance.json' }
 

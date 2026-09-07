@@ -9,35 +9,35 @@ import {
 } from './workbench-layout';
 
 describe('workbench layout persistence contract', () => {
-  it('starts with the left sidebar open and the right and bottom panels collapsed', () => {
+  it('starts with the left sidebar open while the tool rail and bottom panel stay collapsed', () => {
     expect(defaultWorkbenchLayoutState({ width: 1280, height: 900 })).toEqual({
-      version: 2,
+      version: 4,
       sidebarCollapsed: false,
       rightRailCollapsed: true,
       bottomPanelOpen: false,
       sidebarWidth: 280,
       rightRailWidth: 220,
-      bottomPanelHeight: 174,
+      bottomPanelHeight: 148,
       characterWidth: 300
     });
   });
 
   it('uses the reference-proportional large sizes at 1920x1200', () => {
     expect(defaultWorkbenchLayoutState({ width: 1920, height: 1200 })).toEqual({
-      version: 2,
+      version: 4,
       sidebarCollapsed: false,
       rightRailCollapsed: true,
       bottomPanelOpen: false,
       sidebarWidth: 328,
       rightRailWidth: 414,
-      bottomPanelHeight: 215,
+      bottomPanelHeight: 156,
       characterWidth: 389
     });
   });
 
   it('clamps corrupted values and preserves explicit collapse state', () => {
     expect(sanitizeWorkbenchLayoutState({
-      version: 2,
+      version: 4,
       sidebarCollapsed: true,
       rightRailCollapsed: false,
       bottomPanelOpen: true,
@@ -46,7 +46,7 @@ describe('workbench layout persistence contract', () => {
       bottomPanelHeight: 9999,
       characterWidth: 10
     }, { width: 1920, height: 1200 })).toEqual({
-      version: 2,
+      version: 4,
       sidebarCollapsed: true,
       rightRailCollapsed: false,
       bottomPanelOpen: true,
@@ -82,7 +82,7 @@ describe('workbench layout persistence contract', () => {
 
   it('preserves user panel preferences while a compact window applies temporary visual clamps', () => {
     expect(sanitizeWorkbenchLayoutState({
-      version: 2,
+      version: 4,
       sidebarCollapsed: false,
       rightRailCollapsed: false,
       bottomPanelOpen: true,
@@ -91,6 +91,27 @@ describe('workbench layout persistence contract', () => {
       bottomPanelHeight: 380,
       characterWidth: 419
     }, { width: 1280, height: 900 })).toMatchObject({
+      rightRailWidth: 454,
+      bottomPanelHeight: 380,
+      characterWidth: 419
+    });
+  });
+
+  it('migrates the previous layout version while applying the compact rail defaults', () => {
+    expect(sanitizeWorkbenchLayoutState({
+      version: 3,
+      sidebarCollapsed: false,
+      rightRailCollapsed: false,
+      bottomPanelOpen: true,
+      sidebarWidth: 352,
+      rightRailWidth: 454,
+      bottomPanelHeight: 380,
+      characterWidth: 419
+    }, { width: 1280, height: 900 })).toMatchObject({
+      version: 4,
+      rightRailCollapsed: true,
+      bottomPanelOpen: false,
+      sidebarWidth: 352,
       rightRailWidth: 454,
       bottomPanelHeight: 380,
       characterWidth: 419

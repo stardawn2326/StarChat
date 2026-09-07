@@ -17,7 +17,7 @@ function wav(seconds: number, sampleRate = 16000): Buffer {
 
 describe('custom voice profile store', () => {
   it('imports an app-owned WAV copy and preserves metadata across reloads', () => {
-    const root = mkdtempSync(join(tmpdir(), 'baoyin-voice-'));
+    const root = mkdtempSync(join(tmpdir(), 'starchat-voice-'));
     const source = join(root, 'reference.wav');
     writeFileSync(source, wav(4));
     const before = readFileSync(source);
@@ -31,7 +31,7 @@ describe('custom voice profile store', () => {
   });
 
   it('rejects unsafe reference duration and mismatched file containers', () => {
-    const root = mkdtempSync(join(tmpdir(), 'baoyin-voice-'));
+    const root = mkdtempSync(join(tmpdir(), 'starchat-voice-'));
     const store = new VoiceProfileStore(join(root, 'userdata'));
     const short = join(root, 'short.wav'); writeFileSync(short, wav(2));
     const fake = join(root, 'fake.wav'); writeFileSync(fake, 'not a wave');

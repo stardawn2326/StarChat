@@ -28,8 +28,8 @@ const live2dEntry = live2dEnabled
 const live2dDirectory = live2dEntry ? dirname(live2dEntry) : null;
 const live2dShaderDirectory = resolve(codeDirectory, 'vendor/live2d-sdk-web/Framework/Shaders/WebGL');
 const referenceImages = {
-  dark: 'C:/Users/23260/AppData/Local/Temp/codex-clipboard-8c3dd0c9-c4ce-4fdc-96bf-655d642c2f6e.png',
-  light: 'C:/Users/23260/AppData/Local/Temp/codex-clipboard-fe53fc87-87cf-4699-9b8e-114085e1f9da.png'
+  light: 'C:/Users/23260/Pictures/a44358ff-6389-46a3-b1c7-34befd46e16c.png',
+  dark: 'C:/Users/23260/Pictures/f343dae2-568b-4cab-bd5f-1c131f177aec.png'
 };
 
 protocol.registerSchemesAsPrivileged([{
@@ -109,10 +109,10 @@ const ffmpegPath = 'D:/ffprobe/package/ffmpeg-9.0.1-essentials_build/bin/ffmpeg.
 const expectedGeometry = {
   topbar: { x: 0, y: 0, width: 1622, height: 55 },
   sidebar: { x: 0, y: 55, width: 280, height: 902 },
-  workView: { x: 280, y: 55, width: 1328, height: 718 },
-  center: { x: 280, y: 57, width: 968, height: 718 },
-  right: { x: 1254, y: 57, width: 354, height: 718 },
-  bottom: { x: 280, y: 783, width: 1328, height: 174 },
+  workView: { x: 279, y: 55, width: 1327, height: 720 },
+  center: { x: 279, y: 59, width: 968, height: 716 },
+  right: { x: 1254, y: 59, width: 352, height: 716 },
+  bottom: { x: 279, y: 783, width: 1327, height: 174 },
   characterPanel: { x: 299, y: 138, width: 332.265625, height: 622 },
   characterArt: { x: 300, y: 139, width: 330.265625, height: 620 }
 };
@@ -121,9 +121,10 @@ const preloadSource = `
 const noop = () => undefined;
 const unsubscribe = () => {};
 window.__starchatProbe = { showPet: 0 };
-window.baoyin = {
+window.starchat = {
   app: { minimize: noop, hideSettings: noop, showPet: () => { window.__starchatProbe.showPet += 1; }, onWindowFocusState: () => unsubscribe() },
   pet: { onBoundsChange: () => unsubscribe(), pointerCancel: noop },
+  cursor: { onUpdate: () => unsubscribe() },
   debug: { reportMetrics: noop, command: noop, runtimeCommand: async () => ({ ok: true, capabilities: {}, status: {} }) },
   presentation: { emit: noop, onEvent: () => unsubscribe() },
   chat: { onEvent: () => unsubscribe(), start: async () => 'screenshot-chat', cancel: async () => undefined },
@@ -192,7 +193,7 @@ async function captureWorkbenchInteractionEvidence(theme, existingWindow = null)
         bottomPanelToggle: readButton('[data-workbench="bottom-panel-toggle"]'),
         rightRailWidth: document.querySelector('[data-workbench-region="right"]')?.getBoundingClientRect().width ?? null,
         centerWidth: document.querySelector('[data-workbench-region="center"]')?.getBoundingClientRect().width ?? null,
-        layoutStorage: localStorage.getItem('starchat.workbench.layout.v2')
+        layoutStorage: localStorage.getItem('starchat.workbench.layout.v4')
       };
     };
     const click = async (selector) => {
@@ -206,11 +207,11 @@ async function captureWorkbenchInteractionEvidence(theme, existingWindow = null)
     const initial = read();
     const sidebarCollapsed = await click('[aria-controls="workbench-sidebar"]');
     const sidebarExpanded = await click('[aria-controls="workbench-sidebar"]');
-    const bottomCollapsed = await click('[data-workbench="bottom-panel-toggle"]');
     const bottomExpanded = await click('[data-workbench="bottom-panel-toggle"]');
-    const rightRailCollapsed = await click('[data-workbench="right-rail-toggle"]');
+    const bottomCollapsed = await click('[data-workbench="bottom-panel-toggle"]');
     const rightRailExpanded = await click('[data-workbench="right-rail-toggle"]');
-    document.querySelector('.wb-pet-action')?.click();
+    const rightRailCollapsed = await click('[data-workbench="right-rail-toggle"]');
+    document.querySelector('[data-workbench="pet-action"]')?.click();
     await pause();
     return { initial, sidebarCollapsed, sidebarExpanded, bottomCollapsed, bottomExpanded, rightRailCollapsed, rightRailExpanded, showPetCalls: window.__starchatProbe?.showPet ?? null, focusedControl: document.activeElement?.getAttribute('data-workbench') ?? document.activeElement?.getAttribute('aria-controls') ?? null };
   })()`);
@@ -280,7 +281,7 @@ async function readGeometry(window) {
         }
       };
       for (const sheet of Array.from(document.styleSheets)) visitRules(sheet.cssRules);
-      return { background: current.background, backgroundColor: current.backgroundColor, border: current.border, borderRadius: current.borderRadius, boxShadow: current.boxShadow, padding: current.padding, gap: current.gap, color: current.color, opacity: current.opacity, filter: current.filter, mixBlendMode: current.mixBlendMode, matchedBackgroundRules };
+      return { background: current.background, backgroundColor: current.backgroundColor, backdropFilter: current.backdropFilter, border: current.border, borderRadius: current.borderRadius, boxShadow: current.boxShadow, padding: current.padding, gap: current.gap, color: current.color, opacity: current.opacity, filter: current.filter, mixBlendMode: current.mixBlendMode, matchedBackgroundRules };
     };
     const rect = (node) => { const value = node?.getBoundingClientRect(); return value ? { x: value.x, y: value.y, width: value.width, height: value.height } : null; };
     const hit = (x, y) => {
@@ -312,6 +313,94 @@ function geometryDelta(actual) {
 async function captureTheme(theme, existingWindow = null) {
   const window = await loadRealWorkbench(theme, existingWindow, 'workbench');
   const geometry = await readGeometry(window);
+  // Inspect the resolved styles, including pseudo-elements: matching CSS text
+  // alone cannot detect invalid selectors or an overriding painted surface.
+  const chromeCanvas = await window.webContents.executeJavaScript(`(() => {
+    return ['.wb-topbar', '.wb-sidebar'].map(selector => {
+      const node = document.querySelector(selector);
+      if (!node) throw new Error('Missing chrome region: ' + selector);
+      const style = getComputedStyle(node);
+      const pseudo = getComputedStyle(node, selector === '.wb-topbar' ? '::after' : '::before');
+      return { selector, backgroundColor: style.backgroundColor,
+        backgroundImage: style.backgroundImage, backdropFilter: style.backdropFilter,
+        boxShadow: style.boxShadow, pseudoDisplay: pseudo.display, pseudoContent: pseudo.content };
+    });
+  })()`);
+  geometry.chromeCanvas = chromeCanvas;
+  // Native-pixel landmarks from the light reference: left rims at x=1272 and
+  // x=1436; top rims at y=160,355,546; bottom rims at y=341,532,723.
+  // Half-pixel horizontal positions reflect equal-width CSS grid tracks.
+  if (viewport.width === 1622 && viewport.height === 969) {
+    const cardLandmarks = [160, 355, 546].flatMap((y, row) =>
+      [1272, 1435.5].map(x => ({ x, y, width: 150.5, height: row === 0 ? 182 : 178 })));
+    geometry.cardLandmarks = cardLandmarks.map((expected, index) => ({
+      expected, actual: geometry.computed.toolCardRects[index]
+    }));
+    for (const [index, item] of geometry.cardLandmarks.entries()) {
+      if (!item.actual || Object.keys(item.expected).some(key => Math.abs(item.actual[key] - item.expected[key]) > .75)) {
+        throw new Error(`${theme} reference card ${index} misaligned: ${JSON.stringify(item)}`);
+      }
+    }
+    const footer = geometry.computed.composerFooterRect;
+    if (!footer || footer.height < 39 || footer.height > 41) {
+      throw new Error(`${theme} reference composer toolbar height: ${JSON.stringify(footer)}`);
+    }
+  }
+  geometry.presentationAudit = await window.webContents.executeJavaScript(`(() => {
+    const layers = [['.wb-shell', '::after'], ['.wb-center', '::before'], ['.wb-center-frame', '::before'],
+      ['.wb-sidebar', '::after'], ['.wb-right-rail', '::after'], ['.wb-bottom-panel', '::after']]
+      .map(([selector, pseudo]) => {
+        const node = document.querySelector(selector);
+        if (!node) throw new Error('Missing layer: ' + selector);
+        const style = getComputedStyle(node, pseudo);
+        return { selector, pseudo, display: style.display, content: style.content };
+      });
+    const typography = ['.wb-sidebar-heading strong', '.wb-project-row strong', '.wb-session-select > span',
+      '.wb-tool-card strong', '.wb-trajectory-response p', '.agent-composer-control',
+      '.agent-composer-control.is-context', '[data-agent-composer-control="approval"]',
+      '[data-agent-composer-control="model"]', '[data-agent-composer-control="temperature"]',
+      '.wb-environment-list span'].map(selector => {
+        const node = document.querySelector(selector);
+        const style = node && getComputedStyle(node);
+        const rect = node?.getBoundingClientRect();
+        return { selector, fontSize: style?.fontSize, lineHeight: style?.lineHeight,
+          color: style?.color, fontWeight: style?.fontWeight,
+          width: rect?.width, height: rect?.height, x: rect?.x, y: rect?.y,
+          clientWidth: node?.clientWidth, scrollWidth: node?.scrollWidth };
+      });
+    return { layers, typography };
+  })()`);
+  for (const layer of geometry.presentationAudit.layers) {
+    if (layer.display !== 'none' || layer.content !== 'none') {
+      throw new Error(`${theme} duplicate layer regression: ${JSON.stringify(layer)}`);
+    }
+  }
+  for (const control of geometry.presentationAudit.typography.filter(item => item.selector.includes('composer-control'))) {
+    if (control.scrollWidth > control.clientWidth + 1) {
+      throw new Error(`${theme} composer control overflow: ${JSON.stringify(control)}`);
+    }
+  }
+  const heading = geometry.presentationAudit.typography.find(item => item.selector === '.wb-sidebar-heading strong');
+  const response = geometry.presentationAudit.typography.find(item => item.selector === '.wb-trajectory-response p');
+  const responseInk = theme === 'light' ? 'rgb(7, 19, 79)' : 'rgb(176, 183, 194)';
+  if (heading?.fontWeight !== '400' || response?.color !== responseInk) {
+    throw new Error(`${theme} reference reading hierarchy: ${JSON.stringify({ heading, response, responseInk })}`);
+  }
+  for (const name of ['centerFrame', 'content', 'terminalTabs', 'terminalBody']) {
+    const surface = geometry.computed[name];
+    if (!surface || surface.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+        surface.background.includes('gradient(') || surface.boxShadow !== 'none') {
+      throw new Error(`${theme} layout backing regression: ${name} ${JSON.stringify(surface)}`);
+    }
+  }
+  for (const region of chromeCanvas) {
+    if (region.backgroundColor !== 'rgba(0, 0, 0, 0)' ||
+        region.backdropFilter !== 'none' || region.boxShadow !== 'none' ||
+        region.backgroundImage.includes('gradient(') ||
+        region.pseudoDisplay !== 'none' || region.pseudoContent !== 'none') {
+      throw new Error(`${theme} chrome canvas regression: ${JSON.stringify(region)}`);
+    }
+  }
   const image = await window.webContents.capturePage({ x: 0, y: 0, width: viewport.width, height: viewport.height });
   const outputPath = resolve(outputDirectory, `starchat-workbench-${theme}-${viewport.width}x${viewport.height}.png`);
   writeFileSync(outputPath, image.toPNG());
@@ -389,8 +478,15 @@ async function captureLive2DPreview() {
 }
 
 function comparisonRegions(geometry) {
+  const overlaySamples = viewport.width === 1622 && viewport.height === 969 ? {
+    overlayTopSample: { x: 985, y: 135, width: 5, height: 5 },
+    overlayMiddleSample: { x: 1100, y: 170, width: 5, height: 5 },
+    overlayBottomSample: { x: 1210, y: 450, width: 5, height: 5 }
+  } : {};
   return {
     ...expectedGeometry,
+    ...overlaySamples,
+    ...(geometry?.keyRects?.environmentPopover ? { environmentPopover: geometry.keyRects.environmentPopover } : {}),
     ...(geometry?.characterArt ? { characterArt: geometry.characterArt } : {}),
     ...(geometry?.computed?.attachmentRect ? { attachmentRect: geometry.computed.attachmentRect } : {}),
     ...(geometry?.computed?.textareaRect ? { textareaRect: geometry.computed.textareaRect } : {})
@@ -457,7 +553,7 @@ async function readRuntimeLayout(window) {
     };
     const shell = document.querySelector('.wb-shell');
     let storage = null;
-    try { storage = JSON.parse(localStorage.getItem('starchat.workbench.layout.v2')); } catch {}
+    try { storage = JSON.parse(localStorage.getItem('starchat.workbench.layout.v4')); } catch {}
     return {
       viewport: { width: innerWidth, height: innerHeight },
       shell: shell ? {
@@ -475,6 +571,15 @@ async function readRuntimeLayout(window) {
         bottom: rect('[data-workbench-region="bottom"]'),
         character: rect('[data-workbench-region="character"]'),
         dialogue: rect('[data-workbench-region="dialogue"]')
+      },
+      toolRail: {
+        grid: rect('.wb-tool-grid'),
+        cards: Array.from(document.querySelectorAll('.wb-tool-card')).map((node) => {
+          const value = node.getBoundingClientRect();
+          return { x: Number(value.x.toFixed(2)), y: Number(value.y.toFixed(2)), width: Number(value.width.toFixed(2)), height: Number(value.height.toFixed(2)) };
+        }),
+        clientHeight: document.querySelector('.wb-tool-grid')?.clientHeight ?? null,
+        scrollHeight: document.querySelector('.wb-tool-grid')?.scrollHeight ?? null
       },
       separators: {
         sidebar: separator('sidebar'),
@@ -523,6 +628,10 @@ async function captureLayoutRuntimeEvidence() {
   await dragRuntimeHandle(window, 'sidebar', 24, 0);
   await clickRuntimeControl(window, '[data-workbench="right-rail-toggle"]');
   await dragRuntimeHandle(window, 'right-rail', -40, 0);
+  const rightRailExpanded = await readRuntimeLayout(window);
+  await clickRuntimeControl(window, '[data-workbench="right-rail-toggle"]');
+  const rightRailCollapsed = await readRuntimeLayout(window);
+  await clickRuntimeControl(window, '[data-workbench="right-rail-toggle"]');
   await clickRuntimeControl(window, '[data-workbench="bottom-panel-toggle"]');
   await dragRuntimeHandle(window, 'bottom-panel', 0, -35);
   await dragRuntimeHandle(window, 'character', 30, 0);
@@ -559,6 +668,8 @@ async function captureLayoutRuntimeEvidence() {
   const evidence = {
     renderer: 'actual React renderer in Electron BrowserWindow',
     initial,
+    rightRailCollapsed,
+    rightRailExpanded,
     resized,
     compactAfterOuterResize,
     restoredAfterReload,
@@ -744,12 +855,13 @@ function Measure-Region($name, $x, $y, $width, $height, $exclude = @()) {
   $maskGraphics.Clear([System.Drawing.Color]::Black)
   $maskGraphics.Dispose()
   $different = 0
+  $exactDifferent = 0
   $sumDelta = 0L
   $sumAR = 0L; $sumAG = 0L; $sumAB = 0L
   $sumBR = 0L; $sumBG = 0L; $sumBB = 0L
   $pixels = 0
-  for ($py = $top; $py -lt $bottom; $py += 2) {
-    for ($px = $left; $px -lt $right; $px += 2) {
+  for ($py = $top; $py -lt $bottom; $py++) {
+    for ($px = $left; $px -lt $right; $px++) {
       $excluded = $false
       foreach ($item in $exclude) {
         if ($px -ge $item.x -and $px -lt ($item.x + $item.width) -and $py -ge $item.y -and $py -lt ($item.y + $item.height)) { $excluded = $true; break }
@@ -761,6 +873,7 @@ function Measure-Region($name, $x, $y, $width, $height, $exclude = @()) {
       $sumAR += $a.R; $sumAG += $a.G; $sumAB += $a.B
       $sumBR += $b.R; $sumBG += $b.G; $sumBB += $b.B
       $pixels++
+      if ($delta -gt 0) { $exactDifferent++ }
       if ($delta -gt 24) {
         $different++
         $mask.SetPixel($px - $left, $py - $top, [System.Drawing.Color]::White)
@@ -774,6 +887,10 @@ function Measure-Region($name, $x, $y, $width, $height, $exclude = @()) {
   $actualMean = @([Math]::Round($sumAR / [double]$safePixels, 2), [Math]::Round($sumAG / [double]$safePixels, 2), [Math]::Round($sumAB / [double]$safePixels, 2))
   $referenceMean = @([Math]::Round($sumBR / [double]$safePixels, 2), [Math]::Round($sumBG / [double]$safePixels, 2), [Math]::Round($sumBB / [double]$safePixels, 2))
   $metric = [pscustomobject]@{
+    sampledPixels = $pixels
+    pixelStride = 1
+    rgbSumThreshold = 24
+    exactDifferingRatio = [Math]::Round($exactDifferent / [double]$safePixels, 6)
     differingRatio = [Math]::Round($different / [double]$safePixels, 6)
     meanChannelDelta = [Math]::Round($sumDelta / ([double]$safePixels * 3), 3)
     actualMeanRgb = $actualMean
@@ -864,6 +981,35 @@ async function main() {
     app.quit();
     return;
   }
+  if (process.argv.includes('--tasks')) {
+    const rendererWindow = await loadRealWorkbench('light', null, 'tasks', { width: 1280, height: 800 }, 'reference');
+    const image = await rendererWindow.webContents.capturePage();
+    const screenshotPath = resolve(outputDirectory, 'agent-approval-center-light-1280x800.png');
+    writeFileSync(screenshotPath, image.toPNG());
+    const evidence = await rendererWindow.webContents.executeJavaScript(`(() => {
+      const rect = (selector) => { const value = document.querySelector(selector)?.getBoundingClientRect(); return value ? { left: value.left, top: value.top, right: value.right, bottom: value.bottom, width: value.width, height: value.height } : null; };
+      const viewport = { width: innerWidth, height: innerHeight };
+      const rail = rect('[data-workbench-region="right"]');
+      const bottom = rect('[data-workbench-region="bottom"]');
+      const approval = rect('[data-agent-ui="approval-center"]');
+      const patch = document.querySelector('[data-agent-ui="approval-center"] pre');
+      return {
+        viewport, rail, bottom, approval,
+        timelinePresent: Boolean(document.querySelector('[data-agent-ui="timeline"]')),
+        exactPatchPresent: Boolean(patch?.textContent?.includes('*** Begin Patch')),
+        approveLabel: document.querySelector('[data-agent-ui="approval-center"] .primary-button')?.textContent?.trim() ?? null,
+        railInsideViewport: Boolean(rail && rail.right <= viewport.width && rail.bottom <= viewport.height),
+        bottomInsideViewport: Boolean(bottom && bottom.right <= viewport.width && bottom.bottom <= viewport.height),
+        railNotCoveredByBottom: Boolean(rail && bottom && rail.bottom <= bottom.top)
+      };
+    })()`);
+    const reportPath = resolve(outputDirectory, 'agent-approval-center-report.json');
+    writeFileSync(reportPath, JSON.stringify({ screenshotPath, evidence }, null, 2), 'utf8');
+    rendererWindow.destroy();
+    console.log(JSON.stringify({ screenshotPath, reportPath, evidence }, null, 2));
+    app.quit();
+    return;
+  }
   if (process.argv.includes('--workbench-only')) {
     const rendererWindow = await loadRealWorkbench('light');
     const lightCapture = await captureTheme('light', rendererWindow);
@@ -876,7 +1022,7 @@ async function main() {
       screenshots: { light: lightCapture.outputPath, dark: darkCapture.outputPath },
       geometry: { light: lightCapture.geometryPath, dark: darkCapture.geometryPath, expected: expectedGeometry },
       references: referenceImages,
-      diff: {
+      diff: process.argv.includes('--skip-pixel-diff') ? { skipped: true, reason: 'geometry-only iteration; no pixel-parity claim' } : {
         light: comparePngWithReference(lightCapture.outputPath, referenceImages.light, resolve(outputDirectory, 'starchat-workbench-light-diff.json'), comparisonRegions(lightCapture.geometry)),
         dark: comparePngWithReference(darkCapture.outputPath, referenceImages.dark, resolve(outputDirectory, 'starchat-workbench-dark-diff.json'), comparisonRegions(darkCapture.geometry))
       },

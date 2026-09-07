@@ -1,8 +1,8 @@
-import type { BaoyinBridge } from './index';
+import type { StarChatBridge } from './index';
 
 declare global {
   interface Window {
-    baoyin: BaoyinBridge;
+    starchat: StarChatBridge;
   }
 }
 

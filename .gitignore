@@ -12,12 +12,7 @@ data/
 logs/
 .firecrawl/
 tools/video-analysis-python/
-tools/CosyVoice/
-tools/cosyvoice-python310/
 tools/downloads/
-tools/huggingface-cache/
-tools/modelscope-cache/
-tools/modelscope-credentials/
 tools/uv-cache/
 
 # User-local configuration and secrets

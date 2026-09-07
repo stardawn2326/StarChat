@@ -52,7 +52,7 @@ describe('Codex sidebar animation contract from the new reference video', () => 
     expect(workbenchStyles).toContain('--wb-right-rail-width: 0px');
     expect(workbenchStyles).toContain('--wb-right-rail-width 360ms cubic-bezier(.48, .38, .2, .98)');
     expect(workbenchStyles).toContain('data-right-rail-state="collapsed"');
-    expect(workbenchStyles).toContain('--wb-bottom-panel-open-height: 174px');
+    expect(workbenchStyles).toContain('--wb-bottom-panel-open-height: 148px');
     expect(workbenchStyles).toContain('data-bottom-panel="closed"');
   });
 

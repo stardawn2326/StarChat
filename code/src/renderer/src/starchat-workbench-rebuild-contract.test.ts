@@ -106,8 +106,8 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
     const markup = renderTopbar();
 
     expect(markup).toContain('data-workbench="brand-avatar"');
-    expect(markup).toContain('data-workbench-avatar-source="baoyin-b1-portrait"');
-    expect(workbenchSource).toContain("new URL('./assets/baoyin-static-role.png', import.meta.url).href");
+    expect(markup).toContain('data-workbench-avatar-source="starchat-character-icon"');
+    expect(workbenchSource).toContain("new URL('./assets/starchat-brand.png', import.meta.url).href");
     expect(referenceStylesheet).toContain('.wb-brand-avatar-crop');
     expect(referenceStylesheet).toContain('.wb-brand-avatar-crop img');
     expect(referenceStylesheet).toContain('top: calc(-10px * var(--wb-reference-scale));');
@@ -145,14 +145,14 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
     expect(iconSource).not.toContain("path('M6 14V6a2 2 0 012-2h8')");
   });
 
-  it('uses the concept-scale toolbar glyphs and keeps the settings entry atmospheric', () => {
+  it('uses compact toolbar spacing and keeps the settings entry atmospheric', () => {
     expect(workbenchSource).toContain('size={26}');
     expect(workbenchSource).toContain('name="environment" size={24}');
     expect(workbenchSource).toContain('name="panel" size={24}');
     expect(workbenchSource).toContain('name="columns" size={24}');
     expect(workbenchSource).toContain('name="plus" size={24}');
-    expect(stylesheet).toMatch(/\.wb-center-actions\s*\{[^}]*gap:\s*16px;[^}]*margin-right:\s*33px;/su);
-    expect(stylesheet).toMatch(/\.wb-share-action\s*\{[^}]*height:\s*42px;[^}]*font-size:\s*16px;/su);
+    expect(stylesheet).toMatch(/\.wb-center-actions\s*\{[^}]*gap:\s*12px;[^}]*margin-right:\s*33px;/su);
+    expect(stylesheet).toMatch(/\.wb-share-action\s*\{[^}]*height:\s*42px;[^}]*font-size:\s*14px;/su);
     expect(stylesheet).toMatch(/\.wb-center-actions \.wb-icon-button\s*\{[^}]*width:\s*42px;[^}]*height:\s*42px;/su);
     expect(stylesheet).toMatch(/\.wb-settings-entry\s*\{[^}]*background:\s*transparent;[^}]*border:\s*0;/su);
   });
@@ -206,8 +206,8 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('captures the exact user references and emits region mask/geometry/color evidence', () => {
-    expect(screenshotHelperSource).toContain('codex-clipboard-fe53fc87-87cf-4699-9b8e-114085e1f9da.png');
-    expect(screenshotHelperSource).toContain('codex-clipboard-8c3dd0c9-c4ce-4fdc-96bf-655d642c2f6e.png');
+    expect(screenshotHelperSource).toContain('C:/Users/23260/Pictures/a44358ff-6389-46a3-b1c7-34befd46e16c.png');
+    expect(screenshotHelperSource).toContain('C:/Users/23260/Pictures/f343dae2-568b-4cab-bd5f-1c131f177aec.png');
     expect(screenshotHelperSource).toContain('regionMasks');
     expect(screenshotHelperSource).toContain('colorReport');
     expect(screenshotSource).toContain('theme={theme}');
@@ -244,12 +244,19 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
     expect(screenshotSource).toContain('referenceFixture={!productionLayout}');
   });
 
-  it('uses the supplied transparent role art as the deterministic fallback without an unconfigured placeholder', () => {
+  it('uses the supplied full-body character as the static placeholder until Live2D is ready', () => {
+    const brandAssetPath = resolve(rendererDirectory, 'assets/starchat-brand.png');
+    expect(existsSync(brandAssetPath)).toBe(true);
+    expect(readPngHeader(brandAssetPath)).toEqual({ width: 256, height: 256, colorType: 6 });
     const roleAssetPath = resolve(rendererDirectory, 'assets/baoyin-static-role.png');
     expect(existsSync(roleAssetPath)).toBe(true);
     expect(readPngHeader(roleAssetPath)).toEqual({ width: 1024, height: 1536, colorType: 6 });
     expect(createHash('sha256').update(readFileSync(roleAssetPath)).digest('hex')).toBe('f5bf76e67df7b1c65c6bb0344f24ea4dda32ae90fe7b9f0c35a1bfc028e6d6b6');
+    expect(consoleSource).not.toContain("new URL('./assets/starchat-brand.png', import.meta.url).href");
     expect(consoleSource).toContain("new URL('./assets/baoyin-static-role.png', import.meta.url).href");
+    expect(consoleSource).toContain('className="wb-static-role is-character-placeholder"');
+    expect(referenceStylesheet).not.toContain('.wb-static-role.is-character-placeholder img {');
+    expect(referenceStylesheet).toContain('object-position: center top;');
     expect(consoleSource).toContain('data-workbench-role="static"');
     expect(consoleSource).toContain('src={staticRoleImage}');
     expect(consoleSource).toContain('className="wb-static-role-base"');
@@ -259,7 +266,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
     expect(referenceStylesheet).toContain('.wb-static-role');
     expect(referenceStylesheet).toContain('top: calc(70px * var(--wb-reference-scale));');
     expect(referenceStylesheet).toContain('height: calc(1200px * var(--wb-reference-scale));');
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
     expect(referenceStylesheet).toContain('left: calc(50% - calc(13px * var(--wb-reference-scale)));');
     expect(referenceStylesheet).toContain('transform: translateX(-50%);');
     expect(referenceStylesheet).toContain('mask-image: linear-gradient(to bottom, #000 0%, #000 43%, rgba(0, 0, 0, .82) 52%, transparent 69%);');
@@ -274,8 +281,8 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('keeps the dark character surface quiet while preserving silver role highlights', () => {
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
-    expect(referenceStylesheet).toContain('filter: brightness(.50) saturate(.92) contrast(1.10);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
+    expect(referenceStylesheet).toContain('filter: brightness(.72) saturate(.96) contrast(1.08);');
     expect(referenceStylesheet).toContain('opacity: .72;');
     expect(referenceStylesheet).toContain('mask-image: linear-gradient(to bottom, #000 0%, #000 28%, rgba(0, 0, 0, .72) 40%, rgba(0, 0, 0, .30) 54%, rgba(0, 0, 0, .08) 62%, transparent 68%);');
     expect(referenceStylesheet).toContain('html[data-theme="dark"] .wb-shell[data-workbench-visual="reference"][data-workbench-mode="workbench"] :where(.wb-character-panel, .wb-character-art)');
@@ -284,8 +291,8 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('separates the dark role crown from the lower-body shade for concept material parity', () => {
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
-    expect(referenceStylesheet).toContain('filter: brightness(.50) saturate(.92) contrast(1.10);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
+    expect(referenceStylesheet).toContain('filter: brightness(.72) saturate(.96) contrast(1.08);');
     expect(referenceStylesheet).toContain('mask-image: linear-gradient(to bottom, #000 0%, #000 28%, rgba(0, 0, 0, .72) 40%, rgba(0, 0, 0, .30) 54%, rgba(0, 0, 0, .08) 62%, transparent 68%);');
     expect(referenceStylesheet).toContain('background: linear-gradient(to bottom, transparent 0%, transparent 40%, rgba(0, 4, 12, .36) 52%, rgba(0, 4, 12, .48) 62%, rgba(0, 4, 12, .08) 78%, rgba(0, 4, 12, .14) 100%);');
   });
@@ -301,7 +308,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
 
   it('keeps the fixture attachment label on one concept-sized line and preserves dark role color', () => {
     expect(referenceStylesheet).toMatch(/\.agent-attachment-label\s*\{[^}]*font-size:\s*calc\(14px \* var\(--wb-reference-scale\)\);[^}]*white-space:\s*nowrap;/su);
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
   });
 
   it('adds a dedicated starfield layer inside the character panel without restoring a second ring', () => {
@@ -340,7 +347,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
 
   it('keeps the reference sidebar tree rhythm and compact session rows', () => {
     expect(referenceStylesheet).toMatch(/\.wb-shell\[data-workbench-structure="shared"\] \.wb-project-tree\s*\{[^}]*margin-top:\s*calc\(12px \* var\(--wb-reference-scale\)\);/su);
-    expect(referenceStylesheet).toMatch(/\.wb-shell\[data-workbench-structure="shared"\] \.wb-session-row\s*\{[^}]*min-height:\s*calc\(52px \* var\(--wb-reference-scale\)\);/su);
+    expect(referenceStylesheet).toMatch(/\.wb-shell\[data-workbench-structure="shared"\] \.wb-session-row\s*\{[^}]*min-height:\s*calc\(48px \* var\(--wb-reference-scale\)\);/su);
   });
 
   it('keeps the light reference character surface below the center pane midtone', () => {
@@ -355,7 +362,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
     expect(referenceStylesheet).toContain('font-weight: 450;');
     expect(referenceStylesheet).toContain(':where(.wb-dialogue-meta, .wb-trajectory, .wb-plan-actions, .wb-environment-popover-reference, .wb-terminal-body)');
     expect(referenceStylesheet).toContain('.wb-project-row strong');
-    expect(referenceStylesheet).toContain('.wb-session-row > span');
+    expect(referenceStylesheet).toContain('.wb-session-select > span');
     expect(referenceStylesheet).toContain('.wb-sidebar-heading');
     expect(referenceStylesheet).toContain('.wb-tool-card strong');
   });
@@ -368,7 +375,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('places one shared center separator on the concept content baseline', () => {
-    expect(referenceStylesheet).toContain('.wb-center-toolbar {\n  border-bottom: 0 !important;\n}');
+    expect(referenceStylesheet).toMatch(/\.wb-center-toolbar \{\r?\n  border-bottom: 0 !important;\r?\n\}/u);
     expect(referenceStylesheet).toContain('.wb-center-frame::before');
     expect(referenceStylesheet).toContain('top: calc(63px * var(--wb-reference-scale));');
     expect(referenceStylesheet).toContain('height: calc(3px * var(--wb-reference-scale));');
@@ -403,7 +410,7 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('keeps the dark static role readable as a cool gray-blue concept layer', () => {
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
   });
 
   it('keeps the light static role cool and dimensional instead of washing it into the panel', () => {
@@ -434,8 +441,8 @@ describe('StarChat workbench structural/material rebuild contracts', () => {
   });
 
   it('compares the latest 1622x969 concept files without stretching their one-pixel source mismatch', () => {
-    expect(screenshotHelperSource).toContain('codex-clipboard-fe53fc87-87cf-4699-9b8e-114085e1f9da.png');
-    expect(screenshotHelperSource).toContain('codex-clipboard-8c3dd0c9-c4ce-4fdc-96bf-655d642c2f6e.png');
+    expect(screenshotHelperSource).toContain('C:/Users/23260/Pictures/a44358ff-6389-46a3-b1c7-34befd46e16c.png');
+    expect(screenshotHelperSource).toContain('C:/Users/23260/Pictures/f343dae2-568b-4cab-bd5f-1c131f177aec.png');
     expect(screenshotHelperSource).toContain('referenceWasCropped');
     expect(screenshotHelperSource).toContain('controllableOnly');
     expect(screenshotHelperSource).toContain('--workbench-only');

@@ -19,10 +19,10 @@ function settingsCssWithoutDataUri(): string {
 
 describe('StarChat Agent workbench integration boundary', () => {
   it('owns the Agent task subscription in App and passes one synchronized projection to every console route', () => {
-    expect(appSource.match(/window\.baoyin\.agent\.onEvent/g) ?? []).toHaveLength(1);
-    expect(chatSource).not.toContain('window.baoyin.agent.onEvent');
-    expect(chatSource).not.toContain('window.baoyin.agent.list()');
-    expect(chatSource).not.toContain('window.baoyin.agent.get(');
+    expect(appSource.match(/window\.starchat\.agent\.onEvent/g) ?? []).toHaveLength(1);
+    expect(chatSource).not.toContain('window.starchat.agent.onEvent');
+    expect(chatSource).not.toContain('window.starchat.agent.list()');
+    expect(chatSource).not.toContain('window.starchat.agent.get(');
     expect(consoleSource).toContain('agentTasks');
     expect(consoleSource).toContain('agentEvent');
     expect(detailsSource).toContain('agentTasks');
@@ -31,7 +31,7 @@ describe('StarChat Agent workbench integration boundary', () => {
 
   it('keeps the embedded workbench on the shared Live2D and presentation boundary', () => {
     expect(consoleSource).toContain("import { Live2DCanvas } from './Live2DCanvas';");
-    expect(consoleSource).toContain('window.baoyin.presentation.onEvent');
+    expect(consoleSource).toContain('window.starchat.presentation.onEvent');
     expect(rendererBootstrapSource).toContain("if (role === 'pet' || role === 'settings')");
     expect(mainSource).toContain("if (sourceWindow !== settingsWindow || !isSafePresentationEvent(payload))");
     expect(mainSource).toContain("settingsWindow.webContents.send('presentation:event', payload)");

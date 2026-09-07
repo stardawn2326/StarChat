@@ -10,12 +10,13 @@ import {
   nativeImage,
   protocol,
   screen,
+  shell,
   Tray
 } from 'electron';
 import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
+import { DEFAULT_ROLE_PACKAGE, isBuiltinRoleId } from '../shared/default-role';
 import type {
   AgentApproveRequest,
   AgentEvent,
@@ -62,13 +63,17 @@ import { VoiceProfileStore } from './voice-profile-store';
 import { CubismRuntimeSession } from './cubism-runtime-session';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
+import { SessionStore } from './session-store';
+import type { SessionRenameRequest, SessionSnapshot } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
 import { routeTurn } from './agent-router';
-import { formatWorkbenchShare, inspectWorkbench } from './workbench-service';
+import { commitWorkbenchStaged, formatWorkbenchShare, inspectWorkbench, normalizeWorkbenchUrl, previewWorkbenchFile, readWorkbenchDiff, runWorkbenchCommand } from './workbench-service';
+import { runVerification } from './agent-tools';
 import {
   resolveWorkbenchWindowState,
   WORKBENCH_MIN_SIZE
 } from './window-state';
+import { migrateLegacyStarChatData } from './brand-migration';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 let petWindow: BrowserWindow | null = null;
@@ -80,6 +85,7 @@ let voiceProfileStore: VoiceProfileStore;
 let live2dRegistry: Live2DModelRegistry;
 let agentStore: AgentStore;
 let agentService: AgentService;
+let sessionStore: SessionStore;
 let isQuitting = false;
 let restoringPetBounds = false;
 let petBoundsPersistTimer: ReturnType<typeof setTimeout> | null = null;
@@ -92,7 +98,8 @@ let petModelEditMode = false;
 let petBoundsRestored = false;
 let petRendererReady = false;
 let petRuntimeCommandSubscribed = false;
-let petStartupShowPending = true;
+let petStartupShowPending = false;
+let workbenchCharacterVisible = true;
 let cursorTimer: ReturnType<typeof setInterval> | null = null;
 let lastCursorPoint: { x: number; y: number } | null = null;
 let latestCubismMetrics: CubismRuntimeMetrics | null = null;
@@ -126,8 +133,8 @@ let pendingLive2DSwitch: PendingLive2DSwitch | null = null;
 
 const LIVE2D_PROTOCOL = 'live2d';
 const LIVE2D_MODEL_BASE = 'live2d://model/';
-const CLICK_TARGET_TITLE = 'BAOYIN_CLICK_TARGET';
-const interactionTestEnabled = process.env.BAOYIN_INTERACTION_TEST === '1' || process.argv.includes('--baoyin-interaction-test');
+const CLICK_TARGET_TITLE = 'STARCHAT_CLICK_TARGET';
+const interactionTestEnabled = process.env.STARCHAT_INTERACTION_TEST === '1' || process.argv.includes('--starchat-interaction-test');
 const singleInstanceLock = app.requestSingleInstanceLock();
 
 function appIconPath(): string {
@@ -141,7 +148,7 @@ function trayIconPath(): string {
 function cosyVoiceProjectRoots(): string[] {
   const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR;
   return [
-    process.env.BAOYIN_COSYVOICE_PROJECT_ROOT ?? '',
+    process.env.STARCHAT_COSYVOICE_PROJECT_ROOT ?? '',
     portableExecutableDir ? resolve(portableExecutableDir, '..') : '',
     resolve(app.getAppPath(), '..'),
     resolve(dirname(process.execPath), '..'),
@@ -150,7 +157,7 @@ function cosyVoiceProjectRoots(): string[] {
 }
 
 function agentWorkspaceRoot(): string {
-  const configured = process.env.BAOYIN_AGENT_WORKSPACE_ROOT?.trim();
+  const configured = process.env.STARCHAT_AGENT_WORKSPACE_ROOT?.trim();
   return configured && isAbsolute(configured) ? configured : resolve(app.getAppPath(), '..');
 }
 
@@ -158,9 +165,7 @@ if (!singleInstanceLock) {
   void app.quit();
 } else {
   app.on('second-instance', () => {
-    settingsWindow?.show();
-    settingsWindow?.focus();
-    showPetWindowInactive();
+    showSettingsWindow();
   });
 }
 
@@ -344,9 +349,18 @@ function sendChatEvent(sender: Electron.WebContents, event: ChatEvent): void {
 }
 
 function sendAgentEvent(event: AgentEvent): void {
+  if (event.type === 'complete') {
+    const task = agentStore?.get(event.taskId);
+    if (task) publishSessionSnapshot(sessionStore.appendMessage(task.sessionId, { role: 'assistant', content: event.result.summary }));
+  }
   const sender = agentTaskSenders.get(event.taskId);
   if (sender && !sender.isDestroyed()) sender.send('agent:event', event);
   if (event.type === 'complete' || event.type === 'error') agentTaskSenders.delete(event.taskId);
+}
+
+function publishSessionSnapshot(snapshot = sessionStore.snapshot()): SessionSnapshot {
+  if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.webContents.send('sessions:changed', snapshot);
+  return snapshot;
 }
 
 function getAgentService(): AgentService {
@@ -715,6 +729,12 @@ function createSettingsWindow(): void {
   settingsWindow.webContents.on('did-finish-load', () => {
     sendSettingsWindowFocusState(settingsWindow?.isFocused() === true);
     sendSettingsWindowMaximizedState(settingsWindow?.isMaximized() === true);
+    sendWorkbenchCharacterVisibility(workbenchCharacterVisible);
+  });
+  settingsWindow.once('ready-to-show', () => {
+    if (isQuitting) return;
+    settingsWindow?.show();
+    settingsWindow?.focus();
   });
   loadRenderer(settingsWindow, 'settings');
   settingsWindow.on('close', (event) => {
@@ -808,6 +828,16 @@ function sendSettingsWindowFocusState(active: boolean): void {
 function sendSettingsWindowMaximizedState(maximized: boolean): void {
   if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isDestroyed()) return;
   settingsWindow.webContents.send('window:maximized-changed', maximized);
+}
+
+function sendWorkbenchCharacterVisibility(visible: boolean): void {
+  if (!settingsWindow || settingsWindow.isDestroyed() || settingsWindow.webContents.isDestroyed()) return;
+  settingsWindow.webContents.send('workbench:character-visibility', visible);
+}
+
+function setWorkbenchCharacterVisible(visible: boolean): void {
+  workbenchCharacterVisible = visible;
+  sendWorkbenchCharacterVisibility(visible);
 }
 
 function inspectLive2DSelection(path: string): Live2DModelInspection {
@@ -970,25 +1000,28 @@ function startCursorPolling(): void {
     return;
   }
   cursorTimer = setInterval(() => {
-    if (!petWindow || petWindow.isDestroyed() || !petWindow.isVisible()) {
+    const targets = [petWindow, settingsWindow].filter((window): window is BrowserWindow => Boolean(window && !window.isDestroyed() && window.isVisible()));
+    if (targets.length === 0) {
       return;
     }
     const point = screen.getCursorScreenPoint();
-    const bounds = petWindow.getBounds();
     const moving = !lastCursorPoint || point.x !== lastCursorPoint.x || point.y !== lastCursorPoint.y;
     lastCursorPoint = point;
-    const update: CursorUpdate = {
-      screenX: point.x,
-      screenY: point.y,
-      localX: (point.x - bounds.x) / Math.max(1, bounds.width),
-      localY: (point.y - bounds.y) / Math.max(1, bounds.height),
-      windowWidth: bounds.width,
-      windowHeight: bounds.height,
-      insideWindow: point.x >= bounds.x && point.x <= bounds.x + bounds.width && point.y >= bounds.y && point.y <= bounds.y + bounds.height,
-      moving,
-      timestamp: Date.now()
-    };
-    petWindow.webContents.send('cursor:update', update);
+    for (const target of targets) {
+      const bounds = target.getBounds();
+      const update: CursorUpdate = {
+        screenX: point.x,
+        screenY: point.y,
+        localX: (point.x - bounds.x) / Math.max(1, bounds.width),
+        localY: (point.y - bounds.y) / Math.max(1, bounds.height),
+        windowWidth: bounds.width,
+        windowHeight: bounds.height,
+        insideWindow: point.x >= bounds.x && point.x <= bounds.x + bounds.width && point.y >= bounds.y && point.y <= bounds.y + bounds.height,
+        moving,
+        timestamp: Date.now()
+      };
+      target.webContents.send('cursor:update', update);
+    }
   }, 33);
 }
 
@@ -1011,14 +1044,22 @@ function togglePetMenuLock(): void {
 function togglePetMenuVisibility(): void {
   if (petWindow?.isVisible()) {
     petWindow.hide();
+    setWorkbenchCharacterVisible(true);
   } else {
+    setWorkbenchCharacterVisible(false);
     showPetWindowInactive();
   }
 }
 
+function returnPetToWorkbench(): void {
+  petWindow?.hide();
+  setWorkbenchCharacterVisible(true);
+  showSettingsWindow();
+}
+
 function buildPetMenu(): Menu {
   return Menu.buildFromTemplate([
-    { label: '打开 StarChat 工作台', click: showSettingsWindow },
+    { label: '放回工作台', click: returnPetToWorkbench },
     { label: '解锁/锁定桌宠', click: togglePetMenuLock },
     { label: '显示/隐藏桌宠', click: togglePetMenuVisibility },
     { type: 'separator' },
@@ -1030,6 +1071,8 @@ function showSettingsWindow(): void {
   if (!settingsWindow || settingsWindow.isDestroyed()) {
     createSettingsWindow();
   }
+  petWindow?.hide();
+  setWorkbenchCharacterVisible(true);
   settingsWindow?.show();
   settingsWindow?.focus();
 }
@@ -1042,8 +1085,7 @@ function toggleSettings(): void {
   if (settingsWindow.isVisible()) {
     settingsWindow.hide();
   } else {
-    settingsWindow.show();
-    settingsWindow.focus();
+    showSettingsWindow();
   }
 }
 
@@ -1116,6 +1158,7 @@ function bindAgentTaskSender(taskId: string, sender: Electron.WebContents): void
 async function startRoutedChat(sender: Electron.WebContents, request: StartChatRequest): Promise<string> {
   const message = typeof request?.message === 'string' ? request.message.trim() : '';
   if (!message) throw new Error('消息不能为空');
+  const execution = sessionStore.executionContext(typeof request?.sessionId === 'string' ? request.sessionId : '');
   const settings = getStore().readSettings();
   const requestedMode = request.mode === 'auto' || request.mode === 'companion' || request.mode === 'agent' ? request.mode : settings.assistantMode;
   const context = agentContext();
@@ -1127,11 +1170,13 @@ async function startRoutedChat(sender: Electron.WebContents, request: StartChatR
       : undefined
   });
   if (decision.route === 'agent') {
-    const started = await getAgentService().start({ message, mode: requestedMode }, decision);
+    publishSessionSnapshot(sessionStore.appendMessage(execution.sessionId, { role: 'user', content: message }));
+    const started = await getAgentService().start({ message, mode: requestedMode, sessionId: execution.sessionId }, decision);
     bindAgentTaskSender(started.taskId, sender);
     return started.taskId;
   }
   const requestId = randomUUID();
+  publishSessionSnapshot(sessionStore.appendMessage(execution.sessionId, { role: 'user', content: message }));
   const controller = new AbortController();
   activeRequests.set(requestId, controller);
   void runChat(sender, requestId, { ...request, message, mode: requestedMode }, controller)
@@ -1188,6 +1233,7 @@ async function runChat(
     sendChatEvent(sender, { type: 'delta', requestId, delta });
   }
   const nextCompanion = getStore().saveCompanionState(recordCompanionExchange(before, snapshot, message, responseText));
+  publishSessionSnapshot(sessionStore.appendMessage(request.sessionId, { role: 'assistant', content: responseText }));
   sendChatEvent(sender, { type: 'complete', requestId, response: responseText, companion: companionSummary(nextCompanion, snapshot.relationshipStages) });
   sendStateChanged();
 }
@@ -1257,25 +1303,89 @@ function flushPendingCubismRuntimeCommands(): void {
 
 function registerIpc(): void {
   ipcMain.handle('state:get', () => getPublicState());
-  ipcMain.handle('workbench:inspect', (event, request: { kind?: unknown }) => {
+  ipcMain.handle('sessions:snapshot', (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以读取会话');
+    return sessionStore.snapshot();
+  });
+  ipcMain.handle('sessions:choose-workspace', async (event) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以选择工作区');
+    const selected = await dialog.showOpenDialog(settingsWindow!, { title: '选择 StarChat 工作区', properties: ['openDirectory'] });
+    if (selected.canceled || !selected.filePaths[0]) return sessionStore.snapshot();
+    return publishSessionSnapshot(sessionStore.authorizeWorkspace(selected.filePaths[0], agentContext().roleId));
+  });
+  ipcMain.handle('sessions:select-workspace', (event, workspaceId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof workspaceId !== 'string') throw new Error('工作区选择请求无效');
+    return publishSessionSnapshot(sessionStore.selectWorkspace(workspaceId, agentContext().roleId));
+  });
+  ipcMain.handle('sessions:create', (event, workspaceId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof workspaceId !== 'string') throw new Error('新建会话请求无效');
+    return publishSessionSnapshot(sessionStore.createSession(workspaceId, agentContext().roleId));
+  });
+  ipcMain.handle('sessions:select', (event, sessionId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof sessionId !== 'string') throw new Error('会话选择请求无效');
+    return publishSessionSnapshot(sessionStore.selectSession(sessionId));
+  });
+  ipcMain.handle('sessions:rename', (event, request: SessionRenameRequest) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || !request || typeof request.sessionId !== 'string' || typeof request.title !== 'string') throw new Error('会话重命名请求无效');
+    return publishSessionSnapshot(sessionStore.renameSession(request.sessionId, request.title));
+  });
+  ipcMain.handle('sessions:delete', (event, sessionId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof sessionId !== 'string') throw new Error('会话删除请求无效');
+    return publishSessionSnapshot(sessionStore.deleteSession(sessionId, agentContext().roleId));
+  });
+  ipcMain.handle('workbench:inspect', (event, request: { kind?: unknown; path?: unknown }) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以读取工作区状态');
     const kind = request?.kind === 'resources' || request?.kind === 'source' ? request.kind : null;
     if (!kind) throw new Error('工作区检查类型无效');
-    return inspectWorkbench(agentWorkspaceRoot(), kind);
+    if (request.path !== undefined && typeof request.path !== 'string') throw new Error('工作区路径无效');
+    return inspectWorkbench(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, kind, request.path ?? '');
+  });
+  ipcMain.handle('workbench:preview-file', (event, request: { path?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.path !== 'string') throw new Error('文件预览请求无效');
+    return previewWorkbenchFile(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, request.path);
+  });
+  ipcMain.handle('workbench:diff', (event, request: { path?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.path !== 'string') throw new Error('差异读取请求无效');
+    return readWorkbenchDiff(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, request.path);
+  });
+  ipcMain.handle('workbench:verify', async (event, request: { script?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.script !== 'string') throw new Error('验证请求无效');
+    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
+    const verificationRoot = existsSync(join(workspaceRoot, 'package.json')) ? workspaceRoot : join(workspaceRoot, 'code');
+    return runVerification(verificationRoot, request.script, new AbortController().signal);
+  });
+  ipcMain.handle('workbench:command', async (event, request: { command?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.command !== 'string') throw new Error('终端命令请求无效');
+    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
+    return runWorkbenchCommand(workspaceRoot, request.command, new AbortController().signal);
+  });
+  ipcMain.handle('workbench:open-url', async (event, request: { url?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.url !== 'string') throw new Error('浏览器地址请求无效');
+    const url = normalizeWorkbenchUrl(request.url);
+    await shell.openExternal(url);
+    return { ok: true as const, url };
+  });
+  ipcMain.handle('workbench:git-commit', async (event, request: { message?: unknown }) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof request?.message !== 'string') throw new Error('Git 提交请求无效');
+    const workspaceRoot = sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot;
+    return commitWorkbenchStaged(workspaceRoot, request.message, new AbortController().signal);
   });
   ipcMain.handle('workbench:share', (event) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有工作台窗口可以分享环境摘要');
-    const summary = formatWorkbenchShare(inspectWorkbench(agentWorkspaceRoot(), 'source'));
+    const summary = formatWorkbenchShare(inspectWorkbench(sessionStore.executionContext(sessionStore.snapshot().activeSessionId ?? '').workspaceRoot, 'source'));
     clipboard.writeText(summary.text);
     return summary;
   });
-  ipcMain.handle('window:toggle-maximize', (event) => {
+  ipcMain.handle('window:toggle-maximize', (event, requestedState?: unknown) => {
     const targetWindow = BrowserWindow.fromWebContents(event.sender);
     if (!targetWindow || targetWindow !== settingsWindow) throw new Error('只有工作台窗口可以切换最大化');
-    if (targetWindow.isMaximized()) targetWindow.unmaximize();
-    else targetWindow.maximize();
+    const shouldMaximize = typeof requestedState === 'boolean' ? requestedState : !targetWindow.isMaximized();
+    if (shouldMaximize && !targetWindow.isMaximized()) targetWindow.maximize();
+    if (!shouldMaximize && targetWindow.isMaximized()) targetWindow.unmaximize();
     persistWorkbenchWindowState(true);
-    return targetWindow.isMaximized();
+    const maximized = targetWindow.isMaximized();
+    sendSettingsWindowMaximizedState(maximized);
+    return maximized;
   });
   ipcMain.handle('window:is-maximized', (event) => {
     const targetWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1339,7 +1449,8 @@ function registerIpc(): void {
     if (!profile) throw new Error('音色不存在');
     const settings = getStore().readSettings();
     await ensureCosyVoiceService(settings.cosyVoiceBaseUrl, cosyVoiceProjectRoots(), 'zero-shot');
-    return synthesizeCosyVoice(typeof request.text === 'string' ? request.text : '你好，我是白音。', settings, {
+    const activeRoleName = getStore().readActiveRolePackage().identity.name;
+    return synthesizeCosyVoice(typeof request.text === 'string' ? request.text : `你好，我是${activeRoleName}。`, settings, {
       promptText: profile.promptText,
       promptWav: new Uint8Array(readFileSync(voiceProfileStore.audioPath(profile.id)))
     });
@@ -1436,7 +1547,7 @@ function registerIpc(): void {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) {
       throw new Error('只有设置窗口可以删除角色包');
     }
-    if (request?.id === DEFAULT_ROLE_PACKAGE.id) throw new Error('默认白音人格不可删除');
+    if (isBuiltinRoleId(request?.id ?? '')) throw new Error('内置角色不可删除，请先复制为自定义角色');
     getStore().deleteRolePackage(request?.id ?? '');
     if (getStore().readSettings().activeRoleId === request?.id) getStore().save({ activeRoleId: DEFAULT_ROLE_PACKAGE.id });
     sendStateChanged();
@@ -1447,7 +1558,7 @@ function registerIpc(): void {
       throw new Error('只有设置窗口可以导入角色包');
     }
     const result = await dialog.showOpenDialog(settingsWindow!, {
-      title: '导入白音角色包',
+      title: '导入 StarChat 角色包',
       properties: ['openFile'],
       filters: [{ name: 'JSON 角色包', extensions: ['json'] }]
     });
@@ -1465,7 +1576,7 @@ function registerIpc(): void {
     const role = getStore().readRolePackages().find((item) => item.id === request?.id);
     if (!role) throw new Error('角色包不存在');
     const result = await dialog.showSaveDialog(settingsWindow!, {
-      title: '导出白音角色包',
+      title: '导出 StarChat 角色包',
       defaultPath: `${role.id}.role.json`,
       filters: [{ name: 'JSON 角色包', extensions: ['json'] }]
     });
@@ -1603,11 +1714,7 @@ function registerIpc(): void {
     }
   });
   ipcMain.on('settings:show', () => {
-    if (!settingsWindow || settingsWindow.isDestroyed()) {
-      createSettingsWindow();
-    }
-    settingsWindow?.show();
-    settingsWindow?.focus();
+    showSettingsWindow();
   });
   ipcMain.on('settings:hide', () => settingsWindow?.hide());
   ipcMain.on('settings:toggle', toggleSettings);
@@ -1636,6 +1743,7 @@ function registerIpc(): void {
   ipcMain.on('pet:show', (event) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
     if (sourceWindow === settingsWindow || sourceWindow === petWindow) {
+      setWorkbenchCharacterVisible(false);
       showPetWindowInactive();
       petWindow?.setAlwaysOnTop(true, 'floating', 1);
     }
@@ -1643,8 +1751,13 @@ function registerIpc(): void {
   ipcMain.on('pet:toggle', (event) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
     if (sourceWindow !== settingsWindow && sourceWindow !== petWindow) return;
-    if (petWindow?.isVisible()) petWindow.hide();
-    else showPetWindowInactive();
+    if (petWindow?.isVisible()) {
+      petWindow.hide();
+      setWorkbenchCharacterVisible(true);
+    } else {
+      setWorkbenchCharacterVisible(false);
+      showPetWindowInactive();
+    }
   });
   ipcMain.on('pet:center', (event) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1765,25 +1878,25 @@ function registerIpc(): void {
       settingsWindow.webContents.send('presentation:event', payload);
     }
   });
-  ipcMain.on('baoyin:settings-preview', (event, detail: SettingsPreviewDetail) => {
+  ipcMain.on('starchat:settings-preview', (event, detail: SettingsPreviewDetail) => {
     const source = BrowserWindow.fromWebContents(event.sender);
     if (source === petWindow && detail?.domain === 'settings') {
       if (!detail.patch || Object.keys(detail.patch).some((key) => key !== 'modelViewportByModel')) return;
-      settingsWindow?.webContents.send('baoyin:settings-preview', detail);
+      settingsWindow?.webContents.send('starchat:settings-preview', detail);
       return;
     }
     if (source === settingsWindow && detail?.domain === 'settings') {
       if (!detail.patch || typeof detail.patch !== 'object') return;
       const allowed = new Set(['cursorTrackingEnabled', 'cursorEyeWeight', 'cursorHeadWeight', 'cursorBodyWeight', 'cursorSmoothing', 'cursorMaxStep', 'cursorRangeX', 'cursorRangeY', 'cursorIdleMotion']);
       if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;
-      petWindow?.webContents.send('baoyin:settings-preview', detail);
+      petWindow?.webContents.send('starchat:settings-preview', detail);
       return;
     }
     if (source !== settingsWindow || !detail || detail.domain !== 'presentation') return;
     if (!detail.patch || typeof detail.patch !== 'object') return;
     const allowed = new Set(['bodyFollowStrength', 'bodyLag', 'inertiaStrength', 'idleSwayStrength', 'physicsEnabled']);
     if (Object.keys(detail.patch).some((key) => !allowed.has(key))) return;
-    petWindow?.webContents.send('baoyin:settings-preview', detail);
+    petWindow?.webContents.send('starchat:settings-preview', detail);
   });
   ipcMain.handle('chat:start', (event, request: StartChatRequest) => {
     const sourceWindow = BrowserWindow.fromWebContents(event.sender);
@@ -1798,6 +1911,12 @@ function registerIpc(): void {
   ipcMain.handle('agent:start', async (event, request: AgentStartRequest) => {
     if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow) throw new Error('只有设置窗口可以开始 Agent 任务');
     const started = await getAgentService().start(sanitizeAgentStartRequest(request));
+    bindAgentTaskSender(started.taskId, event.sender);
+    return started;
+  });
+  ipcMain.handle('agent:retry', async (event, taskId: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== settingsWindow || typeof taskId !== 'string') throw new Error('Agent 重试请求无效');
+    const started = await getAgentService().retry(taskId);
     bindAgentTaskSender(started.taskId, event.sender);
     return started;
   });
@@ -1826,14 +1945,22 @@ function registerIpc(): void {
 if (singleInstanceLock) {
   app.whenReady().then(() => {
     Menu.setApplicationMenu(null);
-    app.setAppUserModelId('com.baoyin.aiassistant');
-    settingsStore = new SettingsStore(app.getPath('userData'));
-    voiceProfileStore = new VoiceProfileStore(app.getPath('userData'));
-    live2dRegistry = new Live2DModelRegistry(app.getPath('userData'));
-    agentStore = new AgentStore(join(app.getPath('userData'), 'agent-tasks.json'));
+    app.setAppUserModelId('com.starchat.desktop');
+    const userDataDir = app.getPath('userData');
+    const appDataDir = app.getPath('appData');
+    migrateLegacyStarChatData(userDataDir, [
+      join(appDataDir, '白音 AI 助手'),
+      join(appDataDir, '白音AI助手'),
+      join(appDataDir, 'baoyin')
+    ]);
+    settingsStore = new SettingsStore(userDataDir);
+    voiceProfileStore = new VoiceProfileStore(userDataDir);
+    live2dRegistry = new Live2DModelRegistry(userDataDir);
+    agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
+    sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     agentService = new AgentService({
       store: agentStore,
-      workspaceRoot: agentWorkspaceRoot(),
+      resolveExecutionContext: (sessionId) => sessionStore.executionContext(sessionId ?? ''),
       getContext: agentContext,
       createModel: (context) => {
         if (!context.apiKey) throw new Error('请先在设置中保存 API Key，Agent 才能执行模型步骤');
@@ -1859,7 +1986,7 @@ if (singleInstanceLock) {
     registerInteractionShortcut();
     startCursorPolling();
     app.on('activate', () => {
-      showPetWindowInactive();
+      showSettingsWindow();
     });
   });
 }

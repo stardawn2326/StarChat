@@ -17,7 +17,7 @@ const edges: PetResizeEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'];
 
 describe('PetWindow absolute model screen-anchor contract', () => {
   it('propagates window origin changes for both drag and resize before compensating the model locally', () => {
-    expect(canvasSource).toContain('window.baoyin.pet.onBoundsChange');
+    expect(canvasSource).toContain('window.starchat.pet.onBoundsChange');
     expect(canvasSource).toContain('screenX: window.screenX');
     expect(canvasSource).toContain('screenY: window.screenY');
     expect(runtimeSource).toContain('const originChanged =');
@@ -76,7 +76,7 @@ describe('PetWindow absolute model screen-anchor contract', () => {
     expect(viewportPath).toContain('modelScreenAnchor = screenPointForLocalPoint');
     expect(viewportPath).toContain('model.position.set');
     expect(petSource).toContain("operation: 'window-and-model-drag'");
-    expect(petSource).toContain("window.baoyin.pet.dragStart");
+    expect(petSource).toContain("window.starchat.pet.dragStart");
     const altFinish = petSource.slice(petSource.indexOf("if (gesture.operation === 'window-and-model-drag')"), petSource.indexOf("if (gesture.operation === 'window-resize')"));
     expect(altFinish).not.toContain('updateModelViewport');
     expect(altFinish).not.toContain('persistModelViewport');

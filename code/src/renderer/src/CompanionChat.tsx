@@ -6,7 +6,8 @@ import { presentationForAssistantText } from '../../shared/companion';
 import { AGENT_MODE_OPTIONS, type AgentEvent, type AgentMode, type AgentTask } from '../../shared/agent';
 import { GlassSelect } from './GlassSelect';
 import { AgentTaskPanel } from './AgentTaskPanel';
-import { AGENT_TASK_STATUS_LABELS, estimateContextUsage } from './agent-ui-model';
+import type { SessionMessage } from '../../shared/session';
+import { AGENT_TASK_STATUS_LABELS, currentAgentStep, estimateContextUsage, isActiveAgentTaskStatus } from './agent-ui-model';
 import { WorkbenchIcon } from './WorkbenchIcon';
 import {
   EmotionCueGate,
@@ -26,14 +27,19 @@ interface CompanionChatProps {
   onNewConversation?: () => void;
   onMessageSent?: (message: string) => void;
   showRouteControl?: boolean;
+  compact?: boolean;
+  showStatusSummary?: boolean;
   contextUsageOverride?: number;
   referenceFixture?: boolean;
+  initialMessages?: readonly SessionMessage[];
+  sessionId?: string;
+  workspaceAvailable?: boolean;
 }
 
 type CancelPlayback = (() => void) | null;
 
 function emitSpeech(speaking: boolean, mouthOpen = 0, mouthForm = 0): void {
-  window.baoyin.presentation.emit({
+  window.starchat.presentation.emit({
     type: 'speech',
     speaking,
     source: 'assistant',
@@ -44,7 +50,7 @@ function emitSpeech(speaking: boolean, mouthOpen = 0, mouthForm = 0): void {
 }
 
 function emitDialogue(phase: 'start' | 'listening' | 'replying' | 'end'): void {
-  window.baoyin.presentation.emit({
+  window.starchat.presentation.emit({
     type: 'dialogue',
     phase,
     source: 'system',
@@ -53,7 +59,7 @@ function emitDialogue(phase: 'start' | 'listening' | 'replying' | 'end'): void {
 }
 
 function emitNeutralPresentation(): void {
-  window.baoyin.presentation.emit({
+  window.starchat.presentation.emit({
     type: 'control',
     name: 'neutral',
     source: 'system',
@@ -145,7 +151,7 @@ function emitPresentationEvents(
   for (const event of events) {
     if (!('name' in event)) continue;
     if (!gate.accept(event.name, now)) continue;
-    window.baoyin.presentation.emit(event);
+    window.starchat.presentation.emit(event);
   }
 }
 
@@ -156,13 +162,15 @@ function segmentPresentation(
   return splitRealtimePresentation(presentationForAssistantText(text, mappings));
 }
 
-export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onNewConversation: _onNewConversation, onMessageSent, showRouteControl = true, contextUsageOverride, referenceFixture = false }: CompanionChatProps): JSX.Element {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onNewConversation: _onNewConversation, onMessageSent, showRouteControl = true, compact = false, showStatusSummary = true, contextUsageOverride, referenceFixture = false, initialMessages = [], sessionId = '', workspaceAvailable = true }: CompanionChatProps): JSX.Element {
+  const [messages, setMessages] = useState<ChatMessage[]>(() => initialMessages.map(({ role, content }) => ({ role, content })));
   const [draft, setDraft] = useState('');
   const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedAgentTaskId, setSelectedAgentTaskId] = useState<string | null>(null);
   const [hideHistoricalAgentTask, setHideHistoricalAgentTask] = useState(false);
+  const [showEarlierMessages, setShowEarlierMessages] = useState(false);
+  const [taskDetailsOpen, setTaskDetailsOpen] = useState(!compact);
   const activeId = useRef<string | null>(null);
   const disposedRef = useRef(false);
   const assistantText = useRef('');
@@ -189,6 +197,9 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   const agentTask = selectedAgentTaskId
     ? agentTasks.find((task) => task.id === selectedAgentTaskId) ?? null
     : hideHistoricalAgentTask ? null : latestAgentTask;
+  const compactMessageLimit = 6;
+  const hiddenMessageCount = compact && !showEarlierMessages ? Math.max(0, messages.length - compactMessageLimit) : 0;
+  const visibleMessages = hiddenMessageCount > 0 ? messages.slice(hiddenMessageCount) : messages;
 
   const clearEmotionFlushTimer = (): void => {
     if (emotionFlushTimerRef.current === null) return;
@@ -200,7 +211,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     emotionFlushTimerRef.current = null;
     const expression = expressionGateRef.current.flush(Date.now());
     if (!expression) return;
-    window.baoyin.presentation.emit({
+    window.starchat.presentation.emit({
       type: 'expression',
       name: expression as ExpressionName,
       source: 'assistant',
@@ -245,7 +256,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     schedulePendingEmotion();
     const sourcePromise = synthesisTailRef.current.then(() => {
       if (generation !== speechGenerationRef.current) return '';
-      return window.baoyin.tts.synthesize(segment);
+      return window.starchat.tts.synthesize(segment);
     });
     synthesisTailRef.current = sourcePromise.then(() => undefined, () => undefined);
     const playback = playbackTailRef.current.then(async () => {
@@ -296,7 +307,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   useEffect(() => {
     let disposed = false;
     disposedRef.current = false;
-    const unsubscribe = window.baoyin.chat.onEvent((event) => {
+    const unsubscribe = window.starchat.chat.onEvent((event) => {
       if (disposed) return;
       if (event.requestId !== activeId.current) return;
       if (event.type === 'delta') {
@@ -341,7 +352,7 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
        disposedRef.current = true;
        unsubscribe();
       const request = activeId.current;
-      if (request) void window.baoyin.chat.cancel(request);
+      if (request) void window.starchat.chat.cancel(request);
       activeId.current = null;
       setRequestId(null);
       cancelSpeech();
@@ -401,9 +412,21 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     }
   }, [agentEvent, state.role.id]);
 
+  useEffect(() => {
+    setShowEarlierMessages(false);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (!compact) {
+      setTaskDetailsOpen(true);
+      return;
+    }
+    setTaskDetailsOpen(Boolean(agentTask && isActiveAgentTaskStatus(agentTask.status)));
+  }, [agentTask?.id, agentTask?.status, compact]);
+
   const send = async (): Promise<void> => {
     const message = draft.trim();
-    if (!message || requestId) return;
+    if (!message || requestId || !workspaceAvailable || !sessionId) return;
     cancelSpeech();
     emitDialogue('start');
     emitDialogue('listening');
@@ -416,9 +439,9 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
     onMessageSent?.(message);
     setMessages((current) => [...current, { role: 'user', content: message }, { role: 'assistant', content: '' }]);
     try {
-       const id = await window.baoyin.chat.start({ message, history, mode: state.settings.assistantMode });
+       const id = await window.starchat.chat.start({ message, history, mode: state.settings.assistantMode, sessionId });
        if (disposedRef.current) {
-         void window.baoyin.chat.cancel(id);
+         void window.starchat.chat.cancel(id);
          return;
        }
        activeId.current = id;
@@ -433,57 +456,64 @@ export function CompanionChat({ state, agentTasks, agentEvent, onModeChange, onN
   const stop = (): void => {
     if (requestId) {
       const isAgentTask = agentTask?.id === requestId || agentTasks.some((task) => task.id === requestId);
-      if (isAgentTask) void window.baoyin.agent.cancel(requestId);
-      else void window.baoyin.chat.cancel(requestId);
+      if (isAgentTask) void window.starchat.agent.cancel(requestId);
+      else void window.starchat.chat.cancel(requestId);
     }
     cancelSpeech();
     activeId.current = null;
     setRequestId(null);
   };
 
+  const hasActiveTask = Boolean(agentTask && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(agentTask.status));
   const waitingForApproval = agentTask?.status === 'waiting_for_approval' && agentTask.approval;
   const waitingForInput = agentTask?.status === 'waiting_for_input' && agentTask.input;
+  const showTaskDisclosure = Boolean(agentTask && (!compact || hasActiveTask || selectedAgentTaskId));
+  const visibleAgentTask = showTaskDisclosure ? agentTask : null;
   const approve = async (approved: boolean): Promise<void> => {
     if (!waitingForApproval) return;
-    try { await window.baoyin.agent.approve({ taskId: waitingForApproval.taskId, requestId: waitingForApproval.id, approved }); }
+    try { await window.starchat.agent.approve({ taskId: waitingForApproval.taskId, requestId: waitingForApproval.id, approved }); }
     catch (reason) { setError(reason instanceof Error ? reason.message : '审批失败'); }
   };
   const contextUsage = estimateContextUsage(messages, draft);
   const contextPercent = contextUsageOverride ?? contextUsage.percent;
   const modelLabel = referenceFixture ? '默认模型' : state.settings.model;
   const temperatureLabel = referenceFixture ? '轻度' : `温度 ${state.settings.temperature.toFixed(2)}`;
-  const hasActiveTask = Boolean(agentTask && ['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(agentTask.status));
   const handleAgentApprove = async (approved: boolean): Promise<void> => {
     await approve(approved);
   };
   const handleAgentRespond = async (value: string): Promise<void> => {
     if (!waitingForInput) return;
     try {
-      await window.baoyin.agent.respond({ taskId: waitingForInput.taskId, requestId: waitingForInput.id, value });
+      await window.starchat.agent.respond({ taskId: waitingForInput.taskId, requestId: waitingForInput.id, value });
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : '补充信息失败');
     }
   };
 
-  return <div className="companion-chat" data-agent-ui="chat">
-    <div className="companion-status">
+  return <div className={`companion-chat${compact ? ' is-compact' : ''}`} data-agent-ui="chat" data-progressive-disclosure={compact ? 'true' : 'false'}>
+    {showStatusSummary ? <div className="companion-status">
       <span>关系阶段<strong>{state.companion.stageLabel}</strong></span>
       <span>亲密度<strong>{state.companion.affinity}/100</strong></span>
       <span>互动<strong>{state.companion.interactionCount}</strong></span>
       <span>记忆<strong>{state.companion.memoryCount}</strong></span>
-    </div>
+    </div> : null}
     {showRouteControl ? <div className="companion-route-control"><label htmlFor="assistant-mode">处理模式</label><GlassSelect id="assistant-mode" ariaLabel="对话路由模式" value={state.settings.assistantMode} options={AGENT_MODE_OPTIONS.map((option) => ({ value: option.value, label: option.label }))} onChange={(value) => onModeChange?.(value as AgentMode)} /><small>{AGENT_MODE_OPTIONS.find((option) => option.value === state.settings.assistantMode)?.description}</small></div> : null}
     <div className="companion-messages" data-agent-ui="messages" aria-live="polite" aria-label="对话消息">
-      {messages.length === 0 && showRouteControl ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
-      {messages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
+      {!workspaceAvailable ? <div className="agent-workspace-empty" role="status"><strong>请先选择工作区</strong><span>授权一个项目目录后，才能创建持久会话并运行 Agent。</span></div> : null}
+      {workspaceAvailable && messages.length === 0 && showRouteControl ? <p className="detail-note">开始和{state.role.displayName}说话。人格、关系阶段与记忆会在每次请求时生成快照。</p> : null}
+      {hiddenMessageCount > 0 ? <button className="companion-history-disclosure" type="button" onClick={() => setShowEarlierMessages(true)}>显示较早的 {hiddenMessageCount} 条消息</button> : null}
+      {visibleMessages.map((message, index) => <div className={`companion-message ${message.role}`} key={`${message.role}-${hiddenMessageCount + index}`}><strong>{message.role === 'user' ? '你' : state.role.displayName}</strong><p>{message.content || '…'}</p></div>)}
     </div>
     {error ? <p className="error-banner">{error}</p> : null}
-    {agentTask ? <div aria-label="当前步骤"><AgentTaskPanel task={agentTask} onApprove={(approved) => void handleAgentApprove(approved)} onRespond={(value) => void handleAgentRespond(value)} onCancel={hasActiveTask ? stop : undefined} /></div> : null}
+    {visibleAgentTask ? <details className="companion-task-disclosure" data-agent-ui="task-disclosure" open={!compact || taskDetailsOpen} onToggle={(event) => setTaskDetailsOpen(event.currentTarget.open)}>
+      <summary className="companion-task-summary"><span><WorkbenchIcon name={hasActiveTask ? 'agentStep' : 'check'} size={14} />{AGENT_TASK_STATUS_LABELS[visibleAgentTask.status].label}</span><span>{currentAgentStep(visibleAgentTask)}</span></summary>
+      <div aria-label="当前步骤"><AgentTaskPanel task={visibleAgentTask} onApprove={(approved) => void handleAgentApprove(approved)} onRespond={(value) => void handleAgentRespond(value)} onCancel={hasActiveTask ? stop : undefined} /></div>
+    </details> : null}
       <div className={`companion-composer agent-composer${referenceFixture ? ' is-reference-fixture' : ''}`} data-agent-ui="composer">
       <div className="agent-composer-header"><div className="agent-attachment-slots" data-agent-ui="attachments" aria-label="附件状态">{referenceFixture ? <><span className="agent-attachment-slot agent-attachment-preview"><span className="agent-attachment-code-preview" aria-hidden="true" /><span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span><span className="agent-attachment-slot agent-attachment-label">分销 45秒<span className="agent-attachment-remove" aria-hidden="true"><WorkbenchIcon name="close" size={11} /></span></span></> : <span className="agent-attachment-empty">当前仅支持文本消息，未添加附件</span>}</div></div>
-      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} placeholder="向 StarChat 发送消息" onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
-       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button><button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" disabled={!waitingForApproval} onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />帮我批准</button><span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model">{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature">{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入未启用" disabled title="语音输入尚未接入"><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="send" size={18} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
+      <div className="agent-compose-row"><textarea aria-label="输入消息" value={draft} rows={3} disabled={!workspaceAvailable} placeholder={workspaceAvailable ? '向 StarChat 发送消息' : '请先选择工作区'} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void send(); } }} /></div>
+       <div className="agent-composer-footer agent-composer-tools" data-agent-ui="composer-tools"><button className="agent-composer-control" type="button" aria-label="添加工具未启用" disabled title="工具由 Agent 根据安全策略自动选择"><WorkbenchIcon name="plus" size={15} /></button>{referenceFixture ? <span className="agent-composer-control" data-agent-composer-control="approval" aria-label="审批入口预览"><WorkbenchIcon name="agentStep" size={14} />帮我批准</span> : null}{waitingForApproval ? <button className="agent-composer-control" type="button" data-agent-composer-control="approval" aria-label="审批" onClick={() => void approve(true)}><WorkbenchIcon name="check" size={14} />批准</button> : null}<span className="agent-composer-control is-context" data-agent-composer-control="context" aria-label={`上下文占用，剩余 ${Math.max(0, 100 - contextPercent)}%`}><WorkbenchIcon name="context" size={14} />剩余上下文 {Math.max(0, 100 - contextPercent)}%</span><span className="agent-composer-control" data-agent-composer-control="model" title={`当前模型：${modelLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="model" size={14} />}{modelLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><span className="agent-composer-control" data-agent-composer-control="temperature" title={`生成强度：${temperatureLabel}`}>{referenceFixture ? null : <WorkbenchIcon name="strength" size={14} />}{temperatureLabel}{referenceFixture ? <WorkbenchIcon name="chevron" size={12} /> : null}</span><button className="agent-composer-control is-mic" type="button" data-agent-composer-control="mic" aria-label="语音输入未启用" disabled title="语音输入尚未接入"><WorkbenchIcon name="mic" size={15} /></button><button className="agent-send-button" type="button" aria-label="发送消息" disabled={!workspaceAvailable || !draft.trim() || Boolean(requestId)} onClick={() => void send()}><WorkbenchIcon name="sendUp" size={22} /></button>{requestId ? <button className="agent-composer-control" type="button" onClick={stop}>停止</button> : null}</div>
     </div>
-    <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p>
+    {!compact ? <p className="runtime-capability-note">语音提供器：CosyVoice · {state.settings.cosyVoiceSpeaker}；回复按句播放，口型由实际音频包络驱动。</p> : null}
   </div>;
 }

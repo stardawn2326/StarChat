@@ -5,7 +5,7 @@ import { runLive2DVerification } from './live2d-verification';
 
 describe('external Live2D verification report', () => {
   it('writes a Miku fixture report when the user-provided read-only source exists', () => {
-    const entryPath = process.env.BAOYIN_MIKU_MODEL_ENTRY ?? 'D:\\BaiduNetdiskDownload\\miku\\miku\\miku.model3.json';
+    const entryPath = process.env.STARCHAT_MIKU_MODEL_ENTRY ?? 'D:\\BaiduNetdiskDownload\\miku\\miku\\miku.model3.json';
     if (!existsSync(entryPath)) {
       expect(true).toBe(true);
       return;

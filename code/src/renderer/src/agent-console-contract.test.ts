@@ -22,8 +22,8 @@ const task: AgentTask = {
     { id: 'step-1', taskId: 'task-1', index: 0, kind: 'route', status: 'completed', summary: '已路由到 Agent', createdAt: 1, finishedAt: 1 },
     { id: 'step-2', taskId: 'task-1', index: 1, kind: 'tool', status: 'waiting', summary: '读取项目清单', createdAt: 2, invocationId: 'invoke-1' }
   ],
-  invocations: [{ id: 'invoke-1', taskId: 'task-1', name: 'list_workspace', arguments: '不得出现在界面', status: 'waiting_for_approval', createdAt: 2, summary: '等待许可后读取工作区清单' }],
-  approval: { id: 'approval-1', taskId: 'task-1', invocationId: 'invoke-1', toolName: 'list_workspace', target: '授权工作区', plan: '只读列出工作区内的文件，不会写入。', createdAt: 2 }
+  invocations: [{ id: 'invoke-1', taskId: 'task-1', name: 'apply_patch', arguments: '不得出现在界面', status: 'waiting_for_approval', createdAt: 2, summary: '等待许可后修改文件' }],
+  approval: { id: 'approval-1', taskId: 'task-1', invocationId: 'invoke-1', toolName: 'apply_patch', target: 'src/a.ts', plan: '将更新 1 个文件。', preview: { files: ['src/a.ts'], patch: '*** Begin Patch\n-old\n+new\n*** End Patch', additions: 1, deletions: 1 }, createdAt: 2 }
 };
 
 const rendererDirectory = resolve(import.meta.dirname);
@@ -59,10 +59,12 @@ describe('StarChat Agent console contracts', () => {
     expect(markup).toContain('当前步骤');
     expect(markup).toContain('步骤时间线');
     expect(markup).toContain('工具调用');
-    expect(markup).toContain('list_workspace');
-    expect(markup).toContain('等待许可后读取工作区清单');
+    expect(markup).toContain('apply_patch');
+    expect(markup).toContain('等待许可后修改文件');
     expect(markup).not.toContain('不得出现在界面');
-    expect(markup).toContain('批准这次计划');
+    expect(markup).toContain('批准并写入');
+    expect(markup).toContain('*** Begin Patch');
+    expect(markup).toContain('src/a.ts');
   });
 
   it('renders a keyboard-friendly supplementary input request', () => {

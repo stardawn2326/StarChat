@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { WorkspaceGuard } from './agent-security';
 
 function workspace(): string {
-  const root = mkdtempSync(join(tmpdir(), 'baoyin-agent-'));
+  const root = mkdtempSync(join(tmpdir(), 'starchat-agent-'));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'note.txt'), 'hello\nworld\n', 'utf8');
   return root;
@@ -24,7 +24,7 @@ describe('agent workspace security', () => {
 
   it('rejects symlink escape, sensitive files, binary files and oversized text', () => {
     const root = workspace();
-    const outside = mkdtempSync(join(tmpdir(), 'baoyin-agent-outside-'));
+    const outside = mkdtempSync(join(tmpdir(), 'starchat-agent-outside-'));
     writeFileSync(join(outside, 'secret.txt'), 'do not read', 'utf8');
     let symlinkCreated = false;
     try {

@@ -34,9 +34,21 @@ function sanitizeTask(value: unknown): AgentTask | null {
     id: source.id.slice(0, 100), sessionId: source.sessionId.slice(0, 100), roleId: source.roleId.slice(0, 100),
     message: source.message.slice(0, 20_000), mode, route: source.route, status,
     createdAt: source.createdAt, updatedAt: source.updatedAt, currentStep: Math.max(0, Math.floor(source.currentStep ?? 0)),
+    resumedFromTaskId: typeof source.resumedFromTaskId === 'string' ? source.resumedFromTaskId.slice(0, 100) : undefined,
     steps: Array.isArray(source.steps) ? source.steps.slice(-100) : [],
     invocations: Array.isArray(source.invocations) ? source.invocations.slice(-100) : [],
-    approval: source.approval, input: source.input, result: source.result,
+    approval: source.approval ? {
+      ...source.approval,
+      target: source.approval.target.slice(0, 2000),
+      plan: source.approval.plan.slice(0, 20_000),
+      preview: source.approval.preview ? {
+        files: source.approval.preview.files.slice(0, 100).map((path) => path.slice(0, 2000)),
+        patch: source.approval.preview.patch.slice(0, 512 * 1024),
+        additions: Math.max(0, Math.floor(source.approval.preview.additions)),
+        deletions: Math.max(0, Math.floor(source.approval.preview.deletions))
+      } : undefined
+    } : undefined,
+    input: source.input, result: source.result,
     error: typeof source.error === 'string' ? source.error.slice(0, 2000) : undefined
   });
 }
@@ -58,7 +70,7 @@ export class AgentStore {
             if (!task) continue;
             if (ACTIVE_STATUSES.includes(task.status)) {
               task.status = 'interrupted';
-              task.error = '应用重启时任务未完成；首版不会自动继续执行。';
+              task.error = '应用重启时任务未完成；可在任务管理中重新执行。';
               task.updatedAt = Date.now();
               dirty = true;
             }

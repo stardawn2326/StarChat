@@ -1,4 +1,4 @@
-html[data-baoyin-window="settings"], body[data-window="settings"], body[data-window="settings"] #root { height: 100%; min-height: 0; overflow: hidden; }
+html[data-starchat-window="settings"], body[data-window="settings"], body[data-window="settings"] #root { height: 100%; min-height: 0; overflow: hidden; }
 body[data-window="settings"] .settings-center-shell { height: 100vh; min-height: 0; overflow-x: hidden; overflow-y: auto; scrollbar-width: auto; -ms-overflow-style: auto; }
 body[data-window="settings"] .settings-center-shell::-webkit-scrollbar { width: 10px; height: 10px; }
 body[data-window="settings"] .titlebar { position: sticky; top: 0; z-index: 20; -webkit-app-region: drag; }
@@ -681,6 +681,86 @@ body[data-window="settings"] .agent-tool-log li em { flex: 0 0 auto; color: var(
 body[data-window="settings"] .agent-task-outcome { padding: 10px; background: var(--theme-accent-soft); border: 1px solid var(--theme-border); border-radius: 10px; }
 body[data-window="settings"] .agent-task-outcome strong { color: var(--theme-heading); font-size: 11px; }
 body[data-window="settings"] .agent-task-outcome p { margin: 5px 0 0; color: var(--theme-text); font-size: 11px; line-height: 1.55; white-space: pre-wrap; }
+
+/* Codex replacement settings workspace. The left project tree is replaced by
+   one compact navigation column; the detail pane consumes the remaining area. */
+.wb-shell[data-workbench-mode="settings"] {
+  --wb-right-rail-width: 0px;
+  --wb-bottom-panel-height: 0px;
+  grid-template-rows: 55px minmax(0, 1fr) !important;
+  background: var(--wb-background, transparent);
+}
+
+.wb-shell[data-workbench-mode="settings"] .wb-main-grid[data-settings-workspace="replacement"] {
+  grid-template-columns: minmax(0, 1fr) !important;
+  padding: 0 14px 12px 8px;
+  background: transparent !important;
+  border: 0 !important;
+}
+
+.wb-shell[data-workbench-mode="settings"] :where(.wb-center, .wb-center-scroll) {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+
+.wb-shell[data-workbench-mode="settings"] .wb-center-frame {
+  border: 1px solid var(--wb-border-frame);
+  border-radius: 14px;
+  background: var(--wb-surface-panel);
+  box-shadow: inset 0 1px 0 var(--wb-highlight-soft);
+}
+
+.wb-settings-sidebar {
+  padding: 10px 10px 12px !important;
+  border-right: 1px solid var(--wb-border-divider) !important;
+  background: var(--wb-surface-sidebar) !important;
+  box-shadow: none !important;
+}
+
+.wb-settings-sidebar-top { display: grid; gap: 8px; }
+.wb-settings-back { min-height: 34px !important; padding: 0 8px !important; background: transparent !important; border: 0 !important; }
+.wb-settings-title { display: none !important; }
+.wb-settings-search { min-height: 34px !important; margin: 8px 0 6px !important; padding: 0 9px !important; border-radius: 9px !important; }
+.wb-settings-nav { display: grid; gap: 1px !important; overflow-y: auto; padding-right: 2px; }
+.wb-settings-nav-group { display: grid; gap: 1px; }
+.wb-settings-group-label { margin: 10px 8px 3px !important; font-size: 11px !important; letter-spacing: .02em !important; }
+.wb-settings-nav-item { min-height: 34px !important; padding: 0 9px !important; gap: 9px !important; border: 0 !important; border-radius: 8px !important; font-size: 14px !important; }
+.wb-settings-nav-item.is-active { background: var(--wb-surface-selected) !important; box-shadow: none !important; }
+.wb-settings-sidebar-note { display: none !important; }
+
+.wb-shell[data-workbench-mode="settings"] .wb-center-toolbar { height: 54px !important; min-height: 54px !important; padding: 0 28px !important; }
+.wb-shell[data-workbench-mode="settings"] .wb-center-title strong { font-size: 18px !important; }
+.wb-shell[data-workbench-mode="settings"] .wb-center-content.is-settings { padding: 0 !important; }
+.wb-shell[data-workbench-mode="settings"] :where(.settings-home, .settings-details) { width: min(100%, 1160px); margin: 0 auto; padding: 34px 44px 72px !important; }
+.wb-shell[data-workbench-mode="settings"] .settings-details { display: grid; gap: 22px; }
+.wb-shell[data-workbench-mode="settings"] .detail-section { padding: 20px 22px !important; border-radius: 13px !important; box-shadow: none !important; }
+.wb-shell[data-workbench-mode="settings"] .detail-header { margin-bottom: 0 !important; }
+
+.settings-capability-row { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 20px; padding: 10px 0; border-top: 1px solid var(--theme-border); }
+.settings-capability-row:first-of-type { border-top: 0; }
+.settings-capability-row > span { display: grid; min-width: 0; gap: 4px; }
+.settings-capability-row strong { color: var(--theme-heading); font-size: 14px; font-weight: 620; }
+.settings-capability-row small { color: var(--theme-muted); font-size: 12px; line-height: 1.5; }
+.settings-capability-row em { flex: 0 0 auto; color: var(--theme-accent-strong); font-size: 12px; font-style: normal; }
+
+.wb-source-commit, .wb-browser-form, .wb-terminal-command { display: flex; align-items: center; gap: 8px; }
+.wb-source-commit input, .wb-browser-form input, .wb-terminal-command input { min-width: 0; flex: 1 1 auto; height: 38px; padding: 0 11px; color: var(--theme-text); background: var(--theme-control-surface); border: 1px solid var(--theme-border); border-radius: 9px; }
+.wb-source-commit > span { color: var(--theme-muted); font-size: 11px; }
+.wb-terminal-command { padding: 8px 10px; background: var(--theme-control-surface); border: 1px solid var(--theme-border); border-radius: 10px; }
+.wb-terminal-command > span { color: var(--theme-accent-strong); font: 18px/1 var(--font-mono); }
+.wb-terminal-command input { padding: 0; background: transparent; border: 0; border-radius: 0; font-family: var(--font-mono); }
+.wb-browser-boundary { display: grid; max-width: 620px; place-items: center; gap: 8px; margin: 36px auto 0; padding: 28px; color: var(--theme-muted); text-align: center; border: 1px solid var(--theme-border); border-radius: 14px; }
+.wb-browser-boundary strong { color: var(--theme-heading); }
+.wb-browser-boundary p { max-width: 460px; margin: 0; font-size: 12px; line-height: 1.6; }
+.wb-browser-boundary span { color: var(--theme-accent-strong); font-size: 12px; }
+body[data-window="settings"] .agent-patch-approval > div { min-width: 0; }
+body[data-window="settings"] .agent-patch-summary { display: flex; gap: 10px; margin-top: 8px; color: var(--theme-muted); font-size: 10px; }
+body[data-window="settings"] .agent-patch-approval ul { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0; padding: 0; list-style: none; }
+body[data-window="settings"] .agent-patch-approval li { padding: 3px 6px; border: 1px solid var(--theme-border); border-radius: 6px; font: 9px/1.4 var(--font-mono); }
+body[data-window="settings"] .agent-patch-approval details { min-width: 0; margin: 8px 0; }
+body[data-window="settings"] .agent-patch-approval summary { cursor: pointer; color: var(--theme-accent-strong); font-size: 10px; font-weight: 650; }
+body[data-window="settings"] .agent-patch-approval pre { max-height: 220px; margin: 7px 0 0; padding: 9px; overflow: auto; color: var(--theme-text); background: var(--theme-control-surface); border: 1px solid var(--theme-border); border-radius: 7px; font: 9px/1.5 var(--font-mono); white-space: pre; }
 body[data-window="settings"] .agent-log-boundary { margin: 0; color: var(--theme-subtle); font-size: 9px; line-height: 1.5; }
 
 @media (max-width: 980px) {

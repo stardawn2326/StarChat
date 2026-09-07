@@ -5,9 +5,11 @@ import { resolve } from 'node:path';
 const MANAGED_PORT = '50000';
 const START_TIMEOUT_MS = 90_000;
 const READY_POLL_MS = 500;
+export const DEFAULT_COSYVOICE_HOME = 'D:\\CosyVoice';
 
 export interface CosyVoiceInstallPaths {
-  projectRoot: string;
+  homePath: string;
+  sourcePath: string;
   pythonPath: string;
   launcherPath: string;
 }
@@ -16,15 +18,20 @@ let managedProcess: ChildProcess | null = null;
 let startupPromise: Promise<void> | null = null;
 let managedMode: 'sft' | 'zero-shot' | null = null;
 
-export function cosyVoiceLauncherArgs(launcherPath: string, mode: 'sft' | 'zero-shot'): string[] {
-  return [launcherPath, '--voice-mode', mode];
+export function cosyVoiceLauncherArgs(
+  launcherPath: string,
+  homePath: string,
+  mode: 'sft' | 'zero-shot'
+): string[] {
+  return [launcherPath, '--cosyvoice-home', homePath, '--voice-mode', mode];
 }
 
-export function cosyVoiceInstallPathsForRoot(projectRoot: string): CosyVoiceInstallPaths {
+export function cosyVoiceInstallPathsForHome(homePath: string, launcherPath: string): CosyVoiceInstallPaths {
   return {
-    projectRoot,
-    pythonPath: resolve(projectRoot, 'tools', 'cosyvoice-python310', 'python.exe'),
-    launcherPath: resolve(projectRoot, 'tools', 'start-cosyvoice-server.py')
+    homePath: resolve(homePath),
+    sourcePath: resolve(homePath, 'source'),
+    pythonPath: resolve(homePath, 'python310', 'python.exe'),
+    launcherPath: resolve(launcherPath)
   };
 }
 
@@ -39,10 +46,13 @@ export function isManagedCosyVoiceBaseUrl(baseUrl: string): boolean {
   }
 }
 
-function findInstall(projectRoots: readonly string[]): CosyVoiceInstallPaths | null {
+function findInstall(projectRoots: readonly string[], homePath: string): CosyVoiceInstallPaths | null {
   for (const projectRoot of [...new Set(projectRoots.filter(Boolean))]) {
-    const install = cosyVoiceInstallPathsForRoot(projectRoot);
-    if (existsSync(install.pythonPath) && existsSync(install.launcherPath)) return install;
+    const install = cosyVoiceInstallPathsForHome(
+      homePath,
+      resolve(projectRoot, 'tools', 'start-cosyvoice-server.py')
+    );
+    if (existsSync(install.pythonPath) && existsSync(install.sourcePath) && existsSync(install.launcherPath)) return install;
   }
   return null;
 }
@@ -64,7 +74,8 @@ function delay(milliseconds: number): Promise<void> {
 export async function ensureCosyVoiceService(
   baseUrl: string,
   projectRoots: readonly string[],
-  mode: 'sft' | 'zero-shot' = 'sft'
+  mode: 'sft' | 'zero-shot' = 'sft',
+  homePath = process.env.STARCHAT_COSYVOICE_HOME?.trim() || DEFAULT_COSYVOICE_HOME
 ): Promise<void> {
   if (!isManagedCosyVoiceBaseUrl(baseUrl)) return;
   if (managedProcess && managedMode !== mode) {
@@ -75,14 +86,14 @@ export async function ensureCosyVoiceService(
   if (startupPromise) return startupPromise;
 
   startupPromise = (async () => {
-    const install = findInstall(projectRoots);
+    const install = findInstall(projectRoots, homePath);
     if (!install) {
-      throw new Error('未找到项目内 CosyVoice 安装；请确认 tools/cosyvoice-python310 与 tools/start-cosyvoice-server.py 存在');
+      throw new Error(`未找到 CosyVoice 安装；请确认 ${homePath} 与 tools/start-cosyvoice-server.py 存在`);
     }
 
     let spawnError: Error | null = null;
-    const child = spawn(install.pythonPath, cosyVoiceLauncherArgs(install.launcherPath, mode), {
-      cwd: install.projectRoot,
+    const child = spawn(install.pythonPath, cosyVoiceLauncherArgs(install.launcherPath, install.homePath, mode), {
+      cwd: install.sourcePath,
       windowsHide: true,
       stdio: 'ignore'
     });

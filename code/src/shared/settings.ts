@@ -99,7 +99,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   petInteractionMode: true,
   live2dShowWatermark: true,
   modelViewportByModel: {},
-  activeRoleId: 'baoyin.default',
+  activeRoleId: 'starchat.default',
   petWindowOpacity: 1,
   petHoverBorderOpacity: 0.8,
   petHoverShowDelayMs: 80,

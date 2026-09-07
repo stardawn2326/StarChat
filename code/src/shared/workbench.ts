@@ -27,8 +27,51 @@ export interface WorkbenchSourceSnapshot {
 export interface WorkbenchInspection {
   kind: WorkbenchInspectionKind;
   environment: WorkbenchEnvironment;
+  resourcePath?: string;
+  resourceParentPath?: string | null;
   resources?: WorkbenchResourceEntry[];
   source?: WorkbenchSourceSnapshot;
+}
+
+export interface WorkbenchFilePreview {
+  path: string;
+  content: string;
+  language: string;
+  lineCount: number;
+  sizeBytes: number;
+  truncated: boolean;
+}
+
+export interface WorkbenchDiffPreview {
+  path: string;
+  patch: string;
+  truncated: boolean;
+}
+
+export type WorkbenchVerificationScript = 'test' | 'typecheck' | 'build' | 'verify:live2d';
+
+export interface WorkbenchVerificationResult {
+  script: WorkbenchVerificationScript;
+  ok: boolean;
+  output: string;
+}
+
+export interface WorkbenchCommandResult {
+  command: string;
+  ok: boolean;
+  code: number;
+  output: string;
+}
+
+export interface WorkbenchOpenUrlResult {
+  ok: true;
+  url: string;
+}
+
+export interface WorkbenchGitCommitResult {
+  ok: boolean;
+  message: string;
+  output: string;
 }
 
 export interface WorkbenchShareResult {

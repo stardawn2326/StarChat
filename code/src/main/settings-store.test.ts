@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
+import { BUILTIN_ROLE_PACKAGES, DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
 import { cloneRolePackage, createBlankRolePackage } from '../shared/role-package';
 import { DEFAULT_APP_SETTINGS } from '../shared/settings';
 import { createCompanionState } from '../shared/companion';
@@ -19,6 +19,24 @@ afterAll(() => {
 });
 
 describe('SettingsStore role persistence', () => {
+  it('starts with StarChat and keeps Baoyin as a selectable built-in role', () => {
+    const store = new SettingsStore(testRoot);
+    expect(DEFAULT_ROLE_PACKAGE.id).toBe('starchat.default');
+    expect(DEFAULT_APP_SETTINGS.activeRoleId).toBe('starchat.default');
+    expect(BUILTIN_ROLE_PACKAGES.map((role) => role.id)).toEqual(['starchat.default', 'baoyin.default']);
+    expect(store.readRolePackages().map((role) => role.id)).toEqual(['starchat.default', 'baoyin.default']);
+  });
+
+  it('preserves an existing Baoyin selection during the StarChat migration', () => {
+    writeFileSync(join(testRoot, 'settings.json'), JSON.stringify({
+      ...DEFAULT_APP_SETTINGS,
+      activeRoleId: 'baoyin.default'
+    }), 'utf8');
+    const store = new SettingsStore(testRoot);
+    expect(store.readSettings().activeRoleId).toBe('baoyin.default');
+    expect(store.readActiveRolePackage().displayName).toBe('白音');
+  });
+
   it('persists workbench normal bounds and native maximized state separately', () => {
     const store = new SettingsStore(testRoot);
     expect(store.readWorkbenchWindowState()).toEqual({ version: 1, bounds: null, maximized: false });

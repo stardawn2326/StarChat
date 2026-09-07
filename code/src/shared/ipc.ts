@@ -7,7 +7,7 @@ import type { PresentationSettings } from './presentation-contract';
 import type { CompanionSummary } from './companion';
 import type { VoiceProfile } from './voice-profile';
 import type { AgentEvent, AgentMode, AgentStartResponse, AgentTask } from './agent';
-import type { WorkbenchInspection, WorkbenchInspectionKind, WorkbenchShareResult } from './workbench';
+import type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchOpenUrlResult, WorkbenchShareResult, WorkbenchVerificationResult, WorkbenchVerificationScript } from './workbench';
 
 export interface PublicAppState {
   settings: AppSettings;
@@ -43,12 +43,26 @@ export interface TtsSynthesizeRequest {
 
 export interface WorkbenchInspectRequest {
   kind: WorkbenchInspectionKind;
+  path?: string;
 }
+
+export interface WorkbenchPathRequest { path: string; }
+
+export interface WorkbenchVerifyRequest { script: WorkbenchVerificationScript; }
+export interface WorkbenchCommandRequest { command: string; }
+export interface WorkbenchOpenUrlRequest { url: string; }
+export interface WorkbenchGitCommitRequest { message: string; }
 
 export type WorkbenchInspectionResponse = WorkbenchInspection;
 export type WorkbenchShareResponse = WorkbenchShareResult;
+export type WorkbenchFilePreviewResponse = WorkbenchFilePreview;
+export type WorkbenchDiffResponse = WorkbenchDiffPreview;
+export type WorkbenchVerificationResponse = WorkbenchVerificationResult;
+export type WorkbenchCommandResponse = WorkbenchCommandResult;
+export type WorkbenchOpenUrlResponse = WorkbenchOpenUrlResult;
+export type WorkbenchGitCommitResponse = WorkbenchGitCommitResult;
 
-export type { WorkbenchEnvironment, WorkbenchGitStatus, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from './workbench';
+export type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchEnvironment, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchGitStatus, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchOpenUrlResult, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot, WorkbenchVerificationResult, WorkbenchVerificationScript } from './workbench';
 
 export type SettingsPreviewDetail =
   | { domain: 'window'; patch: Partial<Pick<AppSettings, 'petBounds' | 'petWindowOpacity' | 'petHoverBorderOpacity' | 'petHoverShowDelayMs' | 'petHoverFadeMs'>> }
@@ -84,7 +98,10 @@ export interface StartChatRequest {
   message: string;
   history: ChatMessage[];
   mode?: AgentMode;
+  sessionId: string;
 }
+
+export type { AuthorizedWorkspace, SessionMessage, SessionMessageAppendRequest, SessionRenameRequest, SessionSnapshot, WorkbenchSession } from './session';
 
 export interface AgentApproveRequest {
   taskId: string;

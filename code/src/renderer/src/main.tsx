@@ -36,7 +36,7 @@ async function boot(): Promise<void> {
   const screenshotWorkbench = params.get('window') === 'workbench-screenshot';
   const live2dPreview = params.get('live2dEntry');
   const role = params.get('window') === 'pet' ? 'pet' : 'settings';
-  document.documentElement.dataset.baoyinWindow = role;
+  document.documentElement.dataset.starchatWindow = role;
   document.body.dataset.window = role;
   document.title = role === 'pet' ? '' : 'StarChat';
   if (screenshotWorkbench) {
@@ -54,7 +54,7 @@ async function boot(): Promise<void> {
   }
   if (role === 'settings') {
     setSettingsWindowActiveState(false);
-    window.baoyin.app.onWindowFocusState(setSettingsWindowActiveState);
+    window.starchat.app.onWindowFocusState(setSettingsWindowActiveState);
   }
   try {
     if (role === 'pet' || role === 'settings') {

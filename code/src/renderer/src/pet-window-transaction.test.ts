@@ -31,8 +31,8 @@ describe('PetWindow pointer transaction contracts', () => {
 
   it('keeps locked mode click-through while leaving hit detection to global cursor polling', () => {
     expect(mainSource).not.toContain('{ forward: true }');
-    expect(rendererSource).toContain('window.baoyin.app.setInputMode(initialMode);');
-    expect(rendererSource).toContain('window.baoyin.cursor.onUpdate(');
+    expect(rendererSource).toContain('window.starchat.app.setInputMode(initialMode);');
+    expect(rendererSource).toContain('window.starchat.cursor.onUpdate(');
   });
 
   it('never compensates or persists model viewport state during window resize', () => {
@@ -113,7 +113,7 @@ describe('PetWindow pointer transaction contracts', () => {
     expect(rendererSource).toContain("createPetResizeScheduler");
     expect(rendererSource).toContain('resizeSchedulerRef.current?.queue');
     expect(rendererSource).toContain('resizeSchedulerRef.current?.flush()');
-    expect(rendererSource).not.toContain('window.baoyin.pet.resizeMove(latestPointerScreenPoint(event))');
+    expect(rendererSource).not.toContain('window.starchat.pet.resizeMove(latestPointerScreenPoint(event))');
   });
 
   it('releases resize transactions when visibility is lost or pointer capture disappears', () => {
@@ -126,7 +126,7 @@ describe('PetWindow pointer transaction contracts', () => {
 
   it('uses an explicit cancel reset on every new pointerdown instead of relying on context-menu focus', () => {
     const pointerDown = rendererSource.slice(rendererSource.indexOf('const handlePointerDown'), rendererSource.indexOf('const handlePointerMove'));
-    expect(pointerDown).toContain('window.baoyin.pet.pointerCancel()');
+    expect(pointerDown).toContain('window.starchat.pet.pointerCancel()');
     expect(mainSource).toContain("ipcMain.on('pet:pointer-cancel'");
     expect(mainSource).toContain('applyPetInputMode');
   });
@@ -147,7 +147,7 @@ describe('PetWindow pointer transaction contracts', () => {
 
   it('allows a new resize start to recover a stale resize transaction', () => {
     const pointerDown = rendererSource.slice(rendererSource.indexOf('const handlePointerDown'), rendererSource.indexOf('const handlePointerMove'));
-    expect(pointerDown).toContain('window.baoyin.pet.pointerCancel()');
+    expect(pointerDown).toContain('window.starchat.pet.pointerCancel()');
     expect(mainSource).toContain('cancelPetPointerTransactions();');
     expect(mainSource).toContain('petDragStart = null;');
     expect(mainSource).toContain('petResizeStart = null;');

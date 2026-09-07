@@ -1,10 +1,18 @@
 export type SettingsPageId =
+  | 'general'
+  | 'appearance'
+  | 'shortcuts'
   | 'chat'
   | 'personality'
   | 'model'
   | 'voice'
   | 'service'
-  | 'behavior';
+  | 'behavior'
+  | 'agent'
+  | 'permissions'
+  | 'terminal'
+  | 'browser'
+  | 'git';
 
 /** The workbench keeps the complete settings catalog behind one lower-left entry. */
 export type WorkbenchPage = SettingsPageId | 'settings' | null;
@@ -16,16 +24,25 @@ export interface SettingsCardDefinition {
   title: string;
   icon: string;
   description: string;
+  group?: 'personal' | 'character' | 'agent' | 'integration';
   summary: (context: { roleName: string; modelPath: string | null; tracking: boolean; alwaysOnTop: boolean; presentation: PresentationSettings }) => string;
 }
 
 export const SETTINGS_CARDS: readonly SettingsCardDefinition[] = [
-  { id: 'chat', title: '陪伴对话', icon: '◉', description: '和白音对话，查看关系成长与记忆状态', summary: () => '实时对话 · 关系记忆 · 语音回应' },
-  { id: 'personality', title: '人格与记忆', icon: '✦', description: '角色包、称呼、性格和关系阶段', summary: ({ roleName }) => `当前角色：${roleName}` },
-  { id: 'model', title: '角色模型', icon: '◈', description: '导入、切换和适配外部 Live2D 模型', summary: ({ modelPath }) => modelPath ? '模型已配置 · 可一键适配' : '尚未配置外部模型' },
-  { id: 'voice', title: '语音', icon: '◌', description: 'CosyVoice 预设、自定义音色与播放', summary: () => 'CosyVoice · 自定义音色' },
-  { id: 'service', title: '服务与连接', icon: '⇄', description: '对话 API、模型、密钥和连接状态', summary: () => '密钥隔离 · 可测试连接' },
-  { id: 'behavior', title: '应用行为', icon: '⌘', description: '桌宠显示、交互、光标跟随与闲置活动', summary: ({ tracking, alwaysOnTop }) => `${alwaysOnTop ? '始终置顶' : '普通窗口'} · ${tracking ? '光标跟随' : '跟随关闭'}` }
+  { id: 'general', title: '常规', icon: '⌘', group: 'personal', description: '应用、桌宠窗口和默认行为', summary: ({ alwaysOnTop }) => alwaysOnTop ? '桌宠始终置顶' : '普通窗口' },
+  { id: 'appearance', title: '外观', icon: '☼', group: 'personal', description: '主题、透明度和界面表现', summary: () => '浅色、深色或跟随系统' },
+  { id: 'shortcuts', title: '键盘快捷键', icon: '⌨', group: 'personal', description: '工作台与桌宠快捷键', summary: () => '本地全局快捷键' },
+  { id: 'chat', title: '陪伴对话', icon: '◉', group: 'character', description: '和当前角色对话，查看关系成长与记忆状态', summary: () => '实时对话 · 关系记忆 · 语音回应' },
+  { id: 'personality', title: '人格与记忆', icon: '✦', group: 'character', description: '角色包、称呼、性格和关系阶段', summary: ({ roleName }) => `当前角色：${roleName}` },
+  { id: 'model', title: 'Live2D 模型', icon: '◈', group: 'character', description: '导入、切换和适配外部 Live2D 模型', summary: ({ modelPath }) => modelPath ? '模型已配置 · 可一键适配' : '尚未配置外部模型' },
+  { id: 'voice', title: '语音', icon: '◌', group: 'character', description: 'CosyVoice 预设、自定义音色与播放', summary: () => 'CosyVoice · 自定义音色' },
+  { id: 'service', title: '模型与服务', icon: '⇄', group: 'agent', description: '对话 API、模型、密钥和连接状态', summary: () => '密钥隔离 · 可测试连接' },
+  { id: 'agent', title: 'Agent', icon: '◇', group: 'agent', description: '任务模式、状态和工具闭环', summary: () => '任务、步骤、审批与结果' },
+  { id: 'permissions', title: '权限', icon: '✓', group: 'agent', description: '工作区边界、写入审批与隐私', summary: () => '最小权限 · 写入前审批' },
+  { id: 'terminal', title: '终端', icon: '›_', group: 'integration', description: '受控真实命令与验证脚本', summary: () => 'Git 只读 · 项目验证' },
+  { id: 'browser', title: '浏览器', icon: '◎', group: 'integration', description: '安全打开 http/https 网页', summary: () => '系统浏览器隔离' },
+  { id: 'git', title: 'Git', icon: '⌘', group: 'integration', description: '状态、差异与已暂存提交', summary: () => '不自动暂存 · 不自动推送' },
+  { id: 'behavior', title: '高级行为', icon: '⌘', group: 'personal', description: '桌宠交互、光标跟随与闲置活动', summary: ({ tracking }) => tracking ? '光标跟随已开启' : '光标跟随已关闭' }
 ];
 
 export interface WorkbenchNavigationItem {
@@ -130,17 +147,19 @@ export function getWorkbenchCapabilities(context: WorkbenchCapabilityContext): r
       id: 'terminal',
       label: '任意终端',
       icon: '›_',
-      description: '安全策略未启用 Shell 或任意命令执行',
-      state: 'disabled',
-      statusLabel: '未启用'
+      description: '真实子进程 · Git 只读与项目验证白名单',
+      state: 'available',
+      statusLabel: '受控可用',
+      target: 'terminal'
     },
     {
       id: 'browser',
       label: '浏览器',
       icon: '◎',
-      description: '安全策略未启用浏览器控制或网页操作',
-      state: 'disabled',
-      statusLabel: '未启用'
+      description: '仅 http/https · 使用系统浏览器隔离打开',
+      state: 'available',
+      statusLabel: '受控可用',
+      target: 'browser'
     },
     {
       id: 'git-write',

@@ -21,7 +21,7 @@ describe('StarChat final reference polish contract', () => {
     expect(stylesheet).toContain('--wb-body-weight: 430;');
     expect(stylesheet).toContain('--wb-heading-weight: 520;');
     expect(stylesheet).toMatch(/\.wb-brand-name\s*\{[^}]*font-size:\s*16px;[^}]*font-weight:\s*520;/s);
-    expect(stylesheet).toMatch(/\.wb-tool-card strong\s*\{[^}]*font-size:\s*17px;[^}]*font-weight:\s*500;/s);
+    expect(stylesheet).toMatch(/\.wb-tool-card strong\s*\{[^}]*font-size:\s*13px;[^}]*font-weight:\s*500;/s);
     expect(stylesheet).toContain('.wb-terminal-prompt');
     expect(stylesheet).toContain('font: 15px/1.4 Consolas, monospace;');
   });
@@ -46,12 +46,13 @@ describe('StarChat final reference polish contract', () => {
 
   it('uses the shared Live2D canvas and keeps the fixture composer structure', () => {
     expect(consoleSource).toContain('Live2DCanvas');
-    expect(consoleSource).not.toContain('BAOYIN_CHARACTER_ART');
+    expect(consoleSource).not.toContain('STARCHAT_CHARACTER_ART');
     expect(stylesheet).toContain('.wb-character-art > .live2d-card {');
+    expect(referenceStylesheet).toMatch(/\.wb-character-art\.is-live2d \.wb-stage-halo\s*\{[^}]*display: none !important;/s);
     expect(stylesheet).toContain('.wb-trajectory p');
     expect(stylesheet).toContain('max-width: 330px;');
     expect(stylesheet).toContain('.agent-composer {');
-    expect(stylesheet).toContain('min-height: 210px;');
+    expect(stylesheet).toContain('min-height: 168px;');
     expect(chatSource).toContain('agent-attachment-empty');
     expect(chatSource).toContain('referenceFixture = false');
     expect(chatSource).toContain('agent-attachment-code-preview');
@@ -60,6 +61,10 @@ describe('StarChat final reference polish contract', () => {
     expect(screenshotSource).toContain('contextUsageOverride={32}');
     expect(chatSource).toContain('剩余上下文');
     expect(chatSource).toContain('data-agent-composer-control="temperature"');
+  });
+
+  it('marks the deterministic preview session as selected and keeps its recency label', () => {
+    expect(workbenchSource).toContain("<SidebarSessionRow label={sessionTitle || '模型窗口交互'} collapsed={collapsed} meta={sessionMeta || '刚刚'} active");
   });
 
   it('keeps character art covering the panel from its top edge', () => {
@@ -88,19 +93,37 @@ describe('StarChat final reference polish contract', () => {
     expect(stylesheet).toContain('.wb-tool-card.is-disabled {');
     expect(stylesheet).toContain('cursor: not-allowed;');
     expect(stylesheet).toContain('.wb-tool-card {');
-    expect(stylesheet).toContain('min-height: 174px;');
+    expect(stylesheet).toContain('grid-template-rows: repeat(3, 182px);');
     expect(stylesheet).toContain('.wb-terminal-tab,');
     expect(stylesheet).toContain('height: 30px;');
     expect(stylesheet).toContain('transition: --wb-sidebar-width 360ms cubic-bezier(.48, .38, .2, .98)');
+  });
+
+  it('uses compact desktop typography and keeps verification actions content-sized', () => {
+    expect(stylesheet).toMatch(/\.wb-new-chat\s*\{[^}]*min-height:\s*52px;/s);
+    expect(stylesheet).toMatch(/\.wb-sidebar-heading\s*\{[^}]*font-size:\s*14px;/s);
+    expect(stylesheet).toMatch(/\.wb-project-row strong\s*\{[^}]*font-size:\s*14px;/s);
+    expect(stylesheet).toMatch(/\.wb-session-row\s*\{[^}]*min-height:\s*48px;/s);
+    expect(stylesheet).toMatch(/\.wb-session-select\s*\{[^}]*min-height:\s*46px;/s);
+    expect(stylesheet).toMatch(/\.wb-session-select > span\s*\{[^}]*font-size:\s*13px;/s);
+    expect(stylesheet).toMatch(/\.wb-center-title strong\s*\{[^}]*font-size:\s*18px;/s);
+    expect(stylesheet).toMatch(/\.wb-share-action\s*\{[^}]*font-size:\s*14px;/s);
+    expect(stylesheet).toContain('.wb-tool-panel[data-workbench-tool="terminal"]');
+    expect(stylesheet).toContain('grid-template-rows: auto auto auto minmax(0, 1fr);');
+    expect(referenceStylesheet).toContain('grid-template-rows: repeat(3, calc(182px * var(--wb-reference-scale)));');
+    expect(referenceStylesheet).toContain('@media (max-width: 1280px)');
+    expect(referenceStylesheet).toContain('[data-reference-layout="false"][data-workbench-mode="workbench"] .wb-tool-grid');
+    expect(referenceStylesheet).toContain('grid-template-rows: repeat(3, minmax(0, 1fr));');
+    expect(referenceStylesheet).toContain('font-size: calc(16px * var(--wb-reference-scale));');
   });
 
   it('uses one tokenized crystalline material stack for both themes', () => {
     expect(stylesheet).toContain('--wb-glass-blur: 10px;');
     expect(stylesheet).toContain('--wb-glass-saturation: 110%;');
     expect(stylesheet).toContain('backdrop-filter: blur(var(--wb-glass-blur)) saturate(var(--wb-glass-saturation));');
-    expect(stylesheet).toContain('linear-gradient(180deg, rgba(255, 255, 255, .30)');
-    expect(stylesheet).toContain('rgba(218, 229, 243, .10)');
-    expect(stylesheet).toContain('rgba(205, 219, 237, .12)');
+    expect(stylesheet).toContain('linear-gradient(180deg, rgba(255, 255, 255, .58)');
+    expect(stylesheet).toContain('rgba(218, 229, 243, .24)');
+    expect(stylesheet).toContain('rgba(137, 166, 199, .26)');
     expect(stylesheet).toContain('backdrop-filter: blur(22px) saturate(125%);');
     expect(stylesheet).toContain('rgba(36, 37, 40, .33)');
     expect(stylesheet).toContain('rgba(31, 31, 34, .32)');
@@ -109,19 +132,37 @@ describe('StarChat final reference polish contract', () => {
     expect(stylesheet).toContain('linear-gradient(180deg, rgba(10, 18, 31, .24) 0, rgba(6, 13, 24, .30) 45%, rgba(4, 10, 18, .20) 100%)');
   });
 
-  it('keeps the light lower-left bloom and theme-specific constellation coordinates', () => {
+  it('limits acrylic to navigation and transient overlays while keeping work surfaces clear', () => {
+    for (const token of [
+      '--wb-material-content',
+      '--wb-material-navigation',
+      '--wb-material-card',
+      '--wb-material-overlay',
+      '--wb-material-navigation-blur: 14px',
+      '--wb-material-overlay-blur: 22px'
+    ]) {
+      expect(referenceStylesheet).toContain(token);
+    }
+
+    expect(referenceStylesheet).toMatch(/:where\(\.wb-center, \.wb-bottom-panel\)\s*\{[^}]*background:\s*var\(--wb-material-content\) !important;[^}]*backdrop-filter:\s*none !important;/s);
+    expect(referenceStylesheet).toMatch(/:where\(\.wb-topbar, \.wb-sidebar, \.wb-right-rail\)\s*\{[^}]*background:\s*var\(--wb-material-navigation\) !important;[^}]*backdrop-filter:\s*blur\(var\(--wb-material-navigation-blur\)\) saturate\(118%\);/s);
+    expect(referenceStylesheet).toMatch(/:where\(\.wb-tool-card, \.agent-composer\)\s*\{[^}]*background:\s*var\(--wb-material-card\) !important;[^}]*backdrop-filter:\s*none !important;/s);
+    expect(referenceStylesheet).toMatch(/\.wb-environment-popover-reference\s*\{[^}]*background:\s*var\(--wb-material-overlay\) !important;[^}]*backdrop-filter:\s*blur\(var\(--wb-material-overlay-blur\)\) saturate\(128%\);/s);
+  });
+
+  it('keeps the lower-left bloom and theme-specific constellation coordinates', () => {
     expect(stylesheet).toContain('radial-gradient(ellipse 25% 54% at 0 100%, rgba(116, 160, 214, .215) 0%, rgba(116, 160, 214, .13) 46%, transparent 74%)');
     expect(constellationSource).toContain('M152 434L238 440L203 620L146 647L191 688L114 703L58 743');
     expect(constellationSource).toContain('M80 510L57 549L114 599L146 647');
-    expect(darkConstellationSource).toContain('M152 434L238 440L203 620L146 647L191 688L114 703L58 743');
-    expect(darkConstellationSource).toContain('M80 510L57 549L114 599L146 647');
+    expect(darkConstellationSource).toContain('M68 615L99 594L125 644L176 652L225 619');
+    expect(darkConstellationSource).toContain('M125 644L84 698');
     expect(stylesheet).toContain("url('../assets/workbench-constellation-dark.svg')");
   });
 
-  it('keeps the dark constellation geometry identical while cooling its ink', () => {
+  it('keeps the dark constellation geometry and cool ink aligned to its concept', () => {
     expect(darkConstellationSource).not.toContain('quiet-night');
-    expect(darkConstellationSource).toContain('stroke="#9ab9e7"');
-    expect(darkConstellationSource).toContain('fill="#c6dafa"');
+    expect(darkConstellationSource).toContain('stroke="#b9c8dc"');
+    expect(darkConstellationSource).toContain('fill="#fff"');
     expect(stylesheet).toContain('--wb-constellation-opacity: .72;');
     expect(stylesheet).toContain('--wb-constellation-color: rgba(208, 225, 248, .88);');
   });
@@ -140,13 +181,15 @@ describe('StarChat final reference polish contract', () => {
 
     expect(constellationSource).toContain('M152 434L238 440L203 620L146 647L191 688L114 703L58 743" stroke-width="0.72" opacity="0.24"');
     expect(constellationSource).toContain('M80 510L57 549L114 599L146 647" stroke-width="0.66" opacity="0.23"');
-    expect(darkConstellationSource).toContain('M152 434L238 440L203 620L146 647L191 688L114 703L58 743" stroke-width="0.72" opacity="0.16"');
-    expect(darkConstellationSource).toContain('M80 510L57 549L114 599L146 647" stroke-width="0.66" opacity="0.15"');
-    expect(constellationSource).toContain('M152 425L154.2 431.8L161 434L154.2 436.2L152 443L149.8 436.2L143 434L149.8 431.8Z" opacity="0.86"');
-    expect(darkConstellationSource).toContain('M152 425L154.2 431.8L161 434L154.2 436.2L152 443L149.8 436.2L143 434L149.8 431.8Z" opacity="0.67"');
+    expect(darkConstellationSource).toContain('M68 615L99 594L125 644L176 652L225 619" stroke-width="0.68" opacity="0.20"');
+    expect(darkConstellationSource).toContain('M125 644L84 698" stroke-width="0.68" opacity="0.20"');
+    expect(constellationSource).toContain('<path id="star-tiny" d="M0 -1.8L.5 -.5L1.8 0L.5 .5L0 1.8L-.5 .5L-1.8 0L-.5 -.5Z"/>');
+    expect(darkConstellationSource).toContain('<path id="star-tiny" d="M0 -1.8L.5 -.5L1.8 0L.5 .5L0 1.8L-.5 .5L-1.8 0L-.5 -.5Z"/>');
+    expect(constellationSource).toContain('<use href="#star-tiny" x="152" y="434" opacity="0.50"/>');
+    expect(darkConstellationSource).toContain('<use href="#star-medium" x="99" y="594" opacity="0.98"/>');
 
-    expect(referenceStylesheet).toContain('filter: brightness(.27) saturate(2.20) contrast(1.08);');
-    expect(referenceStylesheet).toContain('filter: brightness(.50) saturate(.92) contrast(1.10);');
+    expect(referenceStylesheet).toContain('filter: brightness(.58) saturate(1.42) contrast(1.06);');
+    expect(referenceStylesheet).toContain('filter: brightness(.72) saturate(.96) contrast(1.08);');
     expect(referenceStylesheet).toContain('mask-image: linear-gradient(to bottom, #000 0%, #000 28%, rgba(0, 0, 0, .72) 40%, rgba(0, 0, 0, .30) 54%, rgba(0, 0, 0, .08) 62%, transparent 68%);');
     expect(referenceStylesheet).toContain('rgba(0, 4, 12, .36) 52%, rgba(0, 4, 12, .48) 62%');
   });
@@ -159,7 +202,7 @@ describe('StarChat final reference polish contract', () => {
   });
 
   it('implements the final typography plan with explicit UI/code tokens and semantic tiers', () => {
-    expect(referenceStylesheet).toContain('--font-ui: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", sans-serif;');
+    expect(referenceStylesheet).toContain('--font-ui: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI", sans-serif;');
     expect(referenceStylesheet).toContain('--font-code: "JetBrains Mono", "Cascadia Code", Consolas, monospace;');
     expect(referenceStylesheet).toContain('--font-size-title: 16px;');
     expect(referenceStylesheet).toContain('--font-size-section: 14px;');
@@ -173,13 +216,13 @@ describe('StarChat final reference polish contract', () => {
     expect(referenceStylesheet).toContain('--line-height-body: 1.6;');
     expect(referenceStylesheet).toContain('--line-height-ui: 1.4;');
     expect(referenceStylesheet).toContain('--line-height-code: 1.5;');
-    expect(referenceStylesheet).toContain('--text-primary: #203858;');
-    expect(referenceStylesheet).toContain('--text-secondary: #5d718c;');
-    expect(referenceStylesheet).toContain('--text-tertiary: #7e8fa5;');
+    expect(referenceStylesheet).toContain('--text-primary: #294563;');
+    expect(referenceStylesheet).toContain('--text-secondary: #526d8c;');
+    expect(referenceStylesheet).toContain('--text-tertiary: #71849b;');
     expect(referenceStylesheet).toContain('--text-disabled: #aab7c6;');
-    expect(referenceStylesheet).toContain('--text-primary: #edf3fb;');
-    expect(referenceStylesheet).toContain('--text-secondary: #a8b4c5;');
-    expect(referenceStylesheet).toContain('--text-tertiary: #738197;');
+    expect(referenceStylesheet).toContain('--text-primary: #f2f6fc;');
+    expect(referenceStylesheet).toContain('--text-secondary: #b8c5d7;');
+    expect(referenceStylesheet).toContain('--text-tertiary: #8798ae;');
     expect(referenceStylesheet).toContain('--text-disabled: #536173;');
     expect(referenceStylesheet).toContain('font-family: var(--wb-font-ui);');
     expect(referenceStylesheet).toContain('font-family: var(--wb-font-code);');

@@ -77,7 +77,7 @@ function writeJson(path: string, value: unknown): void {
 }
 
 function createModelRoot(): string {
-  const root = mkdtempSync(join(tmpdir(), 'baoyin-model-registry-'));
+  const root = mkdtempSync(join(tmpdir(), 'starchat-model-registry-'));
   roots.push(root);
   writeFileSync(join(root, 'model.moc3'), Buffer.from('moc3'));
   writeFileSync(join(root, 'texture.png'), ONE_PIXEL_PNG);
@@ -117,7 +117,7 @@ afterEach(() => {
 describe('external Live2D model registry', () => {
   it('imports a folder and a ZIP into a user-data cache without changing external sources', () => {
     const source = createModelRoot();
-    const userData = mkdtempSync(join(tmpdir(), 'baoyin-user-data-'));
+    const userData = mkdtempSync(join(tmpdir(), 'starchat-user-data-'));
     roots.push(userData);
     const archive = join(source, 'model.zip');
     writeFileSync(archive, zip(modelEntries(source)));
@@ -138,7 +138,7 @@ describe('external Live2D model registry', () => {
 
   it('rejects ZIP Slip and archives beyond the configured entry boundary', () => {
     const source = createModelRoot();
-    const userData = mkdtempSync(join(tmpdir(), 'baoyin-user-data-'));
+    const userData = mkdtempSync(join(tmpdir(), 'starchat-user-data-'));
     roots.push(userData);
     const archive = join(source, 'unsafe.zip');
     writeFileSync(archive, zip([{ name: '../outside.txt', data: Buffer.from('blocked') }]));
@@ -149,7 +149,7 @@ describe('external Live2D model registry', () => {
 
   it('persists current selection, supports recovery after source loss, and removes records without deleting external folders', () => {
     const source = createModelRoot();
-    const userData = mkdtempSync(join(tmpdir(), 'baoyin-user-data-'));
+    const userData = mkdtempSync(join(tmpdir(), 'starchat-user-data-'));
     roots.push(userData);
     const registry = new Live2DModelRegistry(userData);
     const imported = registry.importSelection(source);
@@ -184,7 +184,7 @@ describe('external Live2D model registry', () => {
   });
 
   it('preserves window and behavior settings while changing only the current model path', () => {
-    const userData = mkdtempSync(join(tmpdir(), 'baoyin-user-data-'));
+    const userData = mkdtempSync(join(tmpdir(), 'starchat-user-data-'));
     roots.push(userData);
     const store = new SettingsStore(userData);
     store.save({

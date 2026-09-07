@@ -8,7 +8,7 @@ const codeRoot = resolve(testDirectory, '../..');
 const projectRoot = resolve(codeRoot, '..');
 const iconRoot = resolve(projectRoot, 'assets/icons');
 const buildRoot = resolve(codeRoot, 'build');
-const sourcePath = resolve(iconRoot, 'baoyin-source.png');
+const sourcePath = resolve(iconRoot, 'starchat-source.png');
 const sizes = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
 function readPngInfo(path: string): { width: number; height: number; bitDepth: number; colorType: number } {
@@ -46,7 +46,7 @@ describe('Windows branding assets', () => {
 
   it('ships every required transparent icon and crisp tray size', () => {
     for (const size of sizes) {
-      const info = readPngInfo(resolve(iconRoot, `baoyin-${size}.png`));
+      const info = readPngInfo(resolve(iconRoot, `starchat-${size}.png`));
       expect(info).toMatchObject({ width: size, height: size, bitDepth: 8, colorType: 6 });
       const trayInfo = readPngInfo(resolve(iconRoot, `tray-${size}.png`));
       expect(trayInfo).toMatchObject({ width: size, height: size, bitDepth: 8, colorType: 6 });

@@ -73,7 +73,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(markup).not.toContain('workbench-presence-card');
     expect(markup).not.toContain('workbench-guardrail-card');
     expect(markup).not.toContain('workbench-rail-footer');
-    expect(workbenchSource).toContain('baoyin-64.png');
+    expect(workbenchSource).toContain('starchat-64.png');
     expect(iconSource).toContain('<svg');
     for (const placeholder of ['✦', '▱', '⌁', '⌘', '◎', '›_']) expect(workbenchSource).not.toContain(placeholder);
   });
@@ -116,7 +116,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(workbenchSource).toContain('focus()');
   });
 
-  it('keeps the six settings domains and debug/import/export reachable only through the Settings route', () => {
+  it('keeps the complete settings taxonomy and debug/import/export reachable only through the Settings route', () => {
     const markup = renderWorkbench();
     const settingsSidebar = renderSettingsSidebar();
 
@@ -125,7 +125,9 @@ describe('StarChat 参考图工作台视觉契约', () => {
     expect(settingsSidebar).toContain('data-workbench-sidebar-mode="settings"');
     expect(settingsSidebar).toContain('placeholder="搜索设置"');
     expect(workbenchSource).not.toContain('settings-card');
-    expect(appSource).toContain("const settingsPageIds: readonly SettingsPageId[] = ['chat', 'personality', 'model', 'voice', 'service', 'behavior'];");
+    for (const page of ['general', 'appearance', 'shortcuts', 'chat', 'personality', 'model', 'voice', 'service', 'agent', 'permissions', 'terminal', 'browser', 'git', 'behavior']) {
+      expect(appSource).toContain(`'${page}'`);
+    }
     for (const capability of ['onImportRole', 'onExportRole', 'onDebug', 'onRuntimeCommand', 'onSaveService']) expect(appSource).toContain(capability);
     expect(appSource).toContain("route === 'settings'");
   });
@@ -173,7 +175,7 @@ describe('StarChat 参考图工作台视觉契约', () => {
       'flex: 0 0 62px',
       'width: 265px',
       'min-width: 620px',
-      'min-height: 174px',
+      'min-height: 168px',
       'border-radius: 14px'
     ]) {
       expect(rebuiltStylesheet).toContain(dimension);

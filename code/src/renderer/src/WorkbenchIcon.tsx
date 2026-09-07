@@ -13,6 +13,7 @@ export type WorkbenchIconName =
   | 'copy'
   | 'context'
   | 'environment'
+  | 'edit'
   | 'file'
   | 'folder'
   | 'folderPlus'
@@ -40,6 +41,7 @@ export type WorkbenchIconName =
   | 'sun'
   | 'strength'
   | 'send'
+  | 'sendUp'
   | 'task'
   | 'terminal'
   | 'thumbsDown'
@@ -69,6 +71,7 @@ export function WorkbenchIcon({ name, size = 18, strokeWidth = 1.7, className = 
     case 'copy': content = <><rect x="8" y="8" width="11" height="11" rx="1.5" />{path('M5 15H4a1 1 0 01-1-1V4a1 1 0 011-1h10a1 1 0 011 1v1')}</>; break;
     case 'context': content = <><circle cx="12" cy="12" r="8" />{path('M12 8v4l2.5 2.5')}</>; break;
     case 'environment': content = <>{path('M4 6h16M4 12h16M4 18h16')}<circle cx="9" cy="6" r="2" /><circle cx="15" cy="12" r="2" /><circle cx="8" cy="18" r="2" /></>; break;
+    case 'edit': content = <>{path('M4 20h4l11-11-4-4L4 16z')}{path('M13.5 6.5l4 4')}</>; break;
     case 'file': content = <><path d="M6 3h8l4 4v14H6z" />{path('M14 3v5h5M9 12h6M9 16h6')}</>; break;
     case 'folder': content = path('M3 6.5A1.5 1.5 0 014.5 5h5l2 2h8A1.5 1.5 0 0121 8.5v9a1.5 1.5 0 01-1.5 1.5h-15A1.5 1.5 0 013 17.5z'); break;
     case 'folderPlus': content = <>{path('M3 7A2 2 0 015 5h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z')}{path('M16 11v6M13 14h6')}</>; break;
@@ -95,11 +98,12 @@ export function WorkbenchIcon({ name, size = 18, strokeWidth = 1.7, className = 
     case 'step': content = <><circle cx="6" cy="6" r="2" />{path('M8 6h6a4 4 0 014 4v8')}</>; break;
     case 'strength': content = <><path d="M5 6h14M5 12h14M5 18h14" />{path('M9 4v4M15 10v4M11 16v4')}</>; break;
     case 'send': content = path('M4 4l16 8-16 8 3-8zM7 12h6'); break;
+    case 'sendUp': content = path('M12 20V4M4 12l8-8 8 8'); break;
     case 'sun': content = <><circle cx="12" cy="12" r="3.5" />{path('M12 2.5v2M12 19.5v2M4.6 4.6L6 6M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4L6 18M18 6l1.4-1.4')}</>; break;
     case 'task': content = <><ellipse cx="12" cy="12" rx="4.6" ry="9.4" transform="rotate(45 12 12)" /><ellipse cx="12" cy="12" rx="4.6" ry="9.4" transform="rotate(-45 12 12)" /></>; break;
     case 'terminal': content = <><rect x="3" y="4" width="18" height="16" rx="2" />{path('M7 9l3 3-3 3M12 15h4')}</>; break;
-    case 'thumbsDown': content = path('M7 4v10M7 14H5a2 2 0 01-2-2V9a2 2 0 012-2h2m0 7h8.5a2 2 0 001.9-1.4l1.6-4.5A2 2 0 0016.1 5H11l.7-2.1A1.5 1.5 0 0010.3 1L7 4'); break;
-    case 'thumbsUp': content = path('M7 20V10M7 10H5a2 2 0 01-2-2V5a2 2 0 012-2h2m0 7h8.5a2 2 0 001.9 1.4l1.6 4.5A2 2 0 0116.1 19H11l.7 2.1A1.5 1.5 0 0010.3 23L7 20'); break;
+    case 'thumbsDown': content = path('M7 20V10M7 10H5a2 2 0 01-2-2V5a2 2 0 012-2h2m0 7h8.5a2 2 0 001.9 1.4l1.6 4.5A2 2 0 0116.1 19H11l.7 2.1A1.5 1.5 0 0010.3 23L7 20'); break;
+    case 'thumbsUp': content = path('M7 4v10M7 14H5a2 2 0 01-2-2V9a2 2 0 012-2h2m0 7h8.5a2 2 0 001.9-1.4l1.6-4.5A2 2 0 0016.1 5H11l.7-2.1A1.5 1.5 0 0010.3 1L7 4'); break;
   }
 
   return <svg className={`workbench-svg-icon wb-svg-icon ${className}`.trim()} width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{content}</svg>;

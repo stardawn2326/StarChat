@@ -40,6 +40,7 @@ export interface AgentRouteDecision {
 export interface AgentStartRequest {
   message: string;
   mode?: AgentMode;
+  sessionId?: string;
 }
 
 export function sanitizeAgentStartRequest(input: unknown): AgentStartRequest {
@@ -49,19 +50,27 @@ export function sanitizeAgentStartRequest(input: unknown): AgentStartRequest {
   if (!message) throw new Error('Agent 消息不能为空');
   if (message.length > 20_000) throw new Error('Agent 消息过长');
   if (source.mode !== undefined && !isAgentMode(source.mode)) throw new Error('Agent 模式无效');
-  return { message, ...(source.mode ? { mode: source.mode } : {}) };
+  const sessionId = typeof source.sessionId === 'string' ? source.sessionId.trim().slice(0, 100) : '';
+  return { message, ...(source.mode ? { mode: source.mode } : {}), ...(sessionId ? { sessionId } : {}) };
 }
 
 export interface AgentStep {
   id: string;
   taskId: string;
   index: number;
-  kind: 'route' | 'model' | 'tool' | 'approval' | 'input' | 'result';
+  kind: 'route' | 'model' | 'tool' | 'approval' | 'input' | 'verification' | 'result';
   status: 'started' | 'completed' | 'waiting' | 'failed';
   summary: string;
   createdAt: number;
   finishedAt?: number;
   invocationId?: string;
+}
+
+export interface AgentChangePreview {
+  files: string[];
+  patch: string;
+  additions: number;
+  deletions: number;
 }
 
 export interface ToolInvocation {
@@ -82,6 +91,7 @@ export interface ApprovalRequest {
   toolName: string;
   target: string;
   plan: string;
+  preview?: AgentChangePreview;
   createdAt: number;
 }
 
@@ -111,6 +121,7 @@ export interface AgentTask {
   createdAt: number;
   updatedAt: number;
   currentStep: number;
+  resumedFromTaskId?: string;
   steps: AgentStep[];
   invocations?: ToolInvocation[];
   approval?: ApprovalRequest;

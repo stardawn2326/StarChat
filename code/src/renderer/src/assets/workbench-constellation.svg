@@ -9,16 +9,29 @@
     <path d="M152 434L238 440L203 620L146 647L191 688L114 703L58 743" stroke-width="0.72" opacity="0.24"/>
     <path d="M80 510L57 549L114 599L146 647" stroke-width="0.66" opacity="0.23"/>
   </g>
+  <defs>
+    <path id="star-tiny" d="M0 -1.8L.5 -.5L1.8 0L.5 .5L0 1.8L-.5 .5L-1.8 0L-.5 -.5Z"/>
+    <path id="star-small" d="M0 -2.7L.65 -.65L2.7 0L.65 .65L0 2.7L-.65 .65L-2.7 0L-.65 -.65Z"/>
+    <path id="star-medium" d="M0 -3.7L.9 -.9L3.7 0L.9 .9L0 3.7L-.9 .9L-3.7 0L-.9 -.9Z"/>
+  </defs>
   <g fill="#fff">
-    <path d="M152 425L154.2 431.8L161 434L154.2 436.2L152 443L149.8 436.2L143 434L149.8 431.8Z" opacity="0.86"/>
-    <path d="M238 431L239.7 436.3L245 438L239.7 439.7L238 445L236.3 439.7L231 438L236.3 436.3Z" opacity="0.76"/>
-    <path d="M80 503L81.5 507.5L86 509L81.5 510.5L80 515L78.5 510.5L74 509L78.5 507.5Z" opacity="0.78"/>
-    <path d="M57 540L59 546L65 548L59 550L57 556L55 550L49 548L55 546Z" opacity="0.96"/>
-    <path d="M114 590L116 596L122 598L116 600L114 606L112 600L106 598L112 596Z" opacity="0.98"/>
-    <path d="M203 611L205 617L211 619L205 621L203 627L201 621L195 619L201 617Z" opacity="0.72"/>
-    <path d="M146 638L148 644L154 646L148 648L146 654L144 648L138 646L144 644Z" opacity="0.79"/>
-    <path d="M191 679L193 685L199 687L193 689L191 695L189 689L183 687L189 685Z" opacity="0.92"/>
-    <path d="M114 694L116 701L123 703L116 705L114 712L112 705L105 703L112 701Z" opacity="1"/>
-    <path d="M58 734L60 741L67 743L60 745L58 752L56 745L49 743L56 741Z" opacity="1"/>
+    <use href="#star-tiny" x="152" y="434" opacity="0.50"/>
+    <use href="#star-small" x="238" y="438" opacity="0.55"/>
+    <use href="#star-tiny" x="80" y="509" opacity="0.48"/>
+    <use href="#star-small" x="57" y="548" opacity="0.64"/>
+    <use href="#star-medium" x="114" y="599" opacity="0.80"/>
+    <use href="#star-tiny" x="203" y="619" opacity="0.42"/>
+    <use href="#star-tiny" x="146" y="646" opacity="0.48"/>
+    <use href="#star-medium" x="191" y="687" opacity="0.74"/>
+    <use href="#star-medium" x="114" y="703" opacity="0.84"/>
+    <use href="#star-medium" x="58" y="743" opacity="0.86"/>
+    <use href="#star-small" x="172" y="503" opacity="0.52"/>
+    <use href="#star-tiny" x="83" y="535" opacity="0.40"/>
+    <use href="#star-small" x="34" y="570" opacity="0.54"/>
+    <use href="#star-tiny" x="205" y="581" opacity="0.40"/>
+    <use href="#star-small" x="242" y="637" opacity="0.46"/>
+    <use href="#star-medium" x="69" y="667" opacity="0.60"/>
+    <use href="#star-tiny" x="163" y="697" opacity="0.40"/>
+    <use href="#star-tiny" x="169" y="779" opacity="0.22"/>
   </g>
 </svg>

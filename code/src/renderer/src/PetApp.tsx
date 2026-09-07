@@ -117,18 +117,18 @@ function PetApp(): JSX.Element {
       return;
     }
     inputMode.current = nextMode;
-    window.baoyin.app.setInputMode(nextMode);
+    window.starchat.app.setInputMode(nextMode);
   };
   if (!dragSchedulerRef.current) {
     dragSchedulerRef.current = createPetDragScheduler(
-      (point) => window.baoyin.pet.dragMove(point),
+      (point) => window.starchat.pet.dragMove(point),
       (callback) => window.requestAnimationFrame(callback),
       (handle) => window.cancelAnimationFrame(handle)
     );
   }
   if (!resizeSchedulerRef.current) {
     resizeSchedulerRef.current = createPetResizeScheduler(
-      (point) => window.baoyin.pet.resizeMove(point),
+      (point) => window.starchat.pet.resizeMove(point),
       (callback) => window.requestAnimationFrame(callback),
       (handle) => window.cancelAnimationFrame(handle)
     );
@@ -152,7 +152,7 @@ function PetApp(): JSX.Element {
     const state = appStateRef.current;
     const key = normalizeModelViewportKey(state?.live2d.entryPath);
     if (preview && state && key) {
-      window.baoyin.settings.preview({
+      window.starchat.settings.preview({
         domain: 'settings',
         patch: { modelViewportByModel: { ...state.settings.modelViewportByModel, [key]: updated } }
       });
@@ -166,7 +166,7 @@ function PetApp(): JSX.Element {
     if (!state || !key) {
       return;
     }
-    void window.baoyin.settings.save({
+    void window.starchat.settings.save({
       settings: {
         modelViewportByModel: {
           ...state.settings.modelViewportByModel,
@@ -196,7 +196,7 @@ function PetApp(): JSX.Element {
     };
     viewportRef.current = nextViewport;
     setModelViewport(nextViewport);
-    void window.baoyin.settings.save({ settings: {
+    void window.starchat.settings.save({ settings: {
       petBounds: nextBounds,
       modelViewportByModel: { ...state.settings.modelViewportByModel, [key]: nextViewport }
     } });
@@ -207,7 +207,7 @@ function PetApp(): JSX.Element {
   }, []);
 
   const handleRuntimeFailure = useCallback((failure: { entryPath: string | null; stage: 'load' | 'initialize' | 'render'; message: string }): void => {
-    window.baoyin.app.runtimeFailed(failure);
+    window.starchat.app.runtimeFailed(failure);
   }, []);
 
   useEffect(() => {
@@ -220,22 +220,22 @@ function PetApp(): JSX.Element {
       setPresentationSettings(next.settings.presentation);
       setSettingsPreview({});
     };
-    void window.baoyin.state.get().then(applyPetState);
-    const unsubscribeState = window.baoyin.state.onChange(applyPetState);
-    const unsubscribePresentation = window.baoyin.presentation.onEvent((event) => {
+    void window.starchat.state.get().then(applyPetState);
+    const unsubscribeState = window.starchat.state.onChange(applyPetState);
+    const unsubscribePresentation = window.starchat.presentation.onEvent((event) => {
       setPresentation(event);
       if (event.type === 'dialogue') setDialogueEvent(event);
     });
-    const unsubscribeCursor = window.baoyin.cursor.onUpdate((update) => {
+    const unsubscribeCursor = window.starchat.cursor.onUpdate((update) => {
       cursorRef.current = update;
       inputRecoveryPendingRef.current = false;
       setCursor(update);
     });
-    const unsubscribeModelEdit = window.baoyin.app.onModelEditMode(setModelEditMode);
-    const unsubscribeDebug = window.baoyin.debug.onCommand(setDebugCommand);
-    const unsubscribeRuntime = window.baoyin.debug.onRuntimeCommand(setRuntimeCommand);
-    window.baoyin.app.runtimeCommandReady();
-    const unsubscribePreview = window.baoyin.settings.onPreview((detail) => {
+    const unsubscribeModelEdit = window.starchat.app.onModelEditMode(setModelEditMode);
+    const unsubscribeDebug = window.starchat.debug.onCommand(setDebugCommand);
+    const unsubscribeRuntime = window.starchat.debug.onRuntimeCommand(setRuntimeCommand);
+    window.starchat.app.runtimeCommandReady();
+    const unsubscribePreview = window.starchat.settings.onPreview((detail) => {
       if (detail.domain === 'presentation') {
         setPresentationSettings((current) => sanitizePresentationSettings({ ...(current ?? appStateRef.current?.settings.presentation), ...detail.patch }));
       } else if (detail.domain === 'settings') {
@@ -255,7 +255,7 @@ function PetApp(): JSX.Element {
   }, []);
 
   const handleRuntimeResult = useCallback((requestId: string, result: CubismRuntimeResult): void => {
-    window.baoyin.debug.runtimeResult(requestId, result);
+    window.starchat.debug.runtimeResult(requestId, result);
     setRuntimeCommand((current) => current?.requestId === requestId ? null : current);
   }, []);
 
@@ -273,7 +273,7 @@ function PetApp(): JSX.Element {
     firstFrame = window.requestAnimationFrame(() => {
       stableFrame = window.requestAnimationFrame(() => {
         runtimeReadySent.current = true;
-        window.baoyin.app.runtimeReady({ entryPath: appState.live2d.entryPath });
+        window.starchat.app.runtimeReady({ entryPath: appState.live2d.entryPath });
       });
     });
     return () => {
@@ -300,7 +300,7 @@ function PetApp(): JSX.Element {
     if (locked.current) {
       setModelEditMode(false);
       inputMode.current = 'passthrough';
-      window.baoyin.app.setInputMode('passthrough');
+      window.starchat.app.setInputMode('passthrough');
     }
   }, [interactionMode]);
 
@@ -329,7 +329,7 @@ function PetApp(): JSX.Element {
         return;
       }
       event.preventDefault();
-      window.baoyin.app.showContextMenu();
+      window.starchat.app.showContextMenu();
     };
     const capturePointer = (event: PointerEvent): { captureTarget: Element | null; pointerCaptured: boolean } => {
       const captureTarget = event.target instanceof Element ? event.target : null;
@@ -357,7 +357,7 @@ function PetApp(): JSX.Element {
       }
       // A new left-button gesture is the authoritative recovery point. This
       // clears a renderer/main-process transaction whose ending event was lost.
-      window.baoyin.pet.pointerCancel();
+      window.starchat.pet.pointerCancel();
       markWindowAndModelDrag(false);
       restoreInputMode(true);
       const resizeEdge = petResizeEdge(event.clientX, event.clientY, window.innerWidth, window.innerHeight);
@@ -373,7 +373,7 @@ function PetApp(): JSX.Element {
           pointerCaptured
         };
         markWindowAndModelDrag(true);
-        window.baoyin.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
+        window.starchat.pet.dragStart({ screenX: event.screenX, screenY: event.screenY });
         event.preventDefault();
         return;
       }
@@ -385,7 +385,7 @@ function PetApp(): JSX.Element {
           screenX: event.screenX, screenY: event.screenY, viewport: viewportRef.current,
           captureTarget, pointerCaptured
         };
-        window.baoyin.pet.resizeStart({ screenX: event.screenX, screenY: event.screenY, edge: resizeEdge });
+        window.starchat.pet.resizeStart({ screenX: event.screenX, screenY: event.screenY, edge: resizeEdge });
         event.preventDefault();
         return;
       }
@@ -451,7 +451,7 @@ function PetApp(): JSX.Element {
       if (gesture.operation === 'model-transform') {
         persistModelViewport(viewportRef.current);
         if (cancelled) {
-          window.baoyin.pet.pointerCancel();
+          window.starchat.pet.pointerCancel();
         }
         restoreInputMode(true);
         event?.preventDefault();
@@ -461,9 +461,9 @@ function PetApp(): JSX.Element {
         if (cancelled) dragSchedulerRef.current?.cancel();
         else dragSchedulerRef.current?.flush();
         if (cancelled) {
-          window.baoyin.pet.pointerCancel();
+          window.starchat.pet.pointerCancel();
         } else {
-          window.baoyin.pet.dragEnd();
+          window.starchat.pet.dragEnd();
         }
         event?.preventDefault();
         restoreInputMode(true);
@@ -482,9 +482,9 @@ function PetApp(): JSX.Element {
           resizeSchedulerRef.current?.flush();
         }
         if (cancelled) {
-          window.baoyin.pet.pointerCancel();
+          window.starchat.pet.pointerCancel();
         } else {
-          window.baoyin.pet.resizeEnd();
+          window.starchat.pet.resizeEnd();
         }
         restoreInputMode(true);
         event?.preventDefault();
@@ -530,7 +530,7 @@ function PetApp(): JSX.Element {
     window.addEventListener('wheel', handleWheel, { capture: true, passive: false });
     const initialMode = 'passthrough';
     inputMode.current = initialMode;
-    window.baoyin.app.setInputMode(initialMode);
+    window.starchat.app.setInputMode(initialMode);
     return () => {
       document.removeEventListener('contextmenu', handleContextMenu, true);
       window.removeEventListener('pointerdown', handlePointerDown, true);
@@ -543,21 +543,21 @@ function PetApp(): JSX.Element {
       document.removeEventListener('visibilitychange', handleVisibilityChange, true);
       window.removeEventListener('wheel', handleWheel, true);
       cancelActivePointer();
-      window.baoyin.pet.pointerCancel();
+      window.starchat.pet.pointerCancel();
       dragSchedulerRef.current?.cancel();
       resizeSchedulerRef.current?.cancel();
     };
   }, [interactionMode]);
 
   if (!appState) {
-    return <main className="pet-shell pet-loading" aria-label="白音桌宠窗口" data-pet-role="pet" />;
+    return <main className="pet-shell pet-loading" aria-label="StarChat 桌宠窗口" data-pet-role="pet" />;
   }
 
   const effectiveSettings = { ...appState.settings, ...settingsPreview };
   return (
     <main
       className={`pet-shell${hintVisible || resizeHovered ? ' pet-hovered' : ''}${modelEditMode ? ' pet-model-editing' : ''}`}
-      aria-label="白音透明桌宠窗口"
+      aria-label="StarChat 透明桌宠窗口"
       data-pet-role="pet"
       data-pet-hovered={hovered ? 'true' : 'false'}
       data-pet-frame-hover={frameHover ? 'true' : 'false'}

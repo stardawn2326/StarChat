@@ -67,7 +67,7 @@ function Close-Socket {
 }
 
 function Sample-Pet {
-  Eval '(async()=>{const root=document.querySelector("[data-pet-role=pet]"),c=document.querySelector("[data-live2d-canvas]"),r=c?.getBoundingClientRect(),m=document.querySelector("[data-live2d-runtime=cubism]"),bounds=await window.baoyin.pet.bounds();return {bounds,modelScale:root?.dataset.modelScale,modelOffsetX:root?.dataset.modelOffsetX,modelOffsetY:root?.dataset.modelOffsetY,canvas:{width:c?.width,height:c?.height,cssWidth:getComputedStyle(c).width,cssHeight:getComputedStyle(c).height,clientWidth:c?.clientWidth,clientHeight:c?.clientHeight,viewportCss:c?.dataset.viewportCss,renderScale:c?.dataset.renderScale,left:r?.left,top:r?.top},transform:m?.dataset.runtimeTransform,matrix:m?.dataset.runtimeModelMatrix,status:root?.dataset.live2dStatus}})()' $true
+  Eval '(async()=>{const root=document.querySelector("[data-pet-role=pet]"),c=document.querySelector("[data-live2d-canvas]"),r=c?.getBoundingClientRect(),m=document.querySelector("[data-live2d-runtime=cubism]"),bounds=await window.starchat.pet.bounds();return {bounds,modelScale:root?.dataset.modelScale,modelOffsetX:root?.dataset.modelOffsetX,modelOffsetY:root?.dataset.modelOffsetY,canvas:{width:c?.width,height:c?.height,cssWidth:getComputedStyle(c).width,cssHeight:getComputedStyle(c).height,clientWidth:c?.clientWidth,clientHeight:c?.clientHeight,viewportCss:c?.dataset.viewportCss,renderScale:c?.dataset.renderScale,left:r?.left,top:r?.top},transform:m?.dataset.runtimeTransform,matrix:m?.dataset.runtimeModelMatrix,status:root?.dataset.live2dStatus}})()' $true
 }
 
 $results = [ordered]@{
@@ -86,7 +86,7 @@ try {
   if ($ConfigureModelPath) {
     Open-Page 'settings' | Out-Null
     $modelLiteral = $ConfigureModelPath | ConvertTo-Json -Compress
-    Eval "window.baoyin.settings.save({settings:{live2dModelPath:$modelLiteral,modelViewportByModel:{}},licenseAccepted:true}).then(()=>true)" $true | Out-Null
+    Eval "window.starchat.settings.save({settings:{live2dModelPath:$modelLiteral,modelViewportByModel:{}},licenseAccepted:true}).then(()=>true)" $true | Out-Null
     Start-Sleep -Seconds 5
     Close-Socket
   }
@@ -97,7 +97,7 @@ try {
   }
   Start-Sleep -Milliseconds 1500
   $baseline = Sample-Pet
-  $initialViewportMapJson = Eval '(async()=>JSON.stringify((await window.baoyin.state.get()).settings.modelViewportByModel))()' $true
+  $initialViewportMapJson = Eval '(async()=>JSON.stringify((await window.starchat.state.get()).settings.modelViewportByModel))()' $true
   $results.samples += [ordered]@{ label = 'baseline'; value = $baseline }
   Close-Socket
 
@@ -110,7 +110,7 @@ try {
   )
   foreach ($size in $sizes) {
     $next = @{ x = [int]$baseBounds.x; y = [int]$baseBounds.y; width = [int]$size.width; height = [int]$size.height } | ConvertTo-Json -Compress
-    Eval "window.baoyin.pet.previewBounds($next); true" | Out-Null
+    Eval "window.starchat.pet.previewBounds($next); true" | Out-Null
     Eval 'new Promise(resolve=>setTimeout(()=>resolve(true),350))' $true | Out-Null
     Close-Socket
     Open-Page 'pet' | Out-Null
@@ -129,7 +129,7 @@ try {
   Open-Page 'pet' | Out-Null
   $wasEditing = [bool](Eval 'document.querySelector("[data-pet-role=pet]")?.dataset.petModelEditMode === "true"')
   if (-not $wasEditing) {
-    Eval 'window.baoyin.app.toggleModelEdit(); true' | Out-Null
+    Eval 'window.starchat.app.toggleModelEdit(); true' | Out-Null
     Start-Sleep -Milliseconds 250
   }
   $holdBefore = Sample-Pet
@@ -161,7 +161,7 @@ try {
     wheel = [ordered]@{ before = $wheelBefore; after = $wheelAfter; xStable = ($wheelBefore.modelOffsetX -eq $wheelAfter.modelOffsetX); yStable = ($wheelBefore.modelOffsetY -eq $wheelAfter.modelOffsetY); scaleChanged = ($wheelBefore.modelScale -ne $wheelAfter.modelScale) }
   }
   foreach ($scale in @(0.55, 1.0, 2.4)) {
-    Eval "(async()=>{const s=await window.baoyin.state.get();const key=Object.keys(s.settings.modelViewportByModel)[0];const map={...s.settings.modelViewportByModel,[key]:{...s.settings.modelViewportByModel[key],modelScale:$scale}};await window.baoyin.settings.save({settings:{modelViewportByModel:map}});return true})()" $true | Out-Null
+    Eval "(async()=>{const s=await window.starchat.state.get();const key=Object.keys(s.settings.modelViewportByModel)[0];const map={...s.settings.modelViewportByModel,[key]:{...s.settings.modelViewportByModel[key],modelScale:$scale}};await window.starchat.settings.save({settings:{modelViewportByModel:map}});return true})()" $true | Out-Null
     Start-Sleep -Milliseconds 450
     $scaleSample = Sample-Pet
     $scaleShot = Join-Path $OutputDirectory "pet-scale-$($scale.ToString('0.00')).png"
@@ -169,10 +169,10 @@ try {
     $results.screenshots += $scaleShot
     $results.scaleSamples += [ordered]@{ requested = $scale; value = $scaleSample; screenshot = $scaleShot }
   }
-  Eval "window.baoyin.settings.save({settings:{modelViewportByModel:$initialViewportMapJson}}).then(()=>true)" $true | Out-Null
+  Eval "window.starchat.settings.save({settings:{modelViewportByModel:$initialViewportMapJson}}).then(()=>true)" $true | Out-Null
   Start-Sleep -Milliseconds 300
   if (-not $wasEditing) {
-    Eval 'window.baoyin.app.toggleModelEdit(); true' | Out-Null
+    Eval 'window.starchat.app.toggleModelEdit(); true' | Out-Null
     Start-Sleep -Milliseconds 250
   }
   $gestureShot = Join-Path $OutputDirectory 'pet-gesture-regression.png'
@@ -181,7 +181,7 @@ try {
   Close-Socket
   Open-Page 'settings' | Out-Null
   $restore = $baseBounds | ConvertTo-Json -Compress
-  Eval "window.baoyin.pet.previewBounds($restore); true" | Out-Null
+  Eval "window.starchat.pet.previewBounds($restore); true" | Out-Null
   Eval 'new Promise(resolve=>setTimeout(()=>resolve(true),350))' $true | Out-Null
   Close-Socket
 

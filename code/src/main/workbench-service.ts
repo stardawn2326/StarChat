@@ -1,10 +1,67 @@
-import { execFileSync } from 'node:child_process';
-import { existsSync, realpathSync } from 'node:fs';
-import { isAbsolute } from 'node:path';
-import type { WorkbenchEnvironment, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from '../shared/workbench';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, realpathSync, statSync } from 'node:fs';
+import { extname, isAbsolute, posix, relative, sep } from 'node:path';
+import type { WorkbenchCommandResult, WorkbenchDiffPreview, WorkbenchEnvironment, WorkbenchFilePreview, WorkbenchGitCommitResult, WorkbenchInspection, WorkbenchInspectionKind, WorkbenchResourceEntry, WorkbenchShareResult, WorkbenchSourceSnapshot } from '../shared/workbench';
 import { WorkspaceGuard } from './agent-security';
 
 const SENSITIVE_PATH = /(^|[\\/])(?:\.env(?:\.|$)|[^\\/]*(?:secret|api[-_]?key|credential|\.pem$|\.key$)|id_rsa|\.ssh(?:[\\/]|$)|\.aws(?:[\\/]|$))/iu;
+const MAX_PROCESS_OUTPUT = 64 * 1024;
+
+type WorkbenchExecutor = (command: string, args: string[], cwd: string, signal: AbortSignal) => Promise<{ code: number; output: string }>;
+
+function spawnWorkbenchProcess(command: string, args: string[], cwd: string, signal: AbortSignal): Promise<{ code: number; output: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { cwd, shell: false, windowsHide: true, signal });
+    let output = '';
+    const append = (chunk: Buffer): void => { output = `${output}${chunk.toString('utf8')}`.slice(-MAX_PROCESS_OUTPUT); };
+    child.stdout?.on('data', append);
+    child.stderr?.on('data', append);
+    child.once('error', reject);
+    child.once('close', (code) => resolve({ code: code ?? 1, output }));
+  });
+}
+
+const WORKBENCH_COMMANDS: Readonly<Record<string, { command: string; args: string[] }>> = {
+  'git status --short': { command: 'git', args: ['status', '--short'] },
+  'git diff --stat': { command: 'git', args: ['diff', '--stat'] },
+  'git diff --name-only': { command: 'git', args: ['diff', '--name-only'] },
+  'pnpm run test': { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args: ['run', 'test'] },
+  'pnpm run typecheck': { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args: ['run', 'typecheck'] },
+  'pnpm run build': { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args: ['run', 'build'] },
+  'pnpm run verify:live2d': { command: process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm', args: ['run', 'verify:live2d'] }
+};
+
+export async function runWorkbenchCommand(rootDirectory: string, input: string, signal: AbortSignal, executor: WorkbenchExecutor = spawnWorkbenchProcess): Promise<WorkbenchCommandResult> {
+  const commandText = input.trim().replace(/\s+/gu, ' ');
+  const definition = WORKBENCH_COMMANDS[commandText];
+  if (!definition) throw new Error('命令不在受控白名单；可运行 Git 只读命令或项目验证脚本');
+  const workspaceRoot = realpathSync(rootDirectory);
+  const commandRoot = commandText.startsWith('pnpm ') && !existsSync(`${workspaceRoot}${sep}package.json`) && existsSync(`${workspaceRoot}${sep}code${sep}package.json`)
+    ? `${workspaceRoot}${sep}code`
+    : workspaceRoot;
+  const result = await executor(definition.command, definition.args, commandRoot, signal);
+  return { command: commandText, ok: result.code === 0, code: result.code, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
+}
+
+export function normalizeWorkbenchUrl(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) throw new Error('请输入网页地址');
+  const candidate = /^[a-z][a-z\d+.-]*:/iu.test(trimmed) ? trimmed : `https://${trimmed}`;
+  const url = new URL(candidate);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error('浏览器仅允许 http 或 https 地址');
+  return url.toString();
+}
+
+export async function commitWorkbenchStaged(rootDirectory: string, messageInput: string, signal: AbortSignal, executor: WorkbenchExecutor = spawnWorkbenchProcess): Promise<WorkbenchGitCommitResult> {
+  const message = messageInput.trim();
+  if (!message || message.length > 120 || /[\r\n]/u.test(message)) throw new Error('提交说明必须为 1–120 个字符的单行文本');
+  const { environment } = environmentFor(rootDirectory);
+  if (!environment.gitRoot) throw new Error('当前工作区不是 Git 仓库');
+  const staged = runGit(environment.gitRoot, ['diff', '--cached', '--name-only']);
+  if (!staged) throw new Error('没有已暂存的变更；StarChat 不会自动暂存文件');
+  const result = await executor('git', ['commit', '-m', message], environment.gitRoot, signal);
+  return { ok: result.code === 0, message, output: result.output.slice(0, MAX_PROCESS_OUTPUT) };
+}
 
 function runGit(root: string, args: string[]): string | null {
   try {
@@ -12,7 +69,8 @@ function runGit(root: string, args: string[]): string | null {
       cwd: root,
       encoding: 'utf8',
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'ignore']
+      stdio: ['ignore', 'pipe', 'ignore'],
+      maxBuffer: 512 * 1024
     }).trim();
   } catch {
     return null;
@@ -50,15 +108,62 @@ function environmentFor(rootDirectory: string): { environment: WorkbenchEnvironm
   return { environment, source };
 }
 
-function listResources(root: string): WorkbenchResourceEntry[] {
-  const guard = new WorkspaceGuard(root);
-  return guard.listDirectory('.').map((entry) => ({ path: entry.path, kind: entry.kind }));
+function normalizedRelativePath(value: string): string {
+  return value.trim().replaceAll('\\', '/').replace(/^\.\//u, '').replace(/\/$/u, '');
 }
 
-export function inspectWorkbench(rootDirectory: string, kind: WorkbenchInspectionKind): WorkbenchInspection {
+function listResources(root: string, path = ''): WorkbenchResourceEntry[] {
+  const guard = new WorkspaceGuard(root);
+  return guard.listDirectory(path || '.').map((entry) => ({ path: entry.path, kind: entry.kind }));
+}
+
+export function inspectWorkbench(rootDirectory: string, kind: WorkbenchInspectionKind, requestedPath = ''): WorkbenchInspection {
   const { environment, source } = environmentFor(rootDirectory);
-  if (kind === 'resources') return { kind, environment, resources: listResources(environment.workspaceRoot) };
+  if (kind === 'resources') {
+    const resourcePath = normalizedRelativePath(requestedPath);
+    return {
+      kind,
+      environment,
+      resourcePath,
+      resourceParentPath: resourcePath ? (posix.dirname(resourcePath) === '.' ? '' : posix.dirname(resourcePath)) : null,
+      resources: listResources(environment.workspaceRoot, resourcePath)
+    };
+  }
   return { kind, environment, source };
+}
+
+function languageFor(path: string): string {
+  const extension = extname(path).slice(1).toLocaleLowerCase();
+  return extension || 'text';
+}
+
+export function previewWorkbenchFile(rootDirectory: string, requestedPath: string): WorkbenchFilePreview {
+  const guard = new WorkspaceGuard(rootDirectory);
+  const path = normalizedRelativePath(requestedPath);
+  const target = guard.resolve(path);
+  const content = guard.readText(path);
+  return {
+    path,
+    content,
+    language: languageFor(path),
+    lineCount: content.split('\n').length,
+    sizeBytes: statSync(target).size,
+    truncated: false
+  };
+}
+
+export function readWorkbenchDiff(rootDirectory: string, requestedPath: string): WorkbenchDiffPreview {
+  const guard = new WorkspaceGuard(rootDirectory);
+  const path = normalizedRelativePath(requestedPath);
+  const target = guard.resolve(path);
+  const { environment } = environmentFor(rootDirectory);
+  if (!environment.gitRoot) throw new Error('当前工作区不是 Git 仓库');
+  const gitPath = relative(environment.gitRoot, target).replaceAll(sep, '/');
+  if (gitPath.startsWith('../')) throw new Error('文件不在当前 Git 工作树内');
+  const raw = runGit(environment.gitRoot, ['diff', '--no-ext-diff', '--', gitPath]);
+  if (raw === null) throw new Error('读取 Git 差异失败');
+  const maximum = 128 * 1024;
+  return { path, patch: raw.slice(0, maximum), truncated: raw.length > maximum };
 }
 
 export function formatWorkbenchShare(inspection: WorkbenchInspection): WorkbenchShareResult {

@@ -7,7 +7,7 @@ import { createAgentTools, runVerification } from './agent-tools';
 
 describe('agent explicit tool allowlist', () => {
   it('registers only the first-party structured tools and no shell/executable tool', () => {
-    const root = mkdtempSync(join(tmpdir(), 'baoyin-agent-tools-'));
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-tools-'));
     mkdirSync(join(root, 'src'));
     writeFileSync(join(root, 'src', 'a.txt'), 'a', 'utf8');
     const tools = createAgentTools(new WorkspaceGuard(root));
@@ -24,5 +24,18 @@ describe('agent explicit tool allowlist', () => {
     await expect(runVerification('C:/workspace', 'typecheck', new AbortController().signal, executor)).resolves.toMatchObject({ script: 'typecheck', ok: true });
     expect(executor).toHaveBeenCalledWith(expect.stringMatching(/pnpm(\.cmd)?/), ['run', 'typecheck'], 'C:/workspace', expect.any(AbortSignal));
     expect(() => runVerification('C:/workspace', 'install', new AbortController().signal, executor)).toThrow(/不允许运行脚本/);
+  });
+
+  it('exposes the exact bounded patch and line counts before approval', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-preview-'));
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src', 'a.txt'), 'before\n', 'utf8');
+    const patch = '*** Begin Patch\n*** Update File: src/a.txt\n@@\n-before\n+after\n*** End Patch';
+    const applyPatch = createAgentTools(new WorkspaceGuard(root)).find((tool) => tool.name === 'apply_patch');
+
+    expect(applyPatch?.approval?.({ patch })).toMatchObject({
+      target: 'src/a.txt',
+      preview: { files: ['src/a.txt'], patch, additions: 1, deletions: 1 }
+    });
   });
 });

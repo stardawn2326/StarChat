@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cosyVoiceInstallPathsForRoot, cosyVoiceLauncherArgs, isManagedCosyVoiceBaseUrl } from './cosyvoice-service';
+import { cosyVoiceInstallPathsForHome, cosyVoiceLauncherArgs, isManagedCosyVoiceBaseUrl } from './cosyvoice-service';
 
 describe('CosyVoice local service installation', () => {
   it('only manages the installed loopback service', () => {
@@ -9,16 +9,25 @@ describe('CosyVoice local service installation', () => {
     expect(isManagedCosyVoiceBaseUrl('http://127.0.0.1:51000')).toBe(false);
   });
 
-  it('keeps the runtime and model outside the packaged EXE', () => {
-    const install = cosyVoiceInstallPathsForRoot('C:\\Project-008');
-    expect(install.pythonPath).toBe('C:\\Project-008\\tools\\cosyvoice-python310\\python.exe');
-    expect(install.launcherPath).toBe('C:\\Project-008\\tools\\start-cosyvoice-server.py');
+  it('keeps every CosyVoice runtime payload under the configured D drive home', () => {
+    const install = cosyVoiceInstallPathsForHome(
+      'D:\\CosyVoice',
+      'C:\\Project-008-StarChat\\tools\\start-cosyvoice-server.py'
+    );
+    expect(install.homePath).toBe('D:\\CosyVoice');
+    expect(install.pythonPath).toBe('D:\\CosyVoice\\python310\\python.exe');
+    expect(install.sourcePath).toBe('D:\\CosyVoice\\source');
+    expect(install.launcherPath).toBe('C:\\Project-008-StarChat\\tools\\start-cosyvoice-server.py');
   });
 
   it('selects exactly one local model mode per service process', () => {
-    expect(cosyVoiceLauncherArgs('C:\\Project-008\\tools\\start-cosyvoice-server.py', 'sft')).toEqual([
-      'C:\\Project-008\\tools\\start-cosyvoice-server.py', '--voice-mode', 'sft'
+    expect(cosyVoiceLauncherArgs('C:\\Project-008-StarChat\\tools\\start-cosyvoice-server.py', 'D:\\CosyVoice', 'sft')).toEqual([
+      'C:\\Project-008-StarChat\\tools\\start-cosyvoice-server.py',
+      '--cosyvoice-home',
+      'D:\\CosyVoice',
+      '--voice-mode',
+      'sft'
     ]);
-    expect(cosyVoiceLauncherArgs('C:\\Project-008\\tools\\start-cosyvoice-server.py', 'zero-shot')[2]).toBe('zero-shot');
+    expect(cosyVoiceLauncherArgs('C:\\Project-008-StarChat\\tools\\start-cosyvoice-server.py', 'D:\\CosyVoice', 'zero-shot')[4]).toBe('zero-shot');
   });
 });

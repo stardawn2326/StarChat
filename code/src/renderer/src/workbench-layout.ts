@@ -4,7 +4,7 @@ export interface WorkbenchViewport {
 }
 
 export interface WorkbenchLayoutState {
-  version: 2;
+  version: 4;
   sidebarCollapsed: boolean;
   rightRailCollapsed: boolean;
   bottomPanelOpen: boolean;
@@ -14,7 +14,8 @@ export interface WorkbenchLayoutState {
   characterWidth: number;
 }
 
-export const WORKBENCH_LAYOUT_STORAGE_KEY = 'starchat.workbench.layout.v2';
+export const WORKBENCH_LAYOUT_STORAGE_KEY = 'starchat.workbench.layout.v4';
+const LEGACY_WORKBENCH_LAYOUT_STORAGE_KEY = 'starchat.workbench.layout.v3';
 export const WORKBENCH_MIN_CENTER_WIDTH = 760;
 export const WORKBENCH_MIN_DIALOGUE_WIDTH = 470;
 
@@ -22,7 +23,7 @@ const SIDEBAR_MIN = 240;
 const SIDEBAR_MAX = 360;
 const RIGHT_RAIL_MIN = 220;
 const RIGHT_RAIL_MAX = 520;
-const BOTTOM_PANEL_MIN = 140;
+const BOTTOM_PANEL_MIN = 112;
 const BOTTOM_PANEL_MAX = 420;
 const CHARACTER_MIN = 240;
 const CHARACTER_MAX = 560;
@@ -67,13 +68,13 @@ export function defaultWorkbenchLayoutState(viewportValue: WorkbenchViewport): W
   const large = viewport.width >= 1700 && viewport.height >= 1050;
   const sidebarWidth = large ? 328 : 280;
   return {
-    version: 2,
+    version: 4,
     sidebarCollapsed: false,
     rightRailCollapsed: true,
     bottomPanelOpen: false,
     sidebarWidth,
     rightRailWidth: Math.min(large ? 414 : 320, maxRightRailWidth(viewport.width, sidebarWidth)),
-    bottomPanelHeight: Math.min(large ? 215 : 174, maxBottomPanelHeight(viewport.height)),
+    bottomPanelHeight: Math.min(large ? 156 : 148, maxBottomPanelHeight(viewport.height)),
     characterWidth: large ? 389 : 300
   };
 }
@@ -81,10 +82,14 @@ export function defaultWorkbenchLayoutState(viewportValue: WorkbenchViewport): W
 export function sanitizeWorkbenchLayoutState(value: unknown, viewportValue: WorkbenchViewport): WorkbenchLayoutState {
   const viewport = usableViewport(viewportValue);
   const defaults = defaultWorkbenchLayoutState(viewport);
-  const candidate = value && typeof value === 'object' ? value as Partial<WorkbenchLayoutState> : {};
+  const rawCandidate = value && typeof value === 'object' ? value as Partial<Omit<WorkbenchLayoutState, 'version'>> & { version?: number } : {};
+  const candidate = rawCandidate.version === 3
+    ? { ...rawCandidate, version: 4, rightRailCollapsed: true, bottomPanelOpen: false }
+    : rawCandidate;
+  if (candidate.version !== 4) return defaults;
   const sidebarWidth = clamp(finiteOr(candidate.sidebarWidth, defaults.sidebarWidth), SIDEBAR_MIN, SIDEBAR_MAX);
   return {
-    version: 2,
+    version: 4,
     sidebarCollapsed: typeof candidate.sidebarCollapsed === 'boolean' ? candidate.sidebarCollapsed : defaults.sidebarCollapsed,
     rightRailCollapsed: typeof candidate.rightRailCollapsed === 'boolean' ? candidate.rightRailCollapsed : defaults.rightRailCollapsed,
     bottomPanelOpen: typeof candidate.bottomPanelOpen === 'boolean' ? candidate.bottomPanelOpen : defaults.bottomPanelOpen,
@@ -108,7 +113,7 @@ export function mergeWorkbenchLayoutState(
   patch: Partial<Omit<WorkbenchLayoutState, 'version'>>,
   viewport: WorkbenchViewport
 ): WorkbenchLayoutState {
-  return sanitizeWorkbenchLayoutState({ ...current, ...patch, version: 2 }, viewport);
+  return sanitizeWorkbenchLayoutState({ ...current, ...patch, version: 4 }, viewport);
 }
 
 function currentViewport(): WorkbenchViewport {
@@ -119,8 +124,14 @@ function currentViewport(): WorkbenchViewport {
 export function readWorkbenchLayoutState(viewport = currentViewport()): WorkbenchLayoutState {
   if (typeof window === 'undefined') return defaultWorkbenchLayoutState(viewport);
   try {
-    const stored = window.localStorage.getItem(WORKBENCH_LAYOUT_STORAGE_KEY);
-    return sanitizeWorkbenchLayoutState(stored ? JSON.parse(stored) : null, viewport);
+    const currentStored = window.localStorage.getItem(WORKBENCH_LAYOUT_STORAGE_KEY);
+    const legacyStored = currentStored ? null : window.localStorage.getItem(LEGACY_WORKBENCH_LAYOUT_STORAGE_KEY);
+    const migrated = legacyStored ? sanitizeWorkbenchLayoutState(JSON.parse(legacyStored), viewport) : null;
+    const next = migrated ?? sanitizeWorkbenchLayoutState(currentStored ? JSON.parse(currentStored) : null, viewport);
+    if (legacyStored && !currentStored) {
+      window.localStorage.setItem(WORKBENCH_LAYOUT_STORAGE_KEY, JSON.stringify(next));
+    }
+    return next;
   } catch {
     return defaultWorkbenchLayoutState(viewport);
   }

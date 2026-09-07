@@ -7,9 +7,26 @@ from ctypes import create_unicode_buffer, windll
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-TOOLS_ROOT = PROJECT_ROOT / "tools"
-COSYVOICE_ROOT = TOOLS_ROOT / "CosyVoice"
+def _consume_option(name: str, default: str) -> str:
+    if name not in sys.argv:
+        return default
+    index = sys.argv.index(name)
+    try:
+        value = sys.argv[index + 1]
+    except IndexError as error:
+        raise ValueError(f"{name} requires a value") from error
+    del sys.argv[index:index + 2]
+    return value
+
+
+COSYVOICE_HOME = Path(
+    _consume_option(
+        "--cosyvoice-home",
+        os.environ.get("STARCHAT_COSYVOICE_HOME", r"D:\CosyVoice"),
+    )
+).resolve()
+COSYVOICE_ROOT = COSYVOICE_HOME / "source"
+CACHE_ROOT = COSYVOICE_HOME / "cache"
 voice_mode = "sft"
 if "--voice-mode" in sys.argv:
     index = sys.argv.index("--voice-mode")
@@ -20,21 +37,21 @@ if voice_mode not in {"sft", "zero-shot"}:
 MODEL_DIR = COSYVOICE_ROOT / "pretrained_models" / ("CosyVoice2-0.5B" if voice_mode == "zero-shot" else "CosyVoice-300M-SFT")
 
 for directory in (
-    TOOLS_ROOT / "modelscope-cache",
-    TOOLS_ROOT / "modelscope-credentials",
-    TOOLS_ROOT / "huggingface-cache",
+    CACHE_ROOT / "modelscope",
+    COSYVOICE_HOME / "credentials" / "modelscope",
+    CACHE_ROOT / "huggingface",
 ):
     directory.mkdir(parents=True, exist_ok=True)
 
-os.environ["MODELSCOPE_CACHE"] = str(TOOLS_ROOT / "modelscope-cache")
-os.environ["HF_HOME"] = str(TOOLS_ROOT / "huggingface-cache")
+os.environ["MODELSCOPE_CACHE"] = str(CACHE_ROOT / "modelscope")
+os.environ["HF_HOME"] = str(CACHE_ROOT / "huggingface")
 
 # ModelScope otherwise writes its anonymous session file to the user's profile.
-# Keep all CosyVoice runtime state inside this project instead.
+# Keep all CosyVoice runtime state inside the configured D-drive home.
 from modelscope.hub.api import ModelScopeConfig
 import modelscope
 
-ModelScopeConfig.path_credential = str(TOOLS_ROOT / "modelscope-credentials")
+ModelScopeConfig.path_credential = str(COSYVOICE_HOME / "credentials" / "modelscope")
 
 _snapshot_download = modelscope.snapshot_download
 
@@ -50,8 +67,8 @@ def _windows_short_path(path: Path) -> str:
 def _project_snapshot_download(model_id: str, *args, **kwargs):
     if model_id == "pengzhendong/wetext":
         return _windows_short_path(
-            TOOLS_ROOT
-            / "modelscope-cache"
+            CACHE_ROOT
+            / "modelscope"
             / "hub"
             / "pengzhendong"
             / "wetext"

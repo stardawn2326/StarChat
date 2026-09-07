@@ -26,13 +26,14 @@ import type { PresentationEvent } from '../../shared/presentation';
 
 declare global {
   interface Window {
-    baoyin: {
+    starchat: {
       app: {
         minimize(): void;
         close(): void;
-        toggleMaximize(): Promise<boolean>;
+        toggleMaximize(maximized?: boolean): Promise<boolean>;
         isMaximized(): Promise<boolean>;
         onMaximizedChanged(callback: (maximized: boolean) => void): () => void;
+        onWorkbenchCharacterVisibilityChanged(callback: (visible: boolean) => void): () => void;
         showSettings(): void;
         hideSettings(): void;
         toggleSettings(): void;
@@ -54,7 +55,23 @@ declare global {
       };
       workbench: {
         inspect(request: import('../../shared/ipc').WorkbenchInspectRequest): Promise<import('../../shared/ipc').WorkbenchInspectionResponse>;
+        previewFile(request: import('../../shared/ipc').WorkbenchPathRequest): Promise<import('../../shared/ipc').WorkbenchFilePreviewResponse>;
+        diff(request: import('../../shared/ipc').WorkbenchPathRequest): Promise<import('../../shared/ipc').WorkbenchDiffResponse>;
+        verify(request: import('../../shared/ipc').WorkbenchVerifyRequest): Promise<import('../../shared/ipc').WorkbenchVerificationResponse>;
+        command(request: import('../../shared/ipc').WorkbenchCommandRequest): Promise<import('../../shared/ipc').WorkbenchCommandResponse>;
+        openUrl(request: import('../../shared/ipc').WorkbenchOpenUrlRequest): Promise<import('../../shared/ipc').WorkbenchOpenUrlResponse>;
+        gitCommit(request: import('../../shared/ipc').WorkbenchGitCommitRequest): Promise<import('../../shared/ipc').WorkbenchGitCommitResponse>;
         share(): Promise<import('../../shared/ipc').WorkbenchShareResponse>;
+      };
+      sessions: {
+        snapshot(): Promise<import('../../shared/session').SessionSnapshot>;
+        chooseWorkspace(): Promise<import('../../shared/session').SessionSnapshot>;
+        selectWorkspace(workspaceId: string): Promise<import('../../shared/session').SessionSnapshot>;
+        create(workspaceId: string): Promise<import('../../shared/session').SessionSnapshot>;
+        select(sessionId: string): Promise<import('../../shared/session').SessionSnapshot>;
+        rename(request: import('../../shared/session').SessionRenameRequest): Promise<import('../../shared/session').SessionSnapshot>;
+        delete(sessionId: string): Promise<import('../../shared/session').SessionSnapshot>;
+        onChange(callback: (snapshot: import('../../shared/session').SessionSnapshot) => void): () => void;
       };
       settings: {
         save(request: SaveSettingsRequest): Promise<PublicAppState>;
@@ -125,6 +142,7 @@ declare global {
       };
       agent: {
         start(request: AgentStartRequest): Promise<AgentStartResponse>;
+        retry(taskId: string): Promise<AgentStartResponse>;
         cancel(taskId: string): Promise<void>;
         approve(request: import('../../shared/ipc').AgentApproveRequest): Promise<void>;
         respond(request: import('../../shared/ipc').AgentRespondRequest): Promise<void>;

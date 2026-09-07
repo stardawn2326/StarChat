@@ -24,7 +24,7 @@ function shaderFiles(directory: string, prefix = ''): Array<{ fileName: string; 
 
 function live2dShaderPlugin(): Plugin {
   return {
-    name: 'baoyin-live2d-shader-assets',
+    name: 'starchat-live2d-shader-assets',
     generateBundle() {
       for (const shader of shaderFiles(shaderDirectory)) {
         this.emitFile({

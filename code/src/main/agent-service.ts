@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type {
   AgentEvent,
   AgentResult,
@@ -12,7 +14,7 @@ import { sanitizeAgentStartRequest } from '../shared/agent';
 import type { AppSettings } from '../shared/settings';
 import { AgentStore } from './agent-store';
 import { AgentRuntime, type AgentModel, type AgentToolExecutionEvent } from './agent-runtime';
-import { createAgentTools } from './agent-tools';
+import { createAgentTools, runVerification, type VerificationResult } from './agent-tools';
 import { WorkspaceGuard } from './agent-security';
 import { routeTurn } from './agent-router';
 
@@ -31,19 +33,38 @@ export interface AgentServiceContext {
 
 export interface AgentServiceOptions {
   store: AgentStore;
-  workspaceRoot: string;
+  workspaceRoot?: string;
+  resolveExecutionContext?: (sessionId?: string) => { sessionId: string; workspaceRoot: string };
   getContext: () => AgentServiceContext;
   createModel: (context: AgentServiceContext) => AgentModel;
   classifyAmbiguous?: (message: string, context: AgentServiceContext) => Promise<'agent' | 'companion'>;
   emit?: (event: AgentEvent) => void;
   now?: () => number;
   maxReadOnlyConcurrency?: number;
+  executeVerification?: (root: string, script: string, signal: AbortSignal) => Promise<VerificationResult>;
 }
 
 interface LiveTask {
   runtime: AgentRuntime;
   controller: AbortController;
   readOnly: boolean;
+  workspaceRoot: string;
+  wrote: boolean;
+  changedFiles: string[];
+}
+
+function automaticVerificationScript(workspaceRoot: string): string | null {
+  const packagePath = join(workspaceRoot, 'package.json');
+  if (!existsSync(packagePath)) return null;
+  try {
+    const parsed = JSON.parse(readFileSync(packagePath, 'utf8')) as { scripts?: Record<string, unknown> };
+    for (const script of ['typecheck', 'test', 'build']) {
+      if (typeof parsed.scripts?.[script] === 'string') return script;
+    }
+  } catch {
+    return null;
+  }
+  return null;
 }
 
 function active(status: AgentTaskStatus): boolean {
@@ -94,6 +115,8 @@ export class AgentService {
       invocation.summary = event.summary;
     }
     if (event.status === 'completed' || event.status === 'failed') invocation.finishedAt = now;
+    const live = this.live.get(task.id);
+    if (live && event.toolName === 'apply_patch' && event.status === 'completed') live.wrote = true;
     task.invocations = invocations.slice(-100);
     if (event.status !== 'running') task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'tool', status: event.status === 'completed' ? 'completed' : event.status.startsWith('waiting') ? 'waiting' : 'failed', summary: `${event.toolName}：${event.summary}`, createdAt: now, finishedAt: event.status === 'completed' || event.status === 'failed' ? now : undefined, invocationId: event.invocationId });
     this.save(task);
@@ -110,9 +133,13 @@ export class AgentService {
     }
   }
 
-  async start(input: AgentStartRequest, precomputedRoute?: AgentRouteDecision): Promise<AgentStartResponse> {
+  async start(input: AgentStartRequest, precomputedRoute?: AgentRouteDecision, resumedFromTaskId?: string): Promise<AgentStartResponse> {
     const request = sanitizeAgentStartRequest(input);
     const context = this.options.getContext();
+    const execution = this.options.resolveExecutionContext
+      ? this.options.resolveExecutionContext(request.sessionId)
+      : { sessionId: request.sessionId ?? `${context.roleId}:default`, workspaceRoot: this.options.workspaceRoot ?? '' };
+    if (!execution.workspaceRoot) throw new Error('请先选择授权工作区');
     const mode = request.mode ?? context.settings.assistantMode;
     const route = precomputedRoute ?? await routeTurn({
       mode,
@@ -123,27 +150,28 @@ export class AgentService {
     const readOnly = !likelyWrite(request.message);
     this.assertConcurrency(context.roleId, readOnly);
     const task: AgentTask = {
-      id: randomUUID(), sessionId: `${context.roleId}:default`, roleId: context.roleId,
+      id: randomUUID(), sessionId: execution.sessionId, roleId: context.roleId,
       message: redact(request.message), mode, route, status: 'queued', createdAt: this.now(), updatedAt: this.now(), currentStep: 0,
+      resumedFromTaskId,
       steps: [{ id: randomUUID(), taskId: '', index: 0, kind: 'route', status: 'completed', summary: route.explain, createdAt: this.now(), finishedAt: this.now() }]
     };
     task.steps[0].taskId = task.id;
     this.options.store.save(task);
     this.emit({ type: 'task', task, taskId: task.id, timestamp: this.now() });
-    void this.execute(task, context, readOnly);
+    void this.execute(task, context, readOnly, execution.workspaceRoot);
     return { taskId: task.id, route };
   }
 
-  private async execute(task: AgentTask, context: AgentServiceContext, readOnly: boolean): Promise<void> {
+  private async execute(task: AgentTask, context: AgentServiceContext, readOnly: boolean, workspaceRoot: string): Promise<void> {
     const controller = new AbortController();
     let runtime: AgentRuntime | null = null;
     try {
       if (this.options.store.get(task.id)?.status === 'cancelled') return;
-      const guard = new WorkspaceGuard(this.options.workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
+      const guard = new WorkspaceGuard(workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
       runtime = new AgentRuntime({ model: this.options.createModel(context), tools: createAgentTools(guard), maxSteps: 8, overallTimeoutMs: 10 * 60_000, toolTimeoutMs: 30_000, onTool: (event) => this.recordTool(task, event) });
-      this.live.set(task.id, { runtime, controller, readOnly });
+      this.live.set(task.id, { runtime, controller, readOnly, workspaceRoot, wrote: false, changedFiles: [] });
       task.status = 'running';
-      task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: '白音已接手，正在规划后台步骤。', createdAt: this.now() });
+      task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: 'StarChat 已接手，正在规划后台步骤。', createdAt: this.now() });
       task.currentStep = 1;
       this.save(task);
       const result = await runtime.run({ taskId: task.id, message: task.message, signal: controller.signal, route: task.route });
@@ -159,7 +187,14 @@ export class AgentService {
   private async finishRuntime(task: AgentTask, result: Awaited<ReturnType<AgentRuntime['run']>>): Promise<void> {
     if (result.status === 'waiting_for_approval') {
       task.status = 'waiting_for_approval';
-      task.approval = { id: randomUUID(), taskId: task.id, invocationId: result.approval.invocationId, toolName: result.approval.toolName, target: redact(result.approval.target), plan: redact(result.approval.plan).slice(0, 20_000), createdAt: this.now() };
+      task.approval = {
+        id: randomUUID(), taskId: task.id, invocationId: result.approval.invocationId, toolName: result.approval.toolName,
+        target: redact(result.approval.target), plan: redact(result.approval.plan).slice(0, 20_000),
+        preview: result.approval.preview ? { ...result.approval.preview, patch: result.approval.preview.patch.slice(0, 512 * 1024) } : undefined,
+        createdAt: this.now()
+      };
+      const live = this.live.get(task.id);
+      if (live && task.approval.preview) live.changedFiles = [...task.approval.preview.files];
       task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'approval', status: 'waiting', summary: `等待批准：${task.approval.target}`, createdAt: this.now(), invocationId: result.approval.invocationId });
       this.save(task);
       this.emit({ type: 'approval', taskId: task.id, request: task.approval, timestamp: this.now() });
@@ -174,8 +209,31 @@ export class AgentService {
       return;
     }
     if (result.status === 'completed') {
+      const live = this.live.get(task.id);
+      if (live?.wrote) {
+        const script = automaticVerificationScript(live.workspaceRoot);
+        if (script) {
+          let verification: VerificationResult;
+          try {
+            verification = await (this.options.executeVerification ?? runVerification)(live.workspaceRoot, script, live.controller.signal);
+          } catch (error) {
+            verification = { script, ok: false, output: error instanceof Error ? error.message : '自动验证无法启动' };
+          }
+          task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'verification', status: verification.ok ? 'completed' : 'failed', summary: `自动验证 ${script}：${verification.ok ? '通过' : '失败'}`, createdAt: this.now(), finishedAt: this.now() });
+          task.result = { ...result.result, summary: redact(result.result.summary), changedFiles: live.changedFiles, verification };
+          if (!verification.ok) {
+            task.status = 'failed';
+            task.error = `文件已写入，但自动验证失败：pnpm run ${script}`;
+            task.approval = undefined;
+            task.input = undefined;
+            this.save(task);
+            this.emit({ type: 'error', taskId: task.id, message: task.error, timestamp: this.now() });
+            return;
+          }
+        }
+      }
       task.status = 'completed';
-      task.result = { ...result.result, summary: redact(result.result.summary) };
+      task.result ??= { ...result.result, summary: redact(result.result.summary), ...(live?.wrote ? { changedFiles: live.changedFiles } : {}) };
       task.approval = undefined;
       task.input = undefined;
       task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'result', status: 'completed', summary: task.result.summary, createdAt: this.now(), finishedAt: this.now() });
@@ -223,6 +281,13 @@ export class AgentService {
       this.setStatus(task, 'failed', error instanceof Error ? error.message : '补充信息后继续执行失败');
     }
     if (this.options.store.get(taskId)?.status !== 'waiting_for_approval' && this.options.store.get(taskId)?.status !== 'waiting_for_input') this.live.delete(taskId);
+  }
+
+  async retry(taskId: string): Promise<AgentStartResponse> {
+    const source = this.options.store.get(taskId);
+    if (!source) throw new Error('Agent 任务不存在');
+    if (!['interrupted', 'failed', 'cancelled', 'timed_out'].includes(source.status)) throw new Error('只有已中断或未完成的任务可以重新执行');
+    return this.start({ message: source.message, mode: source.mode, sessionId: source.sessionId }, source.route, source.id);
   }
 
   list(): AgentTask[] { return this.options.store.list(); }

@@ -16,6 +16,16 @@ function cappedOutput(value: string): string {
   return value.slice(0, 32 * 1024);
 }
 
+function patchLineCounts(patch: string): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split(/\r?\n/u)) {
+    if (line.startsWith('+') && !line.startsWith('+++')) additions += 1;
+    if (line.startsWith('-') && !line.startsWith('---')) deletions += 1;
+  }
+  return { additions, deletions };
+}
+
 export interface VerificationResult {
   script: string;
   ok: boolean;
@@ -74,7 +84,15 @@ export function createAgentTools(guard: WorkspaceGuard, executeVerification?: ty
     {
       name: 'apply_patch', description: '预览并在用户批准精确计划后应用受控补丁。', schema: { type: 'object', required: ['patch'], properties: { patch: { type: 'string', maxLength: 512000 } }, additionalProperties: false },
       requiresApproval: true,
-      approval: (input) => { const patch = stringArg(record(input).patch, 'patch', 512 * 1024); const preview = guard.previewPatch(patch); return { target: preview.files.join(', '), plan: preview.summary }; },
+      approval: (input) => {
+        const patch = stringArg(record(input).patch, 'patch', 512 * 1024);
+        const preview = guard.previewPatch(patch);
+        return {
+          target: preview.files.join(', '),
+          plan: preview.summary,
+          preview: { files: preview.files, patch, ...patchLineCounts(patch) }
+        };
+      },
       run: async (input) => guard.previewPatch(stringArg(record(input).patch, 'patch', 512 * 1024)),
       runApproved: async (input) => { const patch = stringArg(record(input).patch, 'patch', 512 * 1024); return guard.applyApprovedPatch(patch, patch); }
     } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> },

@@ -311,7 +311,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
     const observer = new ResizeObserver(() => syncViewport('resize-observer'));
     observer.observe(canvas);
     window.addEventListener('resize', syncViewportFromWindow);
-    const unsubscribeBounds = window.baoyin.pet.onBoundsChange((change) => {
+    const unsubscribeBounds = window.starchat.pet.onBoundsChange((change) => {
       const preserveModelScreenAnchor = change.operation
         ? petPointerOperationContract(change.operation as PetPointerOperation).compensateModelScreenAnchor
         : !windowAndModelDragActiveRef.current;
@@ -461,7 +461,7 @@ export function Live2DCanvas({ event, dialogueEvent, live2d, modelViewport = DEF
       if (runtime) {
         const metrics = runtime.getCubismMetrics();
         setRuntimeMetrics(metrics);
-        window.baoyin.debug.reportMetrics({ metrics });
+        window.starchat.debug.reportMetrics({ metrics });
         if (lastActionRef.current && !metrics.activeMotion) {
           characterStateRef.finishAction();
           lastActionRef.current = null;

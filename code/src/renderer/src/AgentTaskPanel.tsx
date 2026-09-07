@@ -36,9 +36,9 @@ export function AgentTaskPanel({ task, onApprove, onRespond, onCancel }: AgentTa
       <div><span>工具调用</span><strong>{invocationCount} 次</strong></div>
     </div>
     {isActiveAgentTaskStatus(task.status) && onCancel ? <button className="agent-cancel-button" type="button" onClick={onCancel}>停止任务</button> : null}
-    {task.approval && task.status === 'waiting_for_approval' ? <div className="agent-interaction-card" data-agent-ui="approval" role="dialog" aria-label="Agent 授权请求">
+    {task.approval && task.status === 'waiting_for_approval' ? <div className="agent-interaction-card agent-patch-approval" data-agent-ui="approval" role="dialog" aria-label="Agent 授权请求">
       <span className="agent-interaction-icon" aria-hidden="true">!</span>
-      <div><strong>需要你的许可</strong><p>Agent 请求使用「{task.approval.toolName}」处理：{task.approval.target}</p><small>{task.approval.plan}</small><div className="agent-interaction-actions"><button className="primary-button" type="button" onClick={() => onApprove?.(true)}>批准这次计划</button><button className="secondary-button" type="button" onClick={() => onApprove?.(false)}>拒绝</button></div></div>
+      <div><strong>需要你的许可</strong><p>Agent 请求使用「{task.approval.toolName}」处理：{task.approval.target}</p><small>{task.approval.plan}</small>{task.approval.preview ? <><div className="agent-patch-summary"><span>{task.approval.preview.files.length} 个文件</span><span>+{task.approval.preview.additions}</span><span>−{task.approval.preview.deletions}</span></div><ul aria-label="待修改文件">{task.approval.preview.files.map((file) => <li key={file}>{file}</li>)}</ul><details open><summary>精确补丁</summary><pre tabIndex={0}>{task.approval.preview.patch}</pre></details></> : null}<div className="agent-interaction-actions"><button className="primary-button" type="button" disabled={task.approval.toolName === 'apply_patch' && !task.approval.preview} onClick={() => onApprove?.(true)}>{task.approval.toolName === 'apply_patch' ? '批准并写入' : '批准这次计划'}</button><button className="secondary-button" type="button" onClick={() => onApprove?.(false)}>拒绝</button></div></div>
     </div> : null}
     {task.input && task.status === 'waiting_for_input' ? <div className="agent-interaction-card" data-agent-ui="input" role="dialog" aria-label="Agent 补充信息请求">
       <span className="agent-interaction-icon" aria-hidden="true">?</span>

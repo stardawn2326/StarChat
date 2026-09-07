@@ -213,7 +213,7 @@ function adapterCheck(adapter: Live2DAdapterConfig | null): VerificationCheck[] 
 export function runLive2DVerification(entryOverride?: string, reportOverride?: string) {
   const projectRoot = resolve(process.cwd(), '..');
   const defaultEntry = 'D:\\BaiduNetdiskDownload\\miku\\miku\\miku.model3.json';
-  const entryPath = entryOverride ?? readArgument('--entry') ?? process.env.BAOYIN_MIKU_MODEL_ENTRY ?? defaultEntry;
+  const entryPath = entryOverride ?? readArgument('--entry') ?? process.env.STARCHAT_MIKU_MODEL_ENTRY ?? defaultEntry;
   const reportPath = resolve(
     reportOverride ?? readArgument('--report') ?? resolve(projectRoot, 'logs', 'miku-external-model-verification.json')
   );

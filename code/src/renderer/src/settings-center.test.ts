@@ -110,26 +110,42 @@ function detailsProps(page: SettingsPageId): Parameters<typeof SettingsDetailsV2
 }
 
 describe('settings center components', () => {
-  it('exposes exactly six focused top-level settings entries', () => {
+  it('exposes the complete grouped desktop and Agent settings entries', () => {
     expect(SETTINGS_CARDS.map((card) => card.title)).toEqual([
+      '常规',
+      '外观',
+      '键盘快捷键',
       '陪伴对话',
       '人格与记忆',
-      '角色模型',
+      'Live2D 模型',
       '语音',
-      '服务与连接',
-      '应用行为'
+      '模型与服务',
+      'Agent',
+      '权限',
+      '终端',
+      '浏览器',
+      'Git',
+      '高级行为'
     ]);
   });
 
   it('keeps every settings page reachable from the canonical StarChat workbench navigation', () => {
     expect(WORKBENCH_NAVIGATION_ITEMS.filter((item) => item.id !== null).map((item) => item.id)).toEqual(SETTINGS_CARDS.map((card) => card.id));
     expect(WORKBENCH_NAVIGATION_ITEMS.filter((item) => item.group === 'settings').map((item) => item.label)).toEqual([
+      '常规',
+      '外观',
+      '键盘快捷键',
       '陪伴对话',
       '人格与记忆',
-      '角色模型',
+      'Live2D 模型',
       '语音',
-      '服务与连接',
-      '应用行为'
+      '模型与服务',
+      'Agent',
+      '权限',
+      '终端',
+      '浏览器',
+      'Git',
+      '高级行为'
     ]);
   });
 
@@ -155,16 +171,16 @@ describe('settings center components', () => {
     expect(markup).not.toContain('模型 X 偏移');
   });
 
-  it('describes Agent capability availability from real bridge state and never upgrades denied tools', () => {
+  it('describes Agent capability availability from the real bounded bridge', () => {
     const ready = getWorkbenchCapabilities({ agentAvailable: true, activeTaskCount: 2, hasModel: true });
     expect(ready.find((item) => item.id === 'resources')).toMatchObject({ state: 'available' });
     expect(ready.find((item) => item.id === 'tasks')).toMatchObject({ state: 'available', statusLabel: '2 个活动任务' });
     expect(ready.find((item) => item.id === 'verification')).toMatchObject({ state: 'available' });
     expect(ready.find((item) => item.id === 'source')).toMatchObject({ state: 'available' });
-    expect(ready.find((item) => item.id === 'terminal')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
-    expect(ready.find((item) => item.id === 'browser')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
+    expect(ready.find((item) => item.id === 'terminal')).toMatchObject({ state: 'available', statusLabel: '受控可用' });
+    expect(ready.find((item) => item.id === 'browser')).toMatchObject({ state: 'available', statusLabel: '受控可用' });
     expect(ready.find((item) => item.id === 'git-write')).toMatchObject({ state: 'disabled', statusLabel: '未启用' });
-    expect(settingsAppSource).toContain('window.baoyin.agent.list()');
+    expect(settingsAppSource).toContain('window.starchat.agent.list()');
     expect(settingsAppSource).toContain('agentAvailable={agentTasks !== null}');
     expect(settingsAppSource).toContain('onCancelTask');
   });
@@ -227,7 +243,7 @@ describe('settings center components', () => {
     expect(settingsCenterCss).toContain('scrollbar-color: var(--theme-scrollbar-thumb) var(--theme-scrollbar-track)');
     expect(settingsCenterCss).not.toContain('scrollbar-width: none');
     expect(settingsCenterCss).not.toContain('::-webkit-scrollbar { width: 0; height: 0; }');
-    expect(settingsCenterCss).not.toContain('background: transparent;');
+    expect(settingsCenterCss).toContain('.glass-select-menu');
   });
 
   it('applies one token contract to every SettingsWindow surface, including future semantic controls', () => {
@@ -285,9 +301,9 @@ describe('settings center components', () => {
     expect(petAppSource).toContain("operation: 'window-resize'");
     expect(petAppSource).toContain("operation: 'model-transform'");
     expect(petAppSource).toContain('if (event.altKey)');
-    expect(petAppSource).toContain('window.baoyin.pet.dragStart');
-    expect(petAppSource).toContain('window.baoyin.pet.resizeStart');
-    expect(petAppSource).toContain('window.baoyin.pet.pointerCancel');
+    expect(petAppSource).toContain('window.starchat.pet.dragStart');
+    expect(petAppSource).toContain('window.starchat.pet.resizeStart');
+    expect(petAppSource).toContain('window.starchat.pet.pointerCancel');
     expect(petStylesSource).toContain('.pet-shell .live2d-canvas');
     expect(petStylesSource).toContain('background: transparent;');
   });
@@ -320,7 +336,7 @@ describe('settings center components', () => {
     expect(preloadSource).toContain('runtimeCommandReady');
     expect(settingsAppSource).toContain("runRuntimeCommand({ type: 'capabilities' })");
     expect(petAppSource).toContain('const effectiveSettings = { ...appState.settings, ...settingsPreview }');
-    expect(petAppSource).toContain('window.baoyin.app.runtimeCommandReady()');
+    expect(petAppSource).toContain('window.starchat.app.runtimeCommandReady()');
     expect(live2dRuntimeSource).toContain('installPhysicsGate');
     expect(live2dRuntimeSource).toContain('setPhysicsEnabled');
   });

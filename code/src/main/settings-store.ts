@@ -10,7 +10,7 @@ import {
   type SensitiveSettings
 } from '../shared/settings';
 import type { Live2DAdapterConfig } from '../shared/live2d';
-import { DEFAULT_ROLE_PACKAGE } from '../shared/default-role';
+import { BUILTIN_ROLE_PACKAGES, DEFAULT_ROLE_PACKAGE, isBuiltinRoleId } from '../shared/default-role';
 import { validateRolePackage, type RolePackage } from '../shared/role-package';
 import { createPersonalityRequestSnapshot, type PersonalityRequestSnapshot } from '../shared/personality-contract';
 import { createCompanionState, sanitizeCompanionState, type CompanionState } from '../shared/companion';
@@ -104,12 +104,12 @@ export class SettingsStore {
 
   readRolePackages(): RolePackage[] {
     const stored = readJson<unknown[]>(this.rolesPath, []);
-    const result: RolePackage[] = [DEFAULT_ROLE_PACKAGE];
+    const result: RolePackage[] = [...BUILTIN_ROLE_PACKAGES];
     if (!Array.isArray(stored)) return result;
     for (const candidate of stored) {
       try {
         const role = validateRolePackage(candidate);
-        if (role.id !== DEFAULT_ROLE_PACKAGE.id && !result.some((item) => item.id === role.id)) {
+        if (!isBuiltinRoleId(role.id) && !result.some((item) => item.id === role.id)) {
           result.push(role);
         }
       } catch {
@@ -121,8 +121,8 @@ export class SettingsStore {
 
   saveRolePackage(input: unknown): RolePackage {
     const role = validateRolePackage(input);
-    const custom = this.readRolePackages().filter((item) => item.id !== DEFAULT_ROLE_PACKAGE.id && item.id !== role.id);
-    if (role.id !== DEFAULT_ROLE_PACKAGE.id) custom.push(role);
+    const custom = this.readRolePackages().filter((item) => !isBuiltinRoleId(item.id) && item.id !== role.id);
+    if (!isBuiltinRoleId(role.id)) custom.push(role);
     mkdirSync(this.baseDir, { recursive: true });
     writeFileSync(this.rolesPath, JSON.stringify(custom, null, 2), 'utf8');
     return role;
@@ -160,8 +160,8 @@ export class SettingsStore {
   }
 
   deleteRolePackage(id: string): void {
-    if (!id || id === DEFAULT_ROLE_PACKAGE.id) return;
-    const custom = this.readRolePackages().filter((item) => item.id !== DEFAULT_ROLE_PACKAGE.id && item.id !== id);
+    if (!id || isBuiltinRoleId(id)) return;
+    const custom = this.readRolePackages().filter((item) => !isBuiltinRoleId(item.id) && item.id !== id);
     mkdirSync(this.baseDir, { recursive: true });
     writeFileSync(this.rolesPath, JSON.stringify(custom, null, 2), 'utf8');
   }

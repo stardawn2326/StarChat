@@ -75,7 +75,7 @@ $toggleChecks = @()
 if ($ConfigureModelPath) {
   $modelLiteral = $ConfigureModelPath | ConvertTo-Json -Compress
   $watermarkLiteral = if ($ConfigureShowWatermark) { 'true' } else { 'false' }
-  $configureExpression = "window.baoyin.settings.save({settings:{live2dModelPath:$modelLiteral,live2dShowWatermark:$watermarkLiteral},licenseAccepted:true}).then(()=>true)"
+  $configureExpression = "window.starchat.settings.save({settings:{live2dModelPath:$modelLiteral,live2dShowWatermark:$watermarkLiteral},licenseAccepted:true}).then(()=>true)"
   $configured = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = $configureExpression; returnByValue = $true; awaitPromise = $true }
   if ($configured.result.exceptionDetails) {
     throw "Model configuration failed: $($configured.result.exceptionDetails.text)"
@@ -83,22 +83,22 @@ if ($ConfigureModelPath) {
   Start-Sleep -Seconds 2
 }
 if ($ShowWindow) {
-  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.showSettings(); true'; returnByValue = $true })
+  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.showSettings(); true'; returnByValue = $true })
   Start-Sleep -Milliseconds 350
 }
 if ($ToggleSettings) {
-  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.showSettings(); true'; returnByValue = $true })
+  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.showSettings(); true'; returnByValue = $true })
   Start-Sleep -Milliseconds 350
-  $shown = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.visibility()'; returnByValue = $true; awaitPromise = $true }
+  $shown = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.visibility()'; returnByValue = $true; awaitPromise = $true }
   $toggleChecks += @{ afterShow = $shown.result.result.value }
-  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.hideSettings(); true'; returnByValue = $true })
+  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.hideSettings(); true'; returnByValue = $true })
   Start-Sleep -Milliseconds 350
-  $hidden = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.visibility()'; returnByValue = $true; awaitPromise = $true }
+  $hidden = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.visibility()'; returnByValue = $true; awaitPromise = $true }
   $toggleChecks += @{ afterHide = $hidden.result.result.value }
 }
 
 $evaluation = Invoke-Cdp -Method 'Runtime.evaluate' -Params @{
-  expression = 'window.baoyin.app.visibility().then(v=>JSON.stringify({title:document.title, url:location.href, body:document.body.innerText, visibility:v, canvases:Array.from(document.querySelectorAll("canvas")).map(c=>{const gl=c.getContext("webgl2");const p=new Uint8Array(4);if(gl){gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p)}return {width:c.width,height:c.height,alpha:gl?.getContextAttributes()?.alpha,cornerPixel:Array.from(p)}}), runtimeBadge:document.querySelector(".live2d-runtime-badge")?.textContent, runtimeStatus:document.querySelector(".live2d-overlay small")?.textContent}))'
+  expression = 'window.starchat.app.visibility().then(v=>JSON.stringify({title:document.title, url:location.href, body:document.body.innerText, visibility:v, canvases:Array.from(document.querySelectorAll("canvas")).map(c=>{const gl=c.getContext("webgl2");const p=new Uint8Array(4);if(gl){gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p)}return {width:c.width,height:c.height,alpha:gl?.getContextAttributes()?.alpha,cornerPixel:Array.from(p)}}), runtimeBadge:document.querySelector(".live2d-runtime-badge")?.textContent, runtimeStatus:document.querySelector(".live2d-overlay small")?.textContent}))'
   returnByValue = $true
   awaitPromise = $true
 }
@@ -113,7 +113,7 @@ New-Item -ItemType Directory -Path $outputDirectory -Force | Out-Null
 Write-Output "screenshot=$OutputPath"
 
 if ($HideAfter) {
-  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.baoyin.app.hideSettings(); true'; returnByValue = $true })
+  [void](Invoke-Cdp -Method 'Runtime.evaluate' -Params @{ expression = 'window.starchat.app.hideSettings(); true'; returnByValue = $true })
 }
 
 $socket.Dispose()

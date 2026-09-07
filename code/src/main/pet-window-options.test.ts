@@ -130,7 +130,7 @@ describe('Windows transparent pet shell', () => {
     const tray = source.slice(source.indexOf('function createTray'), source.indexOf('function registerSettingsShortcut'));
     const menu = source.slice(source.indexOf('function buildPetMenu'), source.indexOf('function registerSettingsShortcut'));
     const labels = [...menu.matchAll(/\{ label: '([^']+)'/g)].map((match) => match[1]);
-    expect(labels).toEqual(['打开 StarChat 工作台', '解锁/锁定桌宠', '显示/隐藏桌宠', '退出应用']);
+    expect(labels).toEqual(['放回工作台', '解锁/锁定桌宠', '显示/隐藏桌宠', '退出应用']);
     expect(menu.match(/type: 'separator'/g)).toHaveLength(1);
     expect(menu).toContain('tray.setContextMenu(buildPetMenu())');
     expect(source).toContain('function togglePetMenuLock()');
@@ -139,6 +139,7 @@ describe('Windows transparent pet shell', () => {
     expect(menu).not.toContain('显示桌宠');
     expect(menu).not.toContain('退出白音');
     expect(menu.indexOf("type: 'separator'")).toBeLessThan(menu.indexOf("label: '退出应用'"));
+    expect(menu).toContain('click: returnPetToWorkbench');
   });
 
   it('uses the same fixed-label menu and opposite-state actions for pet right click', () => {
@@ -153,6 +154,7 @@ describe('Windows transparent pet shell', () => {
     expect(visibilityToggle).toContain('if (petWindow?.isVisible())');
     expect(visibilityToggle).toContain('petWindow.hide();');
     expect(visibilityToggle).toContain('showPetWindowInactive();');
+    expect(source).toContain('setWorkbenchCharacterVisible(true);');
   });
 
   it('keeps explicit lock and visibility actions state-aware', () => {

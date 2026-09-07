@@ -1,23 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 914" preserveAspectRatio="none">
   <!--
-    The dark theme keeps the exact light-theme constellation geometry.  Only
-    the ink is cooled and softened so the motif remains part of the night
-    field instead of becoming a second, unrelated composition.
+    The dark concept uses a different lower-left constellation from the light
+    concept.  These six nodes sit below the titlebar in the authored sidebar
+    coordinate space; the last branch falls toward the settings divider.
   -->
-  <g fill="none" stroke="#9ab9e7" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M152 434L238 440L203 620L146 647L191 688L114 703L58 743" stroke-width="0.72" opacity="0.16"/>
-    <path d="M80 510L57 549L114 599L146 647" stroke-width="0.66" opacity="0.15"/>
+  <g fill="none" stroke="#b9c8dc" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M68 615L99 594L125 644L176 652L225 619" stroke-width="0.68" opacity="0.20"/>
+    <path d="M125 644L84 698" stroke-width="0.68" opacity="0.20"/>
   </g>
-  <g fill="#c6dafa">
-    <path d="M152 425L154.2 431.8L161 434L154.2 436.2L152 443L149.8 436.2L143 434L149.8 431.8Z" opacity="0.67"/>
-    <path d="M238 431L239.7 436.3L245 438L239.7 439.7L238 445L236.3 439.7L231 438L236.3 436.3Z" opacity="0.59"/>
-    <path d="M80 503L81.5 507.5L86 509L81.5 510.5L80 515L78.5 510.5L74 509L78.5 507.5Z" opacity="0.61"/>
-    <path d="M57 540L59 546L65 548L59 550L57 556L55 550L49 548L55 546Z" opacity="0.75"/>
-    <path d="M114 590L116 596L122 598L116 600L114 606L112 600L106 598L112 596Z" opacity="0.77"/>
-    <path d="M203 611L205 617L211 619L205 621L203 627L201 621L195 619L201 617Z" opacity="0.53"/>
-    <path d="M146 638L148 644L154 646L148 648L146 654L144 648L138 646L144 644Z" opacity="0.61"/>
-    <path d="M191 679L193 685L199 687L193 689L191 695L189 689L183 687L189 685Z" opacity="0.69"/>
-    <path d="M114 694L116 701L123 703L116 705L114 712L112 705L105 703L112 701Z" opacity="0.76"/>
-    <path d="M58 734L60 741L67 743L60 745L58 752L56 745L49 743L56 741Z" opacity="0.76"/>
+  <defs>
+    <path id="star-tiny" d="M0 -1.8L.5 -.5L1.8 0L.5 .5L0 1.8L-.5 .5L-1.8 0L-.5 -.5Z"/>
+    <path id="star-medium" d="M0 -3.7L.9 -.9L3.7 0L.9 .9L0 3.7L-.9 .9L-3.7 0L-.9 -.9Z"/>
+  </defs>
+  <g fill="#fff">
+    <use href="#star-medium" x="68" y="615" opacity="0.78"/>
+    <use href="#star-medium" x="99" y="594" opacity="0.98"/>
+    <use href="#star-medium" x="125" y="644" opacity="0.88"/>
+    <use href="#star-medium" x="176" y="652" opacity="0.84"/>
+    <use href="#star-medium" x="225" y="619" opacity="0.96"/>
+    <use href="#star-medium" x="84" y="698" opacity="0.98"/>
   </g>
 </svg>

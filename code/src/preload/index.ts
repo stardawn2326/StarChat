@@ -25,24 +25,41 @@ import type {
   SettingsPreviewDetail,
   StartChatRequest,
   WorkbenchInspectRequest,
+  WorkbenchPathRequest,
   WorkbenchInspectionResponse,
-  WorkbenchShareResponse
+  WorkbenchShareResponse,
+  WorkbenchFilePreviewResponse,
+  WorkbenchDiffResponse,
+  WorkbenchVerificationResponse,
+  WorkbenchVerifyRequest,
+  WorkbenchCommandRequest,
+  WorkbenchCommandResponse,
+  WorkbenchOpenUrlRequest,
+  WorkbenchOpenUrlResponse,
+  WorkbenchGitCommitRequest,
+  WorkbenchGitCommitResponse
 } from '../shared/ipc';
 import type { AgentEvent, AgentStartRequest, AgentTask } from '../shared/agent';
 import type { Live2DModelState } from '../shared/live2d';
 import type { PresentationEvent } from '../shared/presentation';
 import type { PetBoundsChange, WindowBounds } from '../shared/window-contract';
+import type { SessionRenameRequest, SessionSnapshot } from '../shared/session';
 
 const bridge = {
   app: {
     minimize: (): void => ipcRenderer.send('window:minimize'),
     close: (): void => ipcRenderer.send('window:close'),
-    toggleMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize'),
+    toggleMaximize: (maximized?: boolean): Promise<boolean> => ipcRenderer.invoke('window:toggle-maximize', maximized),
     isMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:is-maximized'),
     onMaximizedChanged: (callback: (maximized: boolean) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, maximized: boolean): void => callback(maximized === true);
       ipcRenderer.on('window:maximized-changed', listener);
       return () => ipcRenderer.removeListener('window:maximized-changed', listener);
+    },
+    onWorkbenchCharacterVisibilityChanged: (callback: (visible: boolean) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, visible: boolean): void => callback(visible === true);
+      ipcRenderer.on('workbench:character-visibility', listener);
+      return () => ipcRenderer.removeListener('workbench:character-visibility', listener);
     },
     showSettings: (): void => ipcRenderer.send('settings:show'),
     hideSettings: (): void => ipcRenderer.send('settings:hide'),
@@ -78,7 +95,27 @@ const bridge = {
   },
   workbench: {
     inspect: (request: WorkbenchInspectRequest): Promise<WorkbenchInspectionResponse> => ipcRenderer.invoke('workbench:inspect', request),
+    previewFile: (request: WorkbenchPathRequest): Promise<WorkbenchFilePreviewResponse> => ipcRenderer.invoke('workbench:preview-file', request),
+    diff: (request: WorkbenchPathRequest): Promise<WorkbenchDiffResponse> => ipcRenderer.invoke('workbench:diff', request),
+    verify: (request: WorkbenchVerifyRequest): Promise<WorkbenchVerificationResponse> => ipcRenderer.invoke('workbench:verify', request),
+    command: (request: WorkbenchCommandRequest): Promise<WorkbenchCommandResponse> => ipcRenderer.invoke('workbench:command', request),
+    openUrl: (request: WorkbenchOpenUrlRequest): Promise<WorkbenchOpenUrlResponse> => ipcRenderer.invoke('workbench:open-url', request),
+    gitCommit: (request: WorkbenchGitCommitRequest): Promise<WorkbenchGitCommitResponse> => ipcRenderer.invoke('workbench:git-commit', request),
     share: (): Promise<WorkbenchShareResponse> => ipcRenderer.invoke('workbench:share')
+  },
+  sessions: {
+    snapshot: (): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:snapshot'),
+    chooseWorkspace: (): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:choose-workspace'),
+    selectWorkspace: (workspaceId: string): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:select-workspace', workspaceId),
+    create: (workspaceId: string): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:create', workspaceId),
+    select: (sessionId: string): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:select', sessionId),
+    rename: (request: SessionRenameRequest): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:rename', request),
+    delete: (sessionId: string): Promise<SessionSnapshot> => ipcRenderer.invoke('sessions:delete', sessionId),
+    onChange: (callback: (snapshot: SessionSnapshot) => void): (() => void) => {
+      const listener = (_event: IpcRendererEvent, snapshot: SessionSnapshot): void => callback(snapshot);
+      ipcRenderer.on('sessions:changed', listener);
+      return () => ipcRenderer.removeListener('sessions:changed', listener);
+    }
   },
   settings: {
     save: (request: SaveSettingsRequest): Promise<PublicAppState> => {
@@ -91,11 +128,11 @@ const bridge = {
       }
       return ipcRenderer.invoke('settings:save', request);
     },
-    preview: (detail: SettingsPreviewDetail): void => ipcRenderer.send('baoyin:settings-preview', detail),
+    preview: (detail: SettingsPreviewDetail): void => ipcRenderer.send('starchat:settings-preview', detail),
     onPreview: (callback: (detail: SettingsPreviewDetail) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, detail: SettingsPreviewDetail): void => callback(detail);
-      ipcRenderer.on('baoyin:settings-preview', listener);
-      return () => ipcRenderer.removeListener('baoyin:settings-preview', listener);
+      ipcRenderer.on('starchat:settings-preview', listener);
+      return () => ipcRenderer.removeListener('starchat:settings-preview', listener);
     }
   },
   api: {
@@ -198,6 +235,7 @@ const bridge = {
   },
   agent: {
     start: (request: AgentStartRequest): Promise<import('../shared/agent').AgentStartResponse> => ipcRenderer.invoke('agent:start', request),
+    retry: (taskId: string): Promise<import('../shared/agent').AgentStartResponse> => ipcRenderer.invoke('agent:retry', taskId),
     cancel: (taskId: string): Promise<void> => ipcRenderer.invoke('agent:cancel', taskId),
     approve: (request: AgentApproveRequest): Promise<void> => ipcRenderer.invoke('agent:approve', request),
     respond: (request: AgentRespondRequest): Promise<void> => ipcRenderer.invoke('agent:respond', request),
@@ -238,6 +276,6 @@ function previewBoundsFromWindowSlider(target: EventTarget | null): void {
 
 window.addEventListener('input', (event) => previewBoundsFromWindowSlider(event.target), true);
 
-contextBridge.exposeInMainWorld('baoyin', bridge);
+contextBridge.exposeInMainWorld('starchat', bridge);
 
-export type BaoyinBridge = typeof bridge;
+export type StarChatBridge = typeof bridge;

@@ -36,7 +36,7 @@ describe('conversation presentation contracts', () => {
   it('keeps completed-sentence expression emission independent from TTS synthesis', () => {
     const enqueue = chatSource.slice(chatSource.indexOf('const enqueueSpeech'), chatSource.indexOf('useEffect(() =>'));
     expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeGreaterThanOrEqual(0);
-    expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeLessThan(enqueue.indexOf('window.baoyin.tts.synthesize'));
+    expect(enqueue.indexOf('emitPresentationEvents(presentation.realtime')).toBeLessThan(enqueue.indexOf('window.starchat.tts.synthesize'));
     expect(enqueue.indexOf('emitPresentationEvents(presentation.playback')).toBeLessThan(enqueue.indexOf('await playAnalyzedSpeech'));
     expect(chatSource).toContain('const actionGateRef = useRef(new EmotionCueGate(0));');
     expect(chatSource).toContain('leadMs: 420');

@@ -222,7 +222,7 @@ export class WorkspaceGuard {
     for (const file of parsePatch(expectedPlan)) {
       const target = this.resolve(file.path);
       const next = applyPatchText(this.readText(file.path), file.hunks);
-      const temporary = `${target}.baoyin-agent-${process.pid}-${Date.now()}.tmp`;
+      const temporary = `${target}.starchat-agent-${process.pid}-${Date.now()}.tmp`;
       writeFileSync(temporary, next, 'utf8');
       renameSync(temporary, target);
     }

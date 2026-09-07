@@ -173,13 +173,13 @@ if (-not $target) {
 Write-Output "connected=$($target.url)"
 
 function ReadPetState {
-  $json = Evaluate '(async()=>JSON.stringify({url:location.href,title:document.title,ready:document.readyState,role:document.body?.dataset?.window,pet:document.querySelector("[data-pet-role=pet]")?.dataset,canvas:Array.from(document.querySelectorAll("canvas")).map(c=>{const gl=c.getContext("webgl2");const p=new Uint8Array(4);let nonzero=0,maxAlpha=0;if(gl){gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p);const grid=new Uint8Array(100*100*4);gl.readPixels(0,0,100,100,gl.RGBA,gl.UNSIGNED_BYTE,grid);for(let i=3;i<grid.length;i+=4){if(grid[i]>0)nonzero++;if(grid[i]>maxAlpha)maxAlpha=grid[i]}}return {width:c.width,height:c.height,alpha:gl?.getContextAttributes()?.alpha,cornerPixel:Array.from(p),gridNonzeroAlphaPixels:nonzero,maxAlpha,contextLost:gl?.isContextLost?.(),glError:gl?.getError?.()}}),runtime:document.querySelector("[data-live2d-runtime]")?.dataset,visibility:await window.baoyin.app.visibility(),state:await window.baoyin.state.get()}))()'
+  $json = Evaluate '(async()=>JSON.stringify({url:location.href,title:document.title,ready:document.readyState,role:document.body?.dataset?.window,pet:document.querySelector("[data-pet-role=pet]")?.dataset,canvas:Array.from(document.querySelectorAll("canvas")).map(c=>{const gl=c.getContext("webgl2");const p=new Uint8Array(4);let nonzero=0,maxAlpha=0;if(gl){gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,p);const grid=new Uint8Array(100*100*4);gl.readPixels(0,0,100,100,gl.RGBA,gl.UNSIGNED_BYTE,grid);for(let i=3;i<grid.length;i+=4){if(grid[i]>0)nonzero++;if(grid[i]>maxAlpha)maxAlpha=grid[i]}}return {width:c.width,height:c.height,alpha:gl?.getContextAttributes()?.alpha,cornerPixel:Array.from(p),gridNonzeroAlphaPixels:nonzero,maxAlpha,contextLost:gl?.isContextLost?.(),glError:gl?.getError?.()}}),runtime:document.querySelector("[data-live2d-runtime]")?.dataset,visibility:await window.starchat.app.visibility(),state:await window.starchat.state.get()}))()'
   return $json | ConvertFrom-Json
 }
 
 function GetPetRect {
-  $raw = Evaluate 'window.baoyin.pet.bounds().then(JSON.stringify)'
-  if (-not $raw) { throw 'window.baoyin.pet.bounds() returned no bounds.' }
+  $raw = Evaluate 'window.starchat.pet.bounds().then(JSON.stringify)'
+  if (-not $raw) { throw 'window.starchat.pet.bounds() returned no bounds.' }
   $bounds = $raw | ConvertFrom-Json
   return [pscustomobject]@{ left = $bounds.x; top = $bounds.y; right = $bounds.x + $bounds.width; bottom = $bounds.y + $bounds.height }
 }
@@ -259,7 +259,7 @@ function CaptureRenderer([string]$Name) {
 }
 
 function ResetClickTarget {
-  $clickCandidate = @($targetItems | Where-Object { [string]$_.type -eq 'page' -and ([string]$_.title) -match '^BAOYIN_CLICK_TARGET(?:_CLICKED)?$' }) | Select-Object -First 1
+  $clickCandidate = @($targetItems | Where-Object { [string]$_.type -eq 'page' -and ([string]$_.title) -match '^STARCHAT_CLICK_TARGET(?:_CLICKED)?$' }) | Select-Object -First 1
   if (-not $clickCandidate) { return $false }
   $petSocket = $script:socket
   $clickSocket = [System.Net.WebSockets.ClientWebSocket]::new()
@@ -267,7 +267,7 @@ function ResetClickTarget {
     [void]$clickSocket.ConnectAsync([Uri]$clickCandidate.webSocketDebuggerUrl, [Threading.CancellationToken]::None).GetAwaiter().GetResult()
     $script:socket = $clickSocket
     $script:messageId = 0
-    [void](Evaluate "document.title='BAOYIN_CLICK_TARGET'; document.body.dataset.clicked='false'; document.getElementById('status').textContent='NOT_CLICKED'; true")
+    [void](Evaluate "document.title='STARCHAT_CLICK_TARGET'; document.body.dataset.clicked='false'; document.getElementById('status').textContent='NOT_CLICKED'; true")
     return $true
   } finally {
     $clickSocket.Dispose()
@@ -279,7 +279,7 @@ function ResetClickTarget {
 function ClickTargetWasClicked {
   try {
     $latest = (Invoke-WebRequest -Uri "http://127.0.0.1:$CdpPort/json" -UseBasicParsing).Content | ConvertFrom-Json
-    return @($latest | Where-Object { [string]$_.type -eq 'page' -and [string]$_.title -eq 'BAOYIN_CLICK_TARGET_CLICKED' }).Count -gt 0
+    return @($latest | Where-Object { [string]$_.type -eq 'page' -and [string]$_.title -eq 'STARCHAT_CLICK_TARGET_CLICKED' }).Count -gt 0
   } catch {
     return $false
   }
@@ -288,9 +288,9 @@ function ClickTargetWasClicked {
 $markerState = ReadPetState
 if (-not $markerState.canvas) { throw "Pet DOM mounted but canvas is absent. state=$($markerState | ConvertTo-Json -Depth 6 -Compress)" }
 $original = $markerState.state.settings
-[void](Evaluate 'window.baoyin.pet.show(); window.baoyin.pet.center(); true')
+[void](Evaluate 'window.starchat.pet.show(); window.starchat.pet.center(); true')
 if ($ForceInteractive) {
-  [void](Evaluate 'window.baoyin.app.setInputMode("interactive"); true')
+  [void](Evaluate 'window.starchat.app.setInputMode("interactive"); true')
 }
 Write-Output 'pet-shown-and-centered'
 Start-Sleep -Milliseconds 1200
@@ -322,7 +322,7 @@ $frames += Capture 'cursor-away-after-fade' 'moved away after hover fade delay'
 
 $modelViewportFrames = @()
 if ($ModelViewportEdit) {
-  [void](Evaluate 'window.baoyin.app.toggleModelEdit(); true')
+  [void](Evaluate 'window.starchat.app.toggleModelEdit(); true')
   Start-Sleep -Milliseconds 700
   $modelViewportFrames += Capture 'model-editor-before' 'model viewport editor before change'
 
@@ -342,15 +342,15 @@ if ($ModelViewportEdit) {
   Start-Sleep -Milliseconds 700
   $modelViewportFrames += Capture 'model-editor-zoomed' 'model viewport zoomed by wheel'
 
-  [void](Evaluate 'window.baoyin.app.toggleModelEdit(); true')
+  [void](Evaluate 'window.starchat.app.toggleModelEdit(); true')
   Start-Sleep -Milliseconds 700
   $modelViewportFrames += Capture 'model-editor-exited' 'model viewport editor exited'
 }
 
 [void](ResetClickTarget)
-$targetRectRaw = [CursorProbe]::ContentRectJson('BAOYIN_CLICK_TARGET')
+$targetRectRaw = [CursorProbe]::ContentRectJson('STARCHAT_CLICK_TARGET')
 if (-not $targetRectRaw -or $targetRectRaw -eq 'null') {
-  $targetRectRaw = [CursorProbe]::ContentRectJson('BAOYIN_CLICK_TARGET_CLICKED')
+  $targetRectRaw = [CursorProbe]::ContentRectJson('STARCHAT_CLICK_TARGET_CLICKED')
 }
 if (-not $targetRectRaw -or $targetRectRaw -eq 'null' -or (($targetRectRaw | ConvertFrom-Json).right -le ($targetRectRaw | ConvertFrom-Json).left)) {
   $targetRectRaw = (GetPetRect | ConvertTo-Json -Compress)
@@ -359,7 +359,7 @@ $clickProbe = [ordered]@{ status = 'not_run'; targetRect = $null; targetClicked 
 if ($targetRectRaw -and $targetRectRaw -ne 'null') {
   $targetRect = $targetRectRaw | ConvertFrom-Json
   $clickProbe.targetRect = $targetRect
-  [void][CursorProbe]::FocusTitle('BAOYIN_CLICK_TARGET')
+  [void][CursorProbe]::FocusTitle('STARCHAT_CLICK_TARGET')
   Start-Sleep -Milliseconds 250
   $clickX = $targetRect.left + 55
   $clickY = $targetRect.top + 55
@@ -422,7 +422,7 @@ $trackingJson = if ($original.cursorTrackingEnabled -eq $true) { 'true' } else {
 $interactionJson = if ($original.petInteractionMode -eq $true) { 'true' } else { 'false' }
 $watermarkJson = if ($original.live2dShowWatermark -eq $false) { 'false' } else { 'true' }
 $viewportMapJson = if ($null -ne $original.modelViewportByModel) { $original.modelViewportByModel | ConvertTo-Json -Depth 10 -Compress } else { '{}' }
-[void](Evaluate "window.baoyin.settings.save({settings:{petLocked:$lockedJson,cursorTrackingEnabled:$trackingJson,petInteractionMode:$interactionJson,live2dShowWatermark:$watermarkJson,modelViewportByModel:$viewportMapJson}}).then(()=>true)")
+[void](Evaluate "window.starchat.settings.save({settings:{petLocked:$lockedJson,cursorTrackingEnabled:$trackingJson,petInteractionMode:$interactionJson,live2dShowWatermark:$watermarkJson,modelViewportByModel:$viewportMapJson}}).then(()=>true)")
 $result = [ordered]@{
   schemaVersion = 2
   generatedAt = (Get-Date).ToUniversalTime().ToString('o')

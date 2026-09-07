@@ -5,7 +5,7 @@ Add-Type -AssemblyName System.Drawing
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $iconRoot = Join-Path $projectRoot 'assets/icons'
 $buildRoot = Join-Path $projectRoot 'code/build'
-$sourcePath = Join-Path $iconRoot 'baoyin-source.png'
+$sourcePath = Join-Path $iconRoot 'starchat-source.png'
 $sizes = @(16, 20, 24, 32, 40, 48, 64, 128, 256)
 
 New-Item -ItemType Directory -Force -Path $iconRoot, $buildRoot | Out-Null
@@ -34,18 +34,18 @@ function Save-ResizedPng([System.Drawing.Image]$source, [int]$size, [string]$des
 $source = [System.Drawing.Image]::FromFile($sourcePath)
 try {
   foreach ($size in $sizes) {
-    Save-ResizedPng $source $size (Join-Path $iconRoot "baoyin-$size.png")
+    Save-ResizedPng $source $size (Join-Path $iconRoot "starchat-$size.png")
     Save-ResizedPng $source $size (Join-Path $iconRoot "tray-$size.png")
   }
 } finally {
   $source.Dispose()
 }
 
-Copy-Item -LiteralPath (Join-Path $iconRoot 'baoyin-256.png') -Destination (Join-Path $buildRoot 'icon.png') -Force
+Copy-Item -LiteralPath (Join-Path $iconRoot 'starchat-256.png') -Destination (Join-Path $buildRoot 'icon.png') -Force
 Copy-Item -LiteralPath (Join-Path $iconRoot 'tray-32.png') -Destination (Join-Path $buildRoot 'tray-32.png') -Force
 
 $pngFrames = @($sizes | ForEach-Object {
-  [pscustomobject]@{ Size = $_; Data = [System.IO.File]::ReadAllBytes((Join-Path $iconRoot "baoyin-$_.png")) }
+  [pscustomobject]@{ Size = $_; Data = [System.IO.File]::ReadAllBytes((Join-Path $iconRoot "starchat-$_.png")) }
 })
 $icoPath = Join-Path $buildRoot 'icon.ico'
 $stream = [System.IO.File]::Open($icoPath, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)

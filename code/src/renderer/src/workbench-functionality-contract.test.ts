@@ -27,7 +27,8 @@ describe('StarChat workbench functionality contracts', () => {
   it('keeps reference screenshot fixtures explicit and the runtime path dynamic', () => {
     expect(consoleSource).toContain('referenceFixture = false');
     expect(consoleSource).toContain("referenceFixture ? '6分45秒'");
-    expect(consoleSource).toContain("referenceFixture ? '我已分析该项目的设置结构");
+    expect(consoleSource).toContain("referenceFixture ? '我已分析该项目的设置结构，主要分为全局设置、开发设置、构建设置、测试设置和部署设置五大类。' : latestTask ? stepLabel(latestTask)");
+    expect(consoleSource).not.toContain('主要分为全<br />');
     expect(chatSource).toContain('referenceFixture = false');
     expect(chatSource).toContain('referenceFixture ?');
     expect(chatSource).toContain('agent-attachment-code-preview');
@@ -49,7 +50,7 @@ describe('StarChat workbench functionality contracts', () => {
     expect(preloadSource).toContain('showPet');
     expect(consoleSource).not.toContain('className="wb-character-action wb-pet-action"');
     expect(consoleSource).not.toContain('aria-label="显示桌宠"');
-    expect(consoleSource).not.toContain('window.baoyin.app.showPet()');
+    expect(consoleSource).not.toContain('window.starchat.app.showPet()');
     expect(consoleSource).not.toContain('剥出为桌宠');
   });
 
@@ -72,19 +73,39 @@ describe('StarChat workbench functionality contracts', () => {
     expect(mainSource).not.toContain('branchName = \'main\'');
   });
 
+  it('keeps the embedded character and pet window mutually exclusive while sharing cursor follow', () => {
+    expect(appSource).toContain('onWorkbenchCharacterVisibilityChanged');
+    expect(appSource).toContain('characterVisible={workbenchCharacterVisible}');
+    expect(appSource).toContain('window.starchat.app.showPet()');
+    expect(consoleSource).toContain('window.starchat.cursor.onUpdate(setCursor)');
+    expect(consoleSource).toContain('cursor={cursor}');
+    expect(preloadSource).toContain("'workbench:character-visibility'");
+    expect(mainSource).toContain('let petStartupShowPending = false;');
+    expect(mainSource).toContain('function returnPetToWorkbench()');
+    expect(mainSource).toContain("label: '放回工作台'");
+    expect(mainSource).toContain('setWorkbenchCharacterVisible(false);');
+    expect(mainSource).toContain('setWorkbenchCharacterVisible(true);');
+  });
+
   it('keeps the agent path wired to a real request id and full task lifecycle', () => {
-    expect(chatSource).toContain('window.baoyin.chat.start');
-    expect(chatSource).toContain('window.baoyin.agent.cancel');
-    expect(chatSource).toContain('window.baoyin.agent.approve');
-    expect(chatSource).toContain('window.baoyin.agent.respond');
+    expect(chatSource).toContain('window.starchat.chat.start');
+    expect(chatSource).toContain('window.starchat.agent.cancel');
+    expect(chatSource).toContain('window.starchat.agent.approve');
+    expect(chatSource).toContain('window.starchat.agent.respond');
     expect(chatSource).toContain('onNewConversation');
-    expect(appSource).toContain('window.baoyin.agent.onEvent');
+    expect(appSource).toContain('window.starchat.agent.onEvent');
+    expect(preloadSource).toContain("ipcRenderer.invoke('agent:retry'");
+    expect(mainSource).toContain("ipcMain.handle('agent:retry'");
+    expect(workbenchSource).toContain('data-agent-ui="timeline"');
+    expect(workbenchSource).toContain('data-agent-ui="approval-center"');
+    expect(workbenchSource).toContain('approval.preview.patch');
+    expect(workbenchSource).toContain('重新执行');
   });
 
   it('does not let a late chat start reattach after the session component was disposed', () => {
     expect(chatSource).toContain('let disposed = false;');
     expect(chatSource).toContain('if (disposed)');
-    expect(chatSource).toContain('void window.baoyin.chat.cancel(id)');
+    expect(chatSource).toContain('void window.starchat.chat.cancel(id)');
     expect(chatSource).toContain('disposed = true;');
   });
 
@@ -130,5 +151,12 @@ describe('StarChat workbench functionality contracts', () => {
     expect(appSource).toContain('readWorkbenchLayoutState');
     expect(appSource).toContain('writeWorkbenchLayoutPatch');
     expect(appSource).not.toContain("starchat.bottom-panel.open");
+  });
+
+  it('uses compact live density and expands the dialogue when the pet owns the character window', () => {
+    expect(readFileSync(resolve(rendererDirectory, 'workbench/reference.css'), 'utf8')).toContain('data-reference-layout="false"');
+    expect(readFileSync(resolve(rendererDirectory, 'workbench/reference.css'), 'utf8')).toContain('grid-template-columns: minmax(0, 1fr) !important;');
+    expect(readFileSync(resolve(rendererDirectory, 'workbench/reference.css'), 'utf8')).toContain('grid-template-rows: repeat(3, 136px) !important;');
+    expect(consoleSource).toContain('data-character-visible={characterVisible ? \'true\' : \'false\'}');
   });
 });

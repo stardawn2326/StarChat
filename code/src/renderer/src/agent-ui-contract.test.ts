@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 describe('Agent settings/chat UI contract', () => {
   it('offers mode switching, status/step summaries, cancellation, approval and input continuation', () => {
     const source = readFileSync(resolve(import.meta.dirname, 'CompanionChat.tsx'), 'utf8');
-    for (const token of ['assistantMode', '对话路由模式', 'agentTask', '当前步骤', 'window.baoyin.agent.cancel', 'window.baoyin.agent.approve', 'window.baoyin.agent.respond', 'waiting_for_approval', 'waiting_for_input']) {
+    for (const token of ['assistantMode', '对话路由模式', 'agentTask', '当前步骤', 'window.starchat.agent.cancel', 'window.starchat.agent.approve', 'window.starchat.agent.respond', 'waiting_for_approval', 'waiting_for_input']) {
       expect(source).toContain(token);
     }
   });
