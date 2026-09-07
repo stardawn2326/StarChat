@@ -19,7 +19,7 @@ afterEach(() => {
 describe('StarChat legacy product data migration', () => {
   it('copies only app-owned data and never copies an external Live2D model', () => {
     const root = temporaryRoot();
-    const legacy = join(root, '白音 AI 助手');
+    const legacy = join(root, 'legacy-baoyin');
     const current = join(root, 'StarChat');
     const externalModel = join(root, 'external-model');
     mkdirSync(join(legacy, 'voices'), { recursive: true });
@@ -41,7 +41,7 @@ describe('StarChat legacy product data migration', () => {
 
   it('does not overwrite current StarChat data', () => {
     const root = temporaryRoot();
-    const legacy = join(root, '白音AI助手');
+    const legacy = join(root, 'legacy-baoyin-compact');
     const current = join(root, 'StarChat');
     mkdirSync(legacy, { recursive: true });
     mkdirSync(current, { recursive: true });
