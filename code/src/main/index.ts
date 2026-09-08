@@ -70,6 +70,7 @@ import { MemoryService } from './memory-service';
 import { migrateLegacyCompanionMemories } from './memory-migration';
 import { migrateMemorySchema } from './memory-schema-migration';
 import { Live2DAdapterStore } from './live2d-adapter-store';
+import { persistLive2DAdapterIntent } from './live2d-adapter-persistence';
 import { personalMemoryScope } from '../shared/memory-scope';
 import type { SessionRenameRequest, SessionSnapshot, WorkspaceTrustState } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
@@ -1644,9 +1645,7 @@ function registerIpc(): void {
     );
     const targetModel = candidateInspection?.record
       ?? (candidate.live2dModelPath ? getLive2DRegistry().findByEntryPath(candidate.live2dModelPath) : null);
-    if (targetModel && request.live2dAdapter?.overrides) {
-      adapterStore.save(targetModel.id, request.live2dAdapter.overrides);
-    }
+    persistLive2DAdapterIntent(adapterStore, targetModel, request.live2dAdapter);
     if (next.petLocked && petModelEditMode) {
       setPetModelEditMode(false);
     }
