@@ -146,6 +146,16 @@ function compactToolOutput(value: unknown): string {
   return (text || '').slice(0, 32 * 1024);
 }
 
+const MAX_RUNTIME_CONSTRAINTS = 20;
+const MAX_RUNTIME_CONSTRAINT_CHARS = 2_000;
+
+function redactConstraint(value: string): string {
+  return value
+    .replace(/sk-[A-Za-z0-9_-]{12,}/gu, '[REDACTED_API_KEY]')
+    .replace(/(bearer\s+)[^\s,;]+/giu, '$1[REDACTED]')
+    .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret|private[_-]?key|authorization|token)\s*[:=]\s*)[^\s,;]+/giu, '$1[REDACTED]');
+}
+
 export class AgentRuntime {
   private readonly model: AgentModel;
   private readonly tools = new Map<string, AgentTool>();
@@ -161,6 +171,14 @@ export class AgentRuntime {
   private taskId = '';
   private repositoryContext?: string;
   private constraints: string[] = [];
+
+  private recordUserConstraint(value: string): void {
+    const normalized = redactConstraint(value).trim().slice(0, MAX_RUNTIME_CONSTRAINT_CHARS);
+    if (!normalized) return;
+    const entry = `User clarification: ${normalized}`;
+    if (this.constraints.includes(entry)) return;
+    this.constraints = [...this.constraints, entry].slice(-MAX_RUNTIME_CONSTRAINTS);
+  }
 
   constructor(options: {
     model: AgentModel;
@@ -281,7 +299,11 @@ export class AgentRuntime {
     this.controller = new AbortController();
     this.taskId = input.taskId;
     this.repositoryContext = input.repositoryContext;
-    this.constraints = [...(input.constraints ?? [])];
+    this.constraints = (input.constraints ?? [])
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => redactConstraint(value).trim().slice(0, MAX_RUNTIME_CONSTRAINT_CHARS))
+      .filter(Boolean)
+      .slice(0, MAX_RUNTIME_CONSTRAINTS);
     const relay = (): void => this.controller?.abort();
     input.signal?.addEventListener('abort', relay, { once: true });
     this.startedAt = Date.now();
@@ -329,6 +351,7 @@ export class AgentRuntime {
     this.pending = null;
     this.controller ??= new AbortController();
     this.messages = pending.messages;
+    this.recordUserConstraint(value);
     this.messages.push({ role: 'tool', toolCallId: pending.call.id, content: JSON.stringify({ userInput: value }) });
     this.startedAt = Date.now();
     return this.loop(pending.route);

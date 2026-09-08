@@ -49,4 +49,68 @@ describe('bounded task context compression', () => {
     expect(result.compacted).toBe(true);
     expect(result.messages.some((message) => message.content.includes('[受控任务上下文摘要]'))).toBe(true);
   });
+
+  it('classifies completed, failed, rejected and still-waiting writes by tool lifecycle', () => {
+    const messages = [
+      { role: 'user' as const, content: '处理文件变更' },
+      {
+        role: 'assistant' as const,
+        content: '',
+        toolCalls: [
+          { id: 'completed-write', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'update', path: 'src/done.ts', content: 'done' }] }) },
+          { id: 'failed-write', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'update', path: 'src/failed.ts', content: 'failed' }] }) },
+          { id: 'rejected-write', name: 'apply_patch', arguments: JSON.stringify({ patch: '*** Begin Patch\n*** Update File: src/rejected.ts\n@@\n-old\n+new\n*** End Patch' }) },
+          { id: 'waiting-write', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'delete', path: 'src/waiting.ts' }] }) }
+        ]
+      },
+      { role: 'tool' as const, toolCallId: 'completed-write', content: JSON.stringify({ files: ['src/done.ts'] }) },
+      { role: 'tool' as const, toolCallId: 'failed-write', content: '工具执行错误：写入失败' },
+      { role: 'tool' as const, toolCallId: 'rejected-write', content: '用户拒绝了这次精确计划，禁止执行写入。' }
+    ];
+
+    const result = compressMessages({ messages }, { messageThreshold: 1 });
+
+    expect(result.compacted).toBe(true);
+    expect(result.context.pendingChanges).toEqual(['delete: src/waiting.ts']);
+    expect(result.context.decisions).toEqual(expect.arrayContaining([
+      'applied update: src/done.ts',
+      'user rejected update: src/rejected.ts'
+    ]));
+    expect(result.context.findings).toEqual(expect.arrayContaining([
+      expect.stringContaining('failed update: src/failed.ts')
+    ]));
+    expect(result.context.toolLifecycle).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: 'completed-write', state: 'completed' }),
+      expect.objectContaining({ toolCallId: 'failed-write', state: 'failed' }),
+      expect.objectContaining({ toolCallId: 'rejected-write', state: 'rejected' }),
+      expect.objectContaining({ toolCallId: 'waiting-write', state: 'requested' })
+    ]));
+  });
+
+  it('keeps multiple user clarifications bounded, readable and redacted', () => {
+    const messages = [
+      { role: 'user' as const, content: '等待用户补充' },
+      ...Array.from({ length: 22 }, (_, index) => [
+        {
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{ id: `input-${index}`, name: 'request_user_input', arguments: JSON.stringify({ prompt: '请补充范围' }) }]
+        },
+        {
+          role: 'tool' as const,
+          toolCallId: `input-${index}`,
+          content: JSON.stringify({ userInput: index === 0 ? 'API Key: sk-sensitive-key-1234567890' : `补充约束 ${index}` })
+        }
+      ]).flat()
+    ];
+
+    const context = buildCompressedTaskContext({ messages });
+    const summary = formatCompressedTaskContext(context);
+
+    expect(context.constraints).toHaveLength(20);
+    expect(context.constraints[0]).toContain('[REDACTED_API_KEY]');
+    expect(context.constraints).toContain('User clarification: 补充约束 1');
+    expect(summary).not.toContain('"userInput"');
+    expect(summary).not.toContain('sk-sensitive-key-1234567890');
+  });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AgentModelMessage } from '../shared/agent';
 import { AgentRuntime } from './agent-runtime';
 
 function tool(name: string, run: (args: unknown) => Promise<unknown>) {
@@ -84,5 +85,33 @@ describe('agent model-tool runtime', () => {
     expect(compactedMessages).toBeDefined();
     expect(compactedMessages?.some((message) => message.content.includes('src/file-1.ts'))).toBe(true);
     expect(compactedMessages?.some((message) => message.content.includes('受控仓库上下文'))).toBe(true);
+  });
+
+  it('carries user clarification into a later compression after responding to input', async () => {
+    let calls = 0;
+    let compactedMessages: AgentModelMessage[] | undefined;
+    const complete = vi.fn(async (messages: AgentModelMessage[]) => {
+      if (messages.some((message) => message.content.includes('[受控任务上下文摘要]'))) compactedMessages = messages;
+      const call = calls++;
+      if (call === 0) return { type: 'tool_calls' as const, calls: [{ id: 'input-1', name: 'ask', arguments: '{}' }] };
+      if (compactedMessages) return { type: 'final' as const, content: '已按澄清完成' };
+      return { type: 'tool_calls' as const, calls: [{ id: `read-${call}`, name: 'read', arguments: '{}' }] };
+    });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      tools: [
+        { ...tool('ask', async () => ({ waiting: true })), requestsInput: true },
+        tool('read', async () => '受控工具输出')
+      ]
+    });
+
+    const waiting = await runtime.run({ taskId: 'task-input-compress', message: '确认修改范围' });
+    expect(waiting.status).toBe('waiting_for_input');
+    const result = await runtime.respond('只修改 src/a.ts，不要修改 src/b.ts');
+
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(compactedMessages?.some((message) => message.content.includes('只修改 src/a.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('不要修改 src/b.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('"userInput"'))).toBe(false);
   });
 });

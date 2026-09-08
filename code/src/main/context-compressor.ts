@@ -1,10 +1,18 @@
-import type { AgentModelMessage, AgentToolCall } from '../shared/agent';
+import type { AgentFileChangeOperation, AgentModelMessage, AgentToolCall } from '../shared/agent';
 import { isSensitiveWorkspacePath } from './agent-security';
+
+export interface ToolLifecycleFact {
+  toolCallId: string;
+  toolName: string;
+  state: 'requested' | 'completed' | 'failed' | 'rejected';
+  changes: Array<{ path: string; operation: AgentFileChangeOperation }>;
+}
 
 export interface CompressedTaskContext {
   goal: string;
   repoSummary?: string;
   files: Array<{ path: string; summary: string }>;
+  toolLifecycle: ToolLifecycleFact[];
   findings: string[];
   decisions: string[];
   pendingChanges: string[];
@@ -40,6 +48,7 @@ const MAX_GOAL_CHARS = 6_000;
 const MAX_ITEM_CHARS = 2_000;
 const MAX_FILES = 60;
 const MAX_ITEMS_PER_SECTION = 40;
+const MAX_CONSTRAINT_ITEMS = 20;
 const MAX_REPO_SUMMARY_CHARS = 6_000;
 const TEXT_ENCODER = new TextEncoder();
 
@@ -82,30 +91,32 @@ function addFile(context: CompressedTaskContext, path: unknown, summary: string)
   context.files.push({ path: safePath, summary: boundedText(summary, 500) || '工具访问的文件' });
 }
 
-function changePaths(call: AgentToolCall, args: Record<string, unknown>, context: CompressedTaskContext): void {
+function addChange(changes: Array<{ path: string; operation: AgentFileChangeOperation }>, path: unknown, operation: AgentFileChangeOperation): void {
+  const safePath = safeRelativePath(path);
+  if (!safePath || changes.some((change) => change.path === safePath && change.operation === operation)) return;
+  changes.push({ path: safePath, operation });
+}
+
+function changesForCall(call: AgentToolCall, args: Record<string, unknown>): Array<{ path: string; operation: AgentFileChangeOperation }> {
+  const changes: Array<{ path: string; operation: AgentFileChangeOperation }> = [];
   if (call.name === 'apply_file_changes' && Array.isArray(args.changes)) {
     for (const item of args.changes) {
       if (!item || typeof item !== 'object') continue;
       const change = item as { path?: unknown; type?: unknown };
-      const path = safeRelativePath(change.path);
-      if (!path) continue;
       const operation = change.type === 'create' || change.type === 'delete' || change.type === 'update' ? change.type : 'update';
-      addFile(context, path, `${call.name} ${operation}`);
-      addUnique(context.pendingChanges, `${operation}: ${path}`);
+      addChange(changes, change.path, operation);
     }
-    return;
+    return changes;
   }
   if (call.name === 'apply_patch' && typeof args.patch === 'string') {
     for (const line of args.patch.split(/\r?\n/u)) {
       const match = /^\*\*\* (?:Update|Add|Delete) File:\s*(.+)$/u.exec(line);
       if (!match) continue;
-      const path = safeRelativePath(match[1]);
-      if (!path) continue;
       const operation = line.startsWith('*** Add File:') ? 'create' : line.startsWith('*** Delete File:') ? 'delete' : 'update';
-      addFile(context, path, `${call.name} ${operation}`);
-      addUnique(context.pendingChanges, `${operation}: ${path}`);
+      addChange(changes, match[1], operation);
     }
   }
+  return changes;
 }
 
 function recordToolCall(context: CompressedTaskContext, call: AgentToolCall): void {
@@ -115,7 +126,7 @@ function recordToolCall(context: CompressedTaskContext, call: AgentToolCall): vo
     return;
   }
   addFile(context, args.path, `${call.name} 访问路径`);
-  changePaths(call, args, context);
+  for (const change of changesForCall(call, args)) addFile(context, change.path, `${call.name} ${change.operation}`);
   if (call.name === 'run_verification' && typeof args.script === 'string') addUnique(context.verification, `${args.script}: requested`);
 }
 
@@ -123,20 +134,50 @@ function recordToolResult(context: CompressedTaskContext, message: AgentModelMes
   if (message.role !== 'tool') return;
   const content = boundedText(message.content, 4_000);
   if (!content) return;
-  if (/^工具执行错误：|失败|错误|超时|拒绝|不可/u.test(content)) {
-    addUnique(context.findings, content, MAX_ITEMS_PER_SECTION);
-  }
-  if (content.includes('用户拒绝')) addUnique(context.decisions, content);
+  let parsed: Record<string, unknown> | null = null;
   try {
-    const parsed: unknown = JSON.parse(message.content);
-    if (parsed && typeof parsed === 'object') {
-      const result = parsed as { script?: unknown; ok?: unknown; output?: unknown };
-      if (typeof result.script === 'string' && typeof result.ok === 'boolean') {
-        addUnique(context.verification, `${result.script}: ${result.ok ? 'passed' : 'failed'}${typeof result.output === 'string' ? `; ${boundedText(result.output, 1_500)}` : ''}`);
-      }
-    }
+    const value: unknown = JSON.parse(message.content);
+    if (value && typeof value === 'object' && !Array.isArray(value)) parsed = value as Record<string, unknown>;
   } catch {
     // Tool output is intentionally not copied into the compressed context.
+  }
+  if (typeof parsed?.userInput === 'string') {
+    addUnique(context.constraints, `User clarification: ${boundedText(parsed.userInput, MAX_ITEM_CHARS)}`, MAX_CONSTRAINT_ITEMS);
+    return;
+  }
+  if (content.includes('用户拒绝')) {
+    addUnique(context.decisions, content);
+  } else if (/^工具执行错误：|失败|错误|超时|拒绝|不可/u.test(content)) {
+    addUnique(context.findings, content, MAX_ITEMS_PER_SECTION);
+  }
+  if (parsed) {
+    const result = parsed as { script?: unknown; ok?: unknown; output?: unknown };
+    if (typeof result.script === 'string' && typeof result.ok === 'boolean') {
+      addUnique(context.verification, `${result.script}: ${result.ok ? 'passed' : 'failed'}${typeof result.output === 'string' ? `; ${boundedText(result.output, 1_500)}` : ''}`);
+    }
+  }
+}
+
+function lifecycleState(message: AgentModelMessage | undefined): ToolLifecycleFact['state'] {
+  if (!message) return 'requested';
+  const content = boundedText(message.content, 4_000);
+  if (content.includes('用户拒绝')) return 'rejected';
+  if (/^工具执行错误：|工具执行失败|失败|错误|超时/u.test(content)) return 'failed';
+  return 'completed';
+}
+
+function recordWriteLifecycle(context: CompressedTaskContext, call: AgentToolCall, result: AgentModelMessage | undefined): void {
+  const args = parseArguments(call);
+  if (!args) return;
+  const changes = changesForCall(call, args);
+  if (changes.length === 0) return;
+  const state = lifecycleState(result);
+  context.toolLifecycle.push({ toolCallId: call.id, toolName: call.name, state, changes });
+  for (const change of changes) {
+    if (state === 'requested') addUnique(context.pendingChanges, `${change.operation}: ${change.path}`);
+    if (state === 'completed') addUnique(context.decisions, `applied ${change.operation}: ${change.path}`);
+    if (state === 'failed') addUnique(context.findings, `failed ${change.operation}: ${change.path}${result ? `; ${boundedText(result.content, 1_500)}` : ''}`);
+    if (state === 'rejected') addUnique(context.decisions, `user rejected ${change.operation}: ${change.path}`);
   }
 }
 
@@ -146,18 +187,28 @@ export function buildCompressedTaskContext(input: ContextCompressionInput): Comp
     goal: boundedText(firstUser?.content, MAX_GOAL_CHARS),
     ...(input.repositoryContext ? { repoSummary: boundedText(input.repositoryContext, MAX_REPO_SUMMARY_CHARS) } : {}),
     files: [],
+    toolLifecycle: [],
     findings: [],
     decisions: [],
     pendingChanges: [],
     verification: [],
     constraints: []
   };
-  for (const constraint of input.constraints ?? []) addUnique(context.constraints, constraint);
+  for (const constraint of input.constraints ?? []) addUnique(context.constraints, constraint, MAX_CONSTRAINT_ITEMS);
+  const calls = new Map<string, AgentToolCall>();
+  const results = new Map<string, AgentModelMessage>();
   for (const message of input.messages) {
     if (message.role === 'assistant') {
-      for (const call of message.toolCalls ?? []) recordToolCall(context, call);
+      for (const call of message.toolCalls ?? []) {
+        recordToolCall(context, call);
+        calls.set(call.id, call);
+      }
     }
     recordToolResult(context, message);
+    if (message.role === 'tool' && message.toolCallId) results.set(message.toolCallId, message);
+  }
+  for (const call of calls.values()) {
+    if (call.name === 'apply_patch' || call.name === 'apply_file_changes') recordWriteLifecycle(context, call, results.get(call.id));
   }
   return context;
 }
@@ -172,6 +223,7 @@ export function formatCompressedTaskContext(context: CompressedTaskContext, maxi
   if (context.repoSummary) lines.push('Repository:', boundedText(context.repoSummary, MAX_REPO_SUMMARY_CHARS));
   section(lines, 'Constraints', context.constraints);
   section(lines, 'Files', context.files.map((file) => `${file.path} — ${file.summary}`));
+  section(lines, 'Tool lifecycle', context.toolLifecycle.map((fact) => `${fact.toolCallId} ${fact.toolName}: ${fact.state}${fact.changes.length > 0 ? `; ${fact.changes.map((change) => `${change.operation}: ${change.path}`).join(', ')}` : ''}`));
   section(lines, 'Findings and errors', context.findings);
   section(lines, 'Decisions', context.decisions);
   section(lines, 'Pending changes', context.pendingChanges);
