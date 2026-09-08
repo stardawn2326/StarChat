@@ -66,11 +66,19 @@ export interface AgentStep {
   invocationId?: string;
 }
 
+export type AgentFileChangeOperation = 'create' | 'update' | 'delete';
+
+export interface AgentChangePreviewItem {
+  path: string;
+  operation: AgentFileChangeOperation;
+}
+
 export interface AgentChangePreview {
   files: string[];
   patch: string;
   additions: number;
   deletions: number;
+  changes?: AgentChangePreviewItem[];
 }
 
 export type AgentFileChange =

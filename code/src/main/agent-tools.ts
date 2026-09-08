@@ -3,6 +3,7 @@ import { WorkspaceGuard } from './agent-security';
 import { runGitReadOnly } from './git-runner';
 import { verificationCommand, isVerificationScript } from './project-detector';
 import { runControlledProcess } from './process-runner';
+import { WORKSPACE_SEARCH_MODES, WorkspaceSearch, type WorkspaceSearchMode } from './workspace-search';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('工具参数必须是对象');
@@ -68,6 +69,7 @@ export interface AgentToolOptions {
 }
 
 export function createAgentTools(guard: WorkspaceGuard, executeVerification: typeof runVerification = runVerification, options: AgentToolOptions = {}): AgentTool[] {
+  const workspaceSearch = new WorkspaceSearch(guard);
   const readTools: AgentTool[] = [
     {
       name: 'list_directory', description: '列出授权工作区内的目录项。', schema: { type: 'object', properties: { path: { type: 'string' } }, additionalProperties: false },
@@ -80,6 +82,36 @@ export function createAgentTools(guard: WorkspaceGuard, executeVerification: typ
     {
       name: 'search_text', description: '在授权工作区内受控搜索文本。', schema: { type: 'object', required: ['query'], properties: { query: { type: 'string' }, path: { type: 'string' } }, additionalProperties: false },
       run: async (input) => { const args = record(input); return guard.searchText(stringArg(args.query, 'query', 500), typeof args.path === 'string' ? args.path : ''); }
+    },
+    {
+      name: 'workspace_search', description: '在授权工作区内执行受限的文件名、文本或轻量符号搜索；不会调用 Shell。',
+      schema: {
+        type: 'object', required: ['mode', 'query'],
+        properties: {
+          mode: { type: 'string', enum: [...WORKSPACE_SEARCH_MODES] },
+          query: { type: 'string', maxLength: 500 },
+          path: { type: 'string', maxLength: 1024 },
+          maxResults: { type: 'integer', minimum: 1, maximum: 200 },
+          maxEntries: { type: 'integer', minimum: 1, maximum: 5000 },
+          timeoutMs: { type: 'integer', minimum: 1, maximum: 10000 },
+          maxDepth: { type: 'integer', minimum: 0, maximum: 16 }
+        },
+        additionalProperties: false
+      },
+      run: async (input) => {
+        const args = record(input);
+        const mode = args.mode;
+        if (typeof mode !== 'string' || !WORKSPACE_SEARCH_MODES.includes(mode as WorkspaceSearchMode)) throw new Error('工作区搜索模式无效');
+        return workspaceSearch.search({
+          mode: mode as WorkspaceSearchMode,
+          query: stringArg(args.query, 'query', 500),
+          ...(typeof args.path === 'string' ? { path: args.path } : {}),
+          ...(typeof args.maxResults === 'number' ? { maxResults: args.maxResults } : {}),
+          ...(typeof args.maxEntries === 'number' ? { maxEntries: args.maxEntries } : {}),
+          ...(typeof args.timeoutMs === 'number' ? { timeoutMs: args.timeoutMs } : {}),
+          ...(typeof args.maxDepth === 'number' ? { maxDepth: args.maxDepth } : {})
+        });
+      }
     },
     {
       name: 'git_status', description: '只读查看当前授权工作区 Git 状态。', schema: { type: 'object', additionalProperties: false },

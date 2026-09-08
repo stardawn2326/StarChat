@@ -1,6 +1,6 @@
 import type { AgentTaskStatus } from './agent';
 import type { AgentTaskMetrics } from './agent-metrics';
-import type { RepoMap } from './repo-map';
+import type { RepoMapEntry } from './repo-map';
 
 export type TaskContextStatus = 'running' | 'waiting-approval' | 'waiting-input' | 'interrupted' | 'completed' | 'failed';
 export type TaskPlanStatus = 'pending' | 'in-progress' | 'completed' | 'blocked';
@@ -57,6 +57,24 @@ export interface TaskContextApproval {
   createdAt: number;
 }
 
+/**
+ * A persisted, path-relative repository projection.
+ * Runtime RepoMap keeps absolute roots; TaskContext must not persist them.
+ */
+export interface TaskRepoSummary {
+  projectType: string;
+  packageManager?: string;
+  projectRootRelative?: string;
+  sourceRoots: string[];
+  testRoots: string[];
+  configFiles: string[];
+  importantFiles: RepoMapEntry[];
+  languageStats: Record<string, number>;
+  partial?: boolean;
+  unavailable?: boolean;
+  warnings?: string[];
+}
+
 export interface TaskContext {
   taskId: string;
   workspaceId: string;
@@ -70,7 +88,7 @@ export interface TaskContext {
   status: TaskContextStatus;
   createdAt: number;
   updatedAt: number;
-  repoMap?: RepoMap;
+  repoMap?: TaskRepoSummary;
   latestFailure?: TaskContextFailure;
   pendingApproval?: TaskContextApproval;
   userConstraints?: string[];

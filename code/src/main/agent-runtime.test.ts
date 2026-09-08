@@ -58,4 +58,31 @@ describe('agent model-tool runtime', () => {
     release?.();
     await expect(pending).resolves.toMatchObject({ status: 'cancelled' });
   });
+
+  it('compresses bounded tool facts after the message or output threshold and reports real compactions', async () => {
+    let calls = 0;
+    let compactions = 0;
+    const complete = vi.fn(async (_messages: unknown) => {
+      calls += 1;
+      if (calls <= 5) return { type: 'tool_calls' as const, calls: [{ id: `read-${calls}`, name: 'read', arguments: JSON.stringify({ path: `src/file-${calls}.ts` }) }] };
+      return { type: 'final' as const, content: '已完成' };
+    });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      tools: [tool('read', async () => '受控工具输出')],
+      onContextCompaction: () => { compactions += 1; }
+    });
+
+    await expect(runtime.run({
+      taskId: 'task-compress',
+      message: '检查项目',
+      repositoryContext: '受控仓库上下文\nProject: web\nSource roots:\n- src'
+    })).resolves.toMatchObject({ status: 'completed' });
+
+    expect(compactions).toBeGreaterThan(0);
+    const compactedMessages = complete.mock.calls.map((call) => call[0] as unknown as Array<{ role: string; content: string }>).find((messages) => messages.some((message) => message.content.includes('[受控任务上下文摘要]')));
+    expect(compactedMessages).toBeDefined();
+    expect(compactedMessages?.some((message) => message.content.includes('src/file-1.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('受控仓库上下文'))).toBe(true);
+  });
 });

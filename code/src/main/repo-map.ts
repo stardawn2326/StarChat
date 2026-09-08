@@ -1,7 +1,8 @@
-import { basename, dirname, extname, sep } from 'node:path';
+import { basename, dirname, extname, relative, sep } from 'node:path';
 import type { RepoMap, RepoMapEntry, RepoMapEntryKind, RepoMapLimits } from '../shared/repo-map';
+import type { TaskRepoSummary } from '../shared/task-context';
 import { detectProject, type DetectedProject } from './project-detector';
-import { WorkspaceGuard } from './agent-security';
+import { isSensitiveWorkspacePath, WorkspaceGuard } from './agent-security';
 
 const DEFAULT_LIMITS: RepoMapLimits = { maxDepth: 8, maxEntries: 5000, timeoutMs: 3000 };
 const IMPORTANT_LIMIT = 200;
@@ -30,6 +31,7 @@ const TEST_FILE_PATTERN = /(?:^|[._-])(?:test|spec)(?:\.[^.]+)?$/iu;
 export interface RepoMapBuildOptions extends Partial<RepoMapLimits> {
   refresh?: boolean;
   now?: () => number;
+  deniedRoots?: string[];
 }
 
 function clone<T>(value: T): T {
@@ -92,6 +94,95 @@ function testRootFor(path: string): string | null {
   const directoryIndex = parts.findIndex((part) => TEST_DIRECTORY_NAMES.has(part.toLocaleLowerCase()));
   if (directoryIndex >= 0) return parts.slice(0, directoryIndex + 1).join('/');
   return isTest(path) ? (dirname(path).replaceAll(sep, '/') || '.') : null;
+}
+
+function safeRelativePath(value: string): string | null {
+  const candidate = value.trim().replaceAll('\\', '/');
+  if (!candidate || candidate.startsWith('/') || candidate.startsWith('//') || /^[A-Za-z]:/u.test(candidate)) return null;
+  if (candidate.split('/').some((part) => part === '..') || isSensitiveWorkspacePath(candidate)) return null;
+  return candidate;
+}
+
+function uniquePaths(values: readonly string[], maximum: number): string[] {
+  return [...new Set(values.map(safeRelativePath).filter((item): item is string => Boolean(item)))].slice(0, maximum);
+}
+
+function boundedLines(lines: readonly string[], maximum: number): string {
+  const output: string[] = [];
+  let length = 0;
+  for (const line of lines) {
+    const nextLength = length === 0 ? line.length : length + 1 + line.length;
+    if (nextLength > maximum) break;
+    output.push(line);
+    length = nextLength;
+  }
+  return output.join('\n');
+}
+
+const REPO_CONTEXT_MAX_CHARS = 16_000;
+const REPO_CONTEXT_MAX_ITEMS = 24;
+
+/**
+ * Builds the small metadata-only repository context that is safe to send to a model.
+ * Absolute roots, sensitive paths, and file contents are intentionally excluded.
+ */
+export function buildRepoContextSummary(repoMap: RepoMap): string | undefined {
+  if (repoMap.unavailable) return undefined;
+  const lines = [
+    '受控仓库上下文（仅元数据，无文件正文）：',
+    `Project: ${repoMap.projectType || 'unknown'}`,
+    ...(repoMap.packageManager ? [`Package manager: ${repoMap.packageManager}`] : []),
+    ...(repoMap.partial ? ['Status: partial scan'] : [])
+  ];
+  const appendPaths = (label: string, values: readonly string[]): void => {
+    const paths = uniquePaths(values, REPO_CONTEXT_MAX_ITEMS);
+    if (paths.length === 0) return;
+    lines.push(`${label}:`);
+    lines.push(...paths.map((path) => `- ${path}`));
+  };
+  appendPaths('Source roots', repoMap.sourceRoots);
+  appendPaths('Test roots', repoMap.testRoots);
+  appendPaths('Config files', repoMap.configFiles);
+  const importantFiles = repoMap.importantFiles
+    .map((file) => {
+      const path = safeRelativePath(file.path);
+      return path ? `- ${path} (${file.kind}, ${Math.max(0, Math.trunc(file.size))} bytes)` : null;
+    })
+    .filter((item): item is string => Boolean(item))
+    .slice(0, REPO_CONTEXT_MAX_ITEMS);
+  if (importantFiles.length > 0) lines.push('Important files:', ...importantFiles);
+  const languages = Object.entries(repoMap.languageStats)
+    .filter(([language, count]) => /^[a-z0-9+#-]{1,20}$/iu.test(language) && Number.isFinite(count))
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 12)
+    .map(([language, count]) => `${language}=${Math.max(0, Math.trunc(count))}`);
+  if (languages.length > 0) lines.push(`Languages: ${languages.join(', ')}`);
+  return boundedLines(lines, REPO_CONTEXT_MAX_CHARS) || undefined;
+}
+
+export function toTaskRepoSummary(repoMap: RepoMap): TaskRepoSummary {
+  const projectRootRelative = safeRelativePath(relative(repoMap.workspaceRoot, repoMap.projectRoot).replaceAll(sep, '/'));
+  const importantFiles = repoMap.importantFiles.flatMap((file) => {
+    const path = safeRelativePath(file.path);
+    return path ? [{ path, kind: file.kind, size: Math.max(0, Math.trunc(file.size)) }] : [];
+  }).slice(0, REPO_CONTEXT_MAX_ITEMS);
+  const languageStats: Record<string, number> = {};
+  for (const [language, count] of Object.entries(repoMap.languageStats)) {
+    if (/^[a-z0-9+#-]{1,20}$/iu.test(language) && Number.isFinite(count)) languageStats[language] = Math.max(0, Math.trunc(count));
+  }
+  return {
+    projectType: repoMap.projectType || 'unknown',
+    ...(repoMap.packageManager ? { packageManager: repoMap.packageManager } : {}),
+    ...(projectRootRelative && projectRootRelative !== '.' ? { projectRootRelative } : {}),
+    sourceRoots: uniquePaths(repoMap.sourceRoots, REPO_CONTEXT_MAX_ITEMS),
+    testRoots: uniquePaths(repoMap.testRoots, REPO_CONTEXT_MAX_ITEMS),
+    configFiles: uniquePaths(repoMap.configFiles, REPO_CONTEXT_MAX_ITEMS),
+    importantFiles,
+    languageStats,
+    ...(repoMap.partial ? { partial: true } : {}),
+    ...(repoMap.unavailable ? { unavailable: true } : {}),
+    ...(repoMap.warnings?.length ? { warnings: repoMap.warnings.slice(0, 20) } : {})
+  };
 }
 
 function unavailableMap(workspaceId: string, workspaceRoot: string, limits: RepoMapLimits, warning: string, now: () => number): RepoMap {
@@ -179,13 +270,14 @@ export class RepoMapBuilder {
     const limits = limitsFor(options);
     let guard: WorkspaceGuard;
     try {
-      guard = new WorkspaceGuard(workspaceRoot);
+      guard = new WorkspaceGuard(workspaceRoot, { deniedRoots: options.deniedRoots });
     } catch (error) {
       return unavailableMap(workspaceId, workspaceRoot, limits, error instanceof Error ? error.message : '授权工作区不可用', now);
     }
 
     const { project, warning } = projectOrUnknown(guard);
-    const key = `${workspaceId}\u0000${guard.root}\u0000${project.projectRoot}`;
+    const deniedRootsKey = (options.deniedRoots ?? []).map((root) => root.replaceAll('\\', '/').toLocaleLowerCase()).sort().join('|');
+    const key = `${workspaceId}\u0000${guard.root}\u0000${project.projectRoot}\u0000${deniedRootsKey}`;
     if (!options.refresh) {
       const cached = this.cache.get(key);
       if (cached) return clone(cached);

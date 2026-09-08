@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import type { AgentTaskMetrics } from '../shared/agent-metrics';
 import { cloneAgentTaskMetrics, EMPTY_AGENT_TASK_METRICS } from '../shared/agent-metrics';
-import type { RepoMap } from '../shared/repo-map';
 import type {
   FileReadRecord,
   PendingChange,
   TaskContext,
   TaskContextStatus,
+  TaskRepoSummary,
   TaskFinding,
   TaskPlanItem,
   VerificationRecord
@@ -158,48 +158,36 @@ function sanitizeVerifications(value: unknown): VerificationRecord[] {
   }).filter((item): item is VerificationRecord => Boolean(item)).slice(-MAX_VERIFICATIONS);
 }
 
-function sanitizeRepoMap(value: unknown): RepoMap | undefined {
+function sanitizeRepoMap(value: unknown): TaskRepoSummary | undefined {
   if (!value || typeof value !== 'object') return undefined;
-  const source = value as Partial<RepoMap>;
-  const workspaceId = id(source.workspaceId);
-  const workspaceRoot = text(source.workspaceRoot, 2000);
-  const projectRoot = text(source.projectRoot, 2000);
-  if (!workspaceId || !workspaceRoot || !projectRoot) return undefined;
+  const source = value as Partial<TaskRepoSummary>;
   const paths = (items: unknown): string[] => Array.isArray(items) ? items.map(relativePath).filter((item): item is string => Boolean(item)).slice(0, 200) : [];
   const importantFiles = Array.isArray(source.importantFiles) ? source.importantFiles.map((item) => {
     if (!item || typeof item !== 'object') return null;
-    const entry = item as Partial<RepoMap['importantFiles'][number]>;
+    const entry = item as Partial<TaskRepoSummary['importantFiles'][number]>;
     const path = relativePath(entry.path);
     if (!path || !['source', 'test', 'config', 'manifest', 'doc'].includes(entry.kind as string)) return null;
-    return { path, kind: entry.kind as RepoMap['importantFiles'][number]['kind'], size: Number.isFinite(entry.size) ? Math.max(0, Math.trunc(Number(entry.size))) : 0 };
-  }).filter((item): item is RepoMap['importantFiles'][number] => Boolean(item)).slice(0, 200) : [];
+    return { path, kind: entry.kind as TaskRepoSummary['importantFiles'][number]['kind'], size: Number.isFinite(entry.size) ? Math.max(0, Math.trunc(Number(entry.size))) : 0 };
+  }).filter((item): item is TaskRepoSummary['importantFiles'][number] => Boolean(item)).slice(0, 200) : [];
   const languageStats: Record<string, number> = {};
   if (source.languageStats && typeof source.languageStats === 'object') {
     for (const [language, count] of Object.entries(source.languageStats)) {
       if (/^[a-z0-9+#-]{1,20}$/iu.test(language) && Number.isFinite(count)) languageStats[language] = Math.max(0, Math.trunc(Number(count)));
     }
   }
-  const limits = source.limits && typeof source.limits === 'object' ? {
-    maxDepth: Math.max(0, Math.trunc(Number(source.limits.maxDepth))),
-    maxEntries: Math.max(1, Math.trunc(Number(source.limits.maxEntries))),
-    timeoutMs: Math.max(1, Math.trunc(Number(source.limits.timeoutMs)))
-  } : undefined;
+  const projectRootRelative = relativePath(source.projectRootRelative);
   return {
-    workspaceId,
-    workspaceRoot,
-    projectRoot,
     projectType: text(source.projectType, 100) || 'unknown',
     ...(text(source.packageManager, 50) ? { packageManager: text(source.packageManager, 50) } : {}),
+    ...(projectRootRelative ? { projectRootRelative } : {}),
     sourceRoots: paths(source.sourceRoots),
     testRoots: paths(source.testRoots),
     configFiles: paths(source.configFiles),
     importantFiles,
     languageStats,
-    generatedAt: timestamp(source.generatedAt, Date.now()),
     ...(source.partial ? { partial: true } : {}),
     ...(source.unavailable ? { unavailable: true } : {}),
-    ...(Array.isArray(source.warnings) ? { warnings: source.warnings.map((item) => redactText(item, 500)).filter(Boolean).slice(0, 20) } : {}),
-    ...(limits ? { limits } : {})
+    ...(Array.isArray(source.warnings) ? { warnings: source.warnings.map((item) => redactText(item, 500)).filter(Boolean).slice(0, 20) } : {})
   };
 }
 
@@ -216,6 +204,7 @@ function sanitizeContext(value: unknown, fallbackNow: number): TaskContext | nul
   const pendingApproval = source.pendingApproval && typeof source.pendingApproval === 'object' && redactText(source.pendingApproval.summary, 4000)
     ? { summary: redactText(source.pendingApproval.summary, 4000), createdAt: timestamp(source.pendingApproval.createdAt, fallbackNow) }
     : undefined;
+  const repoMap = sanitizeRepoMap(source.repoMap);
   return {
     taskId,
     workspaceId,
@@ -229,7 +218,7 @@ function sanitizeContext(value: unknown, fallbackNow: number): TaskContext | nul
     status: status(source.status),
     createdAt: timestamp(source.createdAt, fallbackNow),
     updatedAt: timestamp(source.updatedAt, fallbackNow),
-    ...(sanitizeRepoMap(source.repoMap) ? { repoMap: sanitizeRepoMap(source.repoMap) } : {}),
+    ...(repoMap ? { repoMap } : {}),
     ...(latestFailure ? { latestFailure } : {}),
     ...(pendingApproval ? { pendingApproval } : {}),
     ...(Array.isArray(source.userConstraints) ? { userConstraints: source.userConstraints.map((item) => redactText(item, 2000)).filter(Boolean).slice(-MAX_USER_CONSTRAINTS) } : {})

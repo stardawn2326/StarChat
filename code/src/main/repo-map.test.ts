@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from '
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { RepoMapBuilder } from './repo-map';
+import { buildRepoContextSummary, RepoMapBuilder, toTaskRepoSummary } from './repo-map';
 
 function fixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'starchat-repo-map-'));
@@ -101,6 +101,36 @@ describe('repo map builder', () => {
     const map = new RepoMapBuilder().build('workspace-symlink', root);
     expect(map.importantFiles.some((file) => file.path.includes('linked-outside'))).toBe(false);
     expect(existsSync(join(outside, 'outside.ts'))).toBe(true);
+  });
+
+  it('propagates denied roots through the repo map and excludes their metadata', () => {
+    const root = fixture();
+    const denied = join(root, 'models', 'private-model');
+    mkdirSync(denied, { recursive: true });
+    writeFileSync(join(denied, 'secret-param.ts'), 'export const secret = true\n', 'utf8');
+    writeFileSync(join(denied, 'config.json'), '{}\n', 'utf8');
+
+    const map = new RepoMapBuilder().build('workspace-denied', root, { deniedRoots: [denied] });
+
+    expect(JSON.stringify(map)).not.toContain('private-model');
+    expect(map.languageStats.ts).toBe(3);
+    expect(map.importantFiles.some((file) => file.path.includes('private-model'))).toBe(false);
+    expect(map.configFiles.some((file) => file.includes('private-model'))).toBe(false);
+  });
+
+  it('creates bounded model context and a persisted summary without absolute roots', () => {
+    const root = fixture();
+    const map = new RepoMapBuilder().build('workspace-summary', root);
+    const modelContext = buildRepoContextSummary(map);
+    const persisted = toTaskRepoSummary(map);
+
+    expect(modelContext).toContain('Project: web');
+    expect(modelContext).toContain('Source roots:');
+    expect(modelContext).not.toContain(root);
+    expect(modelContext).not.toContain('.env');
+    expect(persisted).not.toHaveProperty('workspaceRoot');
+    expect(persisted).not.toHaveProperty('projectRoot');
+    expect(persisted.sourceRoots).toContain('src');
   });
 
   it('returns an unavailable map instead of throwing for a missing workspace', () => {

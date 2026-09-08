@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EMPTY_AGENT_TASK_METRICS } from '../shared/agent-metrics';
+import type { TaskContext } from '../shared/task-context';
 import { TaskContextStore } from './task-context-store';
 
 function context(taskId = 'task-a') {
@@ -65,6 +66,34 @@ describe('task context store', () => {
     expect(raw).not.toContain('../outside.txt');
     expect(raw).not.toContain('file contents');
     expect(store.get('task-safe')?.filesRead).toEqual([{ path: 'src/main.ts', readAt: 3 }]);
+  });
+
+  it('strips absolute repository roots when persisting a runtime repo map', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-task-context-repo-'));
+    const file = join(root, 'contexts.json');
+    const absoluteRoot = join(root, 'workspace');
+    const runtimeRepoMap = {
+      workspaceId: 'workspace-a',
+      workspaceRoot: absoluteRoot,
+      projectRoot: join(absoluteRoot, 'code'),
+      projectType: 'electron',
+      sourceRoots: ['code/src'],
+      testRoots: ['code/src/main'],
+      configFiles: ['package.json'],
+      importantFiles: [{ path: 'package.json', kind: 'manifest' as const, size: 20 }],
+      languageStats: { ts: 4 },
+      generatedAt: 100
+    } as unknown as NonNullable<TaskContext['repoMap']>;
+    const store = new TaskContextStore(file);
+    store.create({ ...context('task-repo'), repoMap: runtimeRepoMap });
+
+    const raw = readFileSync(file, 'utf8');
+    expect(raw).not.toContain(absoluteRoot);
+    expect(raw).not.toContain('workspaceRoot');
+    expect(raw).not.toContain('projectRoot');
+    expect(store.get('task-repo')?.repoMap).toMatchObject({ projectType: 'electron', sourceRoots: ['code/src'] });
+    expect(store.get('task-repo')?.repoMap).not.toHaveProperty('workspaceRoot');
+    expect(store.get('task-repo')?.repoMap).not.toHaveProperty('projectRoot');
   });
 
   it('prunes old terminal contexts but keeps active contexts and caps the store', () => {

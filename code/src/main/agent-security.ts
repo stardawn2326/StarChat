@@ -12,7 +12,7 @@ import {
   writeFileSync
 } from 'node:fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import type { AgentFileChange } from '../shared/agent';
+import type { AgentChangePreview, AgentFileChange } from '../shared/agent';
 
 const DEFAULT_MAX_READ_BYTES = 128 * 1024;
 const DEFAULT_MAX_RESULTS = 50;
@@ -106,6 +106,7 @@ export interface PatchPreview {
   patch: string;
   additions: number;
   deletions: number;
+  changes: NonNullable<AgentChangePreview['changes']>;
 }
 
 export function isSensitiveWorkspacePath(relativePath: string): boolean {
@@ -171,6 +172,7 @@ export interface WorkspaceGuardOptions {
 }
 
 export interface WorkspaceWalkOptions {
+  rootPath?: string;
   maxDepth?: number;
   maxEntries?: number;
   timeoutMs?: number;
@@ -293,6 +295,8 @@ export class WorkspaceGuard {
     const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? 3000));
     const clock = options.now ?? (() => Date.now());
     const startedAt = clock();
+    const walkRoot = this.resolve(options.rootPath ?? '.');
+    if (!existsSync(walkRoot) || !statSync(walkRoot).isDirectory()) throw new Error('扫描目标不是目录');
     const files: WorkspaceWalkFile[] = [];
     const warnings: string[] = [];
     const ignoredDirectories = new Set(['.git', 'node_modules', 'out', 'dist', 'build', 'coverage', '.cache', 'tmp', 'temp']);
@@ -337,7 +341,7 @@ export class WorkspaceGuard {
           safeChild = this.resolve(relativePath);
         } catch {
           partial = true;
-          warn(`已跳过不受授权范围的路径：${relativePath}`);
+          warn('已跳过不受授权范围的路径');
           continue;
         }
         let stat;
@@ -361,7 +365,7 @@ export class WorkspaceGuard {
       }
     };
 
-    visit(this.root, 0);
+    visit(walkRoot, 0);
     return { files, partial, warnings };
   }
 
@@ -372,7 +376,7 @@ export class WorkspaceGuard {
       applyPatchText(this.readText(file.path), file.hunks);
       return file.path.replaceAll('\\', '/');
     });
-    return { files, summary: `将更新 ${files.length} 个文件：${files.join('、')}`, plan: patch, patch, ...patchCounts(patch) };
+    return { files, summary: `将更新 ${files.length} 个文件：${files.join('、')}`, plan: patch, patch, ...patchCounts(patch), changes: files.map((path) => ({ path, operation: 'update' as const })) };
   }
 
   previewFileChanges(input: unknown): PatchPreview {
@@ -398,7 +402,8 @@ export class WorkspaceGuard {
       plan: JSON.stringify(changes),
       patch: sections.join('\n'),
       additions,
-      deletions
+      deletions,
+      changes: changes.map((change) => ({ path: change.path.replaceAll('\\', '/'), operation: change.type }))
     };
   }
 

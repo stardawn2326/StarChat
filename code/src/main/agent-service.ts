@@ -21,7 +21,8 @@ import { WorkspaceLockManager } from './workspace-lock-manager';
 import type { AgentTaskMetrics } from '../shared/agent-metrics';
 import { cloneAgentTaskMetrics, EMPTY_AGENT_TASK_METRICS, incrementAgentTaskMetrics } from '../shared/agent-metrics';
 import { taskContextStatusFromAgentStatus, type TaskContext } from '../shared/task-context';
-import { RepoMapBuilder } from './repo-map';
+import { buildRepoContextSummary, RepoMapBuilder, toTaskRepoSummary } from './repo-map';
+import type { RepoMap } from '../shared/repo-map';
 import { TaskContextStore, type TaskContextPatch } from './task-context-store';
 
 function redact(text: string): string {
@@ -82,7 +83,7 @@ function active(status: AgentTaskStatus): boolean {
 
 function metricFieldForTool(toolName: string): keyof AgentTaskMetrics | null {
   if (toolName === 'read_file') return 'readFileCalls';
-  if (toolName === 'search_text') return 'searchCalls';
+  if (toolName === 'search_text' || toolName === 'workspace_search') return 'searchCalls';
   if (toolName === 'apply_patch' || toolName === 'apply_file_changes') return 'writeCalls';
   if (toolName === 'run_verification') return 'verificationRuns';
   return null;
@@ -123,16 +124,24 @@ export class AgentService {
     });
   }
 
-  private initializeTaskContext(task: AgentTask, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): void {
+  private workspaceIdFor(execution: Pick<SessionExecutionContext, 'workspaceRoot'> & Partial<Pick<SessionExecutionContext, 'workspaceId'>>): string {
+    return typeof execution.workspaceId === 'string' && execution.workspaceId.trim() ? execution.workspaceId : execution.workspaceRoot;
+  }
+
+  private buildRepoMap(task: AgentTask, execution: Pick<SessionExecutionContext, 'workspaceRoot'> & Partial<Pick<SessionExecutionContext, 'workspaceId'>>, context: AgentServiceContext): RepoMap | undefined {
+    try {
+      return this.repoMapBuilder.build(this.workspaceIdFor(execution), execution.workspaceRoot, {
+        deniedRoots: context.live2dPath ? [context.live2dPath] : []
+      });
+    } catch {
+      return undefined;
+    }
+  }
+
+  private initializeTaskContext(task: AgentTask, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>, repoMap?: RepoMap): void {
     const store = this.options.taskContextStore;
     if (!store) return;
-    const workspaceId = typeof execution.workspaceId === 'string' && execution.workspaceId.trim() ? execution.workspaceId : execution.workspaceRoot;
-    let repoMap;
-    try {
-      repoMap = this.repoMapBuilder.build(workspaceId, execution.workspaceRoot);
-    } catch {
-      repoMap = undefined;
-    }
+    const workspaceId = this.workspaceIdFor(execution);
     try {
       store.create({
         taskId: task.id,
@@ -145,7 +154,7 @@ export class AgentService {
         verification: [],
         metrics: { ...EMPTY_AGENT_TASK_METRICS },
         status: taskContextStatusFromAgentStatus(task.status),
-        ...(repoMap ? { repoMap } : {}),
+        ...(repoMap ? { repoMap: toTaskRepoSummary(repoMap) } : {}),
         createdAt: task.createdAt,
         updatedAt: task.updatedAt
       });
@@ -283,12 +292,13 @@ export class AgentService {
     task.steps[0].taskId = task.id;
     this.options.store.save(task);
     this.emit({ type: 'task', task, taskId: task.id, timestamp: this.now() });
-    this.initializeTaskContext(task, execution);
-    void this.execute(task, context, execution);
+    const repoMap = this.buildRepoMap(task, execution, context);
+    this.initializeTaskContext(task, execution, repoMap);
+    void this.execute(task, context, execution, repoMap);
     return { taskId: task.id, route };
   }
 
-  private async execute(task: AgentTask, context: AgentServiceContext, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): Promise<void> {
+  private async execute(task: AgentTask, context: AgentServiceContext, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>, repoMap?: RepoMap): Promise<void> {
     const controller = new AbortController();
     let runtime: AgentRuntime | null = null;
     const trust = execution.trust ?? 'untrusted';
@@ -312,14 +322,21 @@ export class AgentService {
         maxSteps: 8,
         overallTimeoutMs: 10 * 60_000,
         toolTimeoutMs: 30_000,
-        onTool: (event) => this.recordTool(task, event)
+        onTool: (event) => this.recordTool(task, event),
+        onContextCompaction: () => {
+          const current = this.live.get(task.id);
+          if (!current) return;
+          current.metrics = incrementAgentTaskMetrics(current.metrics, 'contextCompactions');
+          this.updateTaskContext(task.id, { metrics: cloneAgentTaskMetrics(current.metrics) });
+        }
       });
       this.live.set(task.id, { runtime, controller, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust, metrics: { ...EMPTY_AGENT_TASK_METRICS }, countedInvocations: new Set() });
       task.status = 'running';
       task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: 'StarChat 已接手，正在规划后台步骤。', createdAt: this.now() });
       task.currentStep = 1;
       this.save(task);
-      const result = await runtime.run({ taskId: task.id, message: task.message, signal: controller.signal, route: task.route });
+      const repositoryContext = repoMap ? buildRepoContextSummary(repoMap) : undefined;
+      const result = await runtime.run({ taskId: task.id, message: task.message, signal: controller.signal, route: task.route, ...(repositoryContext ? { repositoryContext } : {}) });
       await this.finishRuntime(task, result);
     } catch (error) {
       this.setStatus(task, 'failed', error instanceof Error ? error.message : 'Agent 执行失败');
@@ -346,7 +363,9 @@ export class AgentService {
       this.updateTaskContext(task.id, {
         status: 'waiting-approval',
         pendingApproval: { summary: redact(task.approval.plan).slice(0, 4000), createdAt: this.now() },
-        pendingChanges: task.approval.preview?.files.map((path, index) => ({ id: `${task.id}:change:${index}`, operation: 'update' as const, path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() })) ?? []
+        pendingChanges: task.approval.preview?.changes?.map((change, index) => ({ id: `${task.id}:change:${index}`, operation: change.operation, path: change.path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() }))
+          ?? task.approval.preview?.files.map((path, index) => ({ id: `${task.id}:change:${index}`, operation: 'update' as const, path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() }))
+          ?? []
       });
       return;
     }
