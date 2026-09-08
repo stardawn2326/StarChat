@@ -174,6 +174,7 @@ export interface WorkspaceWalkOptions {
   maxDepth?: number;
   maxEntries?: number;
   timeoutMs?: number;
+  now?: () => number;
 }
 
 export interface WorkspaceWalkFile {
@@ -290,7 +291,8 @@ export class WorkspaceGuard {
     const maxDepth = Math.max(0, Math.floor(options.maxDepth ?? 8));
     const maxEntries = Math.max(1, Math.floor(options.maxEntries ?? 5000));
     const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? 3000));
-    const startedAt = Date.now();
+    const clock = options.now ?? (() => Date.now());
+    const startedAt = clock();
     const files: WorkspaceWalkFile[] = [];
     const warnings: string[] = [];
     const ignoredDirectories = new Set(['.git', 'node_modules', 'out', 'dist', 'build', 'coverage', '.cache', 'tmp', 'temp']);
@@ -301,7 +303,7 @@ export class WorkspaceGuard {
       if (!warnings.includes(message) && warnings.length < 20) warnings.push(message);
     };
     const stopIfLimited = (): boolean => {
-      if (Date.now() - startedAt >= timeoutMs) {
+      if (clock() - startedAt >= timeoutMs) {
         partial = true;
         warn(`扫描达到 ${timeoutMs}ms 时间上限`);
         return true;

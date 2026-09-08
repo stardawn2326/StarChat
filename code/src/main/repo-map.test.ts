@@ -43,6 +43,38 @@ describe('repo map builder', () => {
     expect(map.limits).toMatchObject({ maxDepth: 1, maxEntries: 2 });
   });
 
+  it('recognizes monorepo-style source and test roots without following generated dependencies', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-repo-map-mono-'));
+    mkdirSync(join(root, 'packages', 'app', 'src'), { recursive: true });
+    mkdirSync(join(root, 'packages', 'app', 'tests'), { recursive: true });
+    writeFileSync(join(root, 'pnpm-workspace.yaml'), 'packages:\n  - packages/*\n', 'utf8');
+    writeFileSync(join(root, 'packages', 'app', 'package.json'), JSON.stringify({ dependencies: { react: '^18.0.0' } }), 'utf8');
+    writeFileSync(join(root, 'packages', 'app', 'src', 'index.ts'), 'export {}\n', 'utf8');
+    writeFileSync(join(root, 'packages', 'app', 'tests', 'index.test.ts'), 'test("ok", () => {})\n', 'utf8');
+    const map = new RepoMapBuilder().build('workspace-mono', root);
+    expect(map.packageManager).toBe('pnpm');
+    expect(map.sourceRoots).toContain('packages/app/src');
+    expect(map.testRoots).toContain('packages/app/tests');
+    expect(map.importantFiles.map((file) => file.path)).toContain('packages/app/package.json');
+  });
+
+  it('represents an existing project with no recognized manifest as unknown but available', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-repo-map-unknown-'));
+    writeFileSync(join(root, 'notes.txt'), 'plain notes\n', 'utf8');
+    const map = new RepoMapBuilder().build('workspace-unknown', root);
+    expect(map.projectType).toBe('unknown');
+    expect(map.unavailable).toBeUndefined();
+    expect(map.partial).toBeUndefined();
+  });
+
+  it('returns a partial result when the time budget expires before traversal', () => {
+    const root = fixture();
+    let tick = 0;
+    const map = new RepoMapBuilder().build('workspace-timeout', root, { timeoutMs: 1, now: () => (tick++ === 0 ? 0 : 2) });
+    expect(map.partial).toBe(true);
+    expect(map.warnings).toEqual(expect.arrayContaining([expect.stringContaining('时间上限')]));
+  });
+
   it('caches by workspace and canonical project root, with explicit refresh and clear support', () => {
     const root = fixture();
     let timestamp = 10;
