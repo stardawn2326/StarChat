@@ -18,7 +18,6 @@ import { existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DEFAULT_ROLE_PACKAGE, isBuiltinRoleId } from '../shared/default-role';
-import { applyLive2DAdapterOverride } from '../shared/live2d';
 import type {
   AgentApproveRequest,
   AgentEvent,
@@ -69,6 +68,8 @@ import { SessionStore } from './session-store';
 import { MemoryStore } from './memory-store';
 import { MemoryService } from './memory-service';
 import { migrateLegacyCompanionMemories } from './memory-migration';
+import { migrateMemorySchema } from './memory-schema-migration';
+import { Live2DAdapterStore } from './live2d-adapter-store';
 import { personalMemoryScope } from '../shared/memory-scope';
 import type { SessionRenameRequest, SessionSnapshot, WorkspaceTrustState } from '../shared/session';
 import { createOpenAICompatibleAgentModel, classifyAmbiguousWithModel } from './agent-model';
@@ -90,6 +91,7 @@ let tray: Tray | null = null;
 let settingsStore: SettingsStore;
 let voiceProfileStore: VoiceProfileStore;
 let live2dRegistry: Live2DModelRegistry;
+let live2dAdapterStore: Live2DAdapterStore;
 let agentStore: AgentStore;
 let agentService: AgentService;
 let sessionStore: SessionStore;
@@ -130,7 +132,7 @@ interface PendingLive2DSwitch {
   token: string;
   previousPath: string | null;
   previousModelId: string | null;
-  previousAdapter: ReturnType<SettingsStore['readLive2DAdapter']>;
+  previousAdapter: ReturnType<Live2DAdapterStore['read']>;
   candidate: Live2DModelInspection;
   resolve: (state: PublicAppState) => void;
   reject: (error: Error) => void;
@@ -326,6 +328,13 @@ function getLive2DRegistry(): Live2DModelRegistry {
   return live2dRegistry;
 }
 
+function getLive2DAdapterStore(): Live2DAdapterStore {
+  if (!live2dAdapterStore) {
+    throw new Error('Live2D 适配器存储尚未初始化');
+  }
+  return live2dAdapterStore;
+}
+
 function getPublicState(): PublicAppState {
   const store = getStore();
   const settings = store.readSettings();
@@ -334,10 +343,13 @@ function getPublicState(): PublicAppState {
   if (legacyRecord && registry.current()?.id !== legacyRecord.id) {
     registry.setCurrentModel(legacyRecord.id);
   }
+  const adapterStore = getLive2DAdapterStore();
+  adapterStore.migrateLegacy(join(app.getPath('userData'), 'live2d-adapter.json'), registry.list());
   const inspectedLive2d = inspectExternalLive2DModel(settings.live2dModelPath);
-  const savedAdapter = store.readLive2DAdapter();
-  const live2d = inspectedLive2d.adapter && savedAdapter?.overrides
-    ? { ...inspectedLive2d, adapter: applyLive2DAdapterOverride(inspectedLive2d.adapter, savedAdapter.overrides) }
+  const currentRecord = settings.live2dModelPath ? registry.findByEntryPath(settings.live2dModelPath) : null;
+  const resolvedAdapter = currentRecord ? adapterStore.resolve(currentRecord, inspectedLive2d.adapter) : inspectedLive2d.adapter;
+  const live2d = resolvedAdapter && resolvedAdapter !== inspectedLive2d.adapter
+    ? { ...inspectedLive2d, adapter: resolvedAdapter }
     : inspectedLive2d;
   const roles = store.readRolePackages();
   const role = roles.find((item) => item.id === settings.activeRoleId) ?? roles[0] ?? DEFAULT_ROLE_PACKAGE;
@@ -917,7 +929,7 @@ function settlePendingLive2DSwitchFailure(notice: Live2DRuntimeFailure): void {
     pending.candidate.record.id,
     String(notice.stage) + '：' + String(notice.message)
   );
-  store.save({ live2dModelPath: pending.previousPath }, undefined, false, pending.previousAdapter);
+  store.save({ live2dModelPath: pending.previousPath });
   getLive2DRegistry().setCurrentModel(pending.previousModelId);
   cubismRuntimeSession.setCurrentModel(pending.previousPath);
   sendStateChanged();
@@ -927,7 +939,7 @@ function settlePendingLive2DSwitchFailure(notice: Live2DRuntimeFailure): void {
 function waitForLive2DSwitch(
   previousSettings: ReturnType<SettingsStore['readSettings']>,
   candidate: Live2DModelInspection,
-  previousAdapter: ReturnType<SettingsStore['readLive2DAdapter']>
+  previousAdapter: ReturnType<Live2DAdapterStore['read']>
 ): Promise<PublicAppState> {
   if (pendingLive2DSwitch) throw new Error('已有一个外部模型切换正在进行');
   const previousModelId = getLive2DRegistry().current()?.id ?? null;
@@ -1563,6 +1575,29 @@ function registerIpc(): void {
     sendStateChanged();
     return getPublicState();
   });
+  ipcMain.handle('memory:review', (event, request: { id?: unknown; action?: unknown }): PublicAppState => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || typeof request.id !== 'string' || !request.id.trim() || (request.action !== 'confirm' && request.action !== 'delete')) {
+      throw new Error('记忆审核请求无效');
+    }
+    const role = getStore().readActiveRolePackage();
+    if (request.action === 'confirm') memoryService?.reviewProfile(role.id, request.id.trim(), 'active');
+    else memoryService?.deleteProfile(role.id, request.id.trim());
+    sendStateChanged();
+    return getPublicState();
+  });
+  ipcMain.handle('memory:review-all', (event, request: { action?: unknown }): PublicAppState => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (!request || (request.action !== 'confirm' && request.action !== 'delete')) throw new Error('记忆批量审核请求无效');
+    const role = getStore().readActiveRolePackage();
+    const pending = memoryService?.listPendingProfile(role.id) ?? [];
+    for (const memory of pending) {
+      if (request.action === 'confirm') memoryService?.reviewProfile(role.id, memory.id, 'active');
+      else memoryService?.deleteProfile(role.id, memory.id);
+    }
+    sendStateChanged();
+    return getPublicState();
+  });
   ipcMain.handle('settings:save', async (event, request: SaveSettingsRequest) => {
     requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
     const store = getStore();
@@ -1595,8 +1630,9 @@ function registerIpc(): void {
     const activeRoleId = getStore().readRolePackages().some((role) => role.id === candidate.activeRoleId)
       ? candidate.activeRoleId
       : DEFAULT_ROLE_PACKAGE.id;
-    const previousAdapter = store.readLive2DAdapter();
-    const adapterToSave = modelPathChanged ? live2d.adapter : request.live2dAdapter ?? live2d.adapter;
+    const adapterStore = getLive2DAdapterStore();
+    const previousModel = previousSettings.live2dModelPath ? getLive2DRegistry().findByEntryPath(previousSettings.live2dModelPath) : null;
+    const previousAdapter = previousModel ? adapterStore.read(previousModel.id) : null;
     const settingsToSave = {
       ...request.settings,
       ...(modelPathChanged ? { live2dModelPath: candidate.live2dModelPath } : {}),
@@ -1605,9 +1641,13 @@ function registerIpc(): void {
     const next = store.save(
       settingsToSave,
       request.apiKey,
-      request.clearApiKey,
-      adapterToSave
+      request.clearApiKey
     );
+    const targetModel = candidateInspection?.record
+      ?? (candidate.live2dModelPath ? getLive2DRegistry().findByEntryPath(candidate.live2dModelPath) : null);
+    if (targetModel && request.live2dAdapter?.overrides) {
+      adapterStore.save(targetModel.id, request.live2dAdapter.overrides);
+    }
     if (next.petLocked && petModelEditMode) {
       setPetModelEditMode(false);
     }
@@ -1767,9 +1807,10 @@ function registerIpc(): void {
     const record = getLive2DRegistry().list().find((candidate) => candidate.id === request?.id);
     if (!record) throw new Error('模型记录不存在');
     if (getStore().readSettings().live2dModelPath === record.entryPath) {
-      getStore().save({ live2dModelPath: null }, undefined, false, null);
+      getStore().save({ live2dModelPath: null });
       getLive2DRegistry().setCurrentModel(null);
     }
+    getLive2DAdapterStore().remove(record.id);
     getLive2DRegistry().removeModel(record.id);
     sendStateChanged();
     return getPublicState();
@@ -2065,10 +2106,14 @@ if (singleInstanceLock) {
     settingsStore = new SettingsStore(userDataDir, createSafeStorageAdapter(safeStorage));
     voiceProfileStore = new VoiceProfileStore(userDataDir);
     live2dRegistry = new Live2DModelRegistry(userDataDir);
+    live2dAdapterStore = new Live2DAdapterStore(userDataDir);
     agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
-    const memoryStore = new MemoryStore(join(userDataDir, 'memory.json'));
+    const memoryPath = join(userDataDir, 'memory.json');
+    const schemaMigration = migrateMemorySchema(memoryPath, (sessionId) => sessionStore.sessionContext(sessionId));
+    if (schemaMigration.migrated) console.info(`记忆 schema ${schemaMigration.fromVersion} → 3，迁移 ${schemaMigration.migratedProfileCount} 条资料、${schemaMigration.migratedEpisodicCount} 条事件、${schemaMigration.migratedSummaryCount} 条摘要，隔离 ${schemaMigration.quarantinedCount} 条`);
+    const memoryStore = new MemoryStore(memoryPath);
     const migratedMemoryCount = migrateLegacyCompanionMemories(settingsStore, memoryStore);
     if (migratedMemoryCount > 0) console.info(`已迁移 ${migratedMemoryCount} 条旧版伴侣记忆`);
     memoryService = new MemoryService({

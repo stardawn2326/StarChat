@@ -5,6 +5,8 @@ import {
   sanitizeConversationSummary,
   sanitizeEpisodicMemory,
   sanitizeProfileMemory,
+  type MemoryReviewState,
+  type MemoryQuarantineItem,
   type ConversationSummary,
   type EpisodicMemory,
   type MemorySnapshot,
@@ -17,6 +19,7 @@ interface PersistedMemorySnapshot {
   profile?: unknown[];
   episodic?: unknown[];
   summaries?: unknown[];
+  quarantine?: unknown[];
 }
 
 function clone<T>(value: T): T {
@@ -28,6 +31,7 @@ export class MemoryStore {
   private profile: ProfileMemory[] = [];
   private episodic: EpisodicMemory[] = [];
   private summaries: ConversationSummary[] = [];
+  private quarantine: MemoryQuarantineItem[] = [];
 
   constructor(filePath: string) {
     this.filePath = filePath;
@@ -40,12 +44,19 @@ export class MemoryStore {
       version: MEMORY_SCHEMA_VERSION,
       profile: this.profile,
       episodic: this.episodic,
-      summaries: this.summaries
+      summaries: this.summaries,
+      quarantine: this.quarantine
     });
   }
 
-  listProfile(roleId: string): ProfileMemory[] {
-    return clone(this.profile.filter((memory) => memory.roleId === roleId).sort((a, b) => b.updatedAt - a.updatedAt));
+  listProfile(roleId: string, reviewState?: MemoryReviewState): ProfileMemory[] {
+    return clone(this.profile
+      .filter((memory) => memory.roleId === roleId && (!reviewState || memory.reviewState === reviewState))
+      .sort((a, b) => b.updatedAt - a.updatedAt));
+  }
+
+  listPendingProfile(roleId: string): ProfileMemory[] {
+    return this.listProfile(roleId, 'needs-review');
   }
 
   saveProfile(input: unknown): ProfileMemory {
@@ -55,6 +66,8 @@ export class MemoryStore {
     if (duplicate) {
       duplicate.confidence = Math.max(duplicate.confidence, memory.confidence);
       duplicate.updatedAt = memory.updatedAt;
+      duplicate.provenance = memory.provenance;
+      if (memory.reviewState === 'needs-review') duplicate.reviewState = 'needs-review';
       this.flush();
       return clone(duplicate);
     }
@@ -68,6 +81,15 @@ export class MemoryStore {
     this.flush();
   }
 
+  reviewProfile(roleId: string, id: string, reviewState: MemoryReviewState): ProfileMemory | null {
+    const memory = this.profile.find((item) => item.roleId === roleId && item.id === id);
+    if (!memory) return null;
+    memory.reviewState = reviewState;
+    memory.updatedAt = Date.now();
+    this.flush();
+    return clone(memory);
+  }
+
   listEpisodic(roleId: string, scope?: MemoryScope): EpisodicMemory[] {
     return clone(this.episodic
       .filter((memory) => memory.roleId === roleId && (!scope || sameMemoryContext(memory.scope, scope)))
@@ -77,7 +99,10 @@ export class MemoryStore {
   saveEpisodic(input: unknown): EpisodicMemory {
     const memory = sanitizeEpisodicMemory(input);
     if (!memory || memory.importance < 0.6) throw new Error('事件记忆未达到重要性阈值或包含敏感信息');
-    const duplicate = this.episodic.find((item) => item.roleId === memory.roleId && item.sessionId === memory.sessionId && item.content === memory.content);
+    const duplicate = this.episodic.find((item) => item.roleId === memory.roleId
+      && item.sessionId === memory.sessionId
+      && sameMemoryContext(item.scope, memory.scope)
+      && item.content === memory.content);
     if (duplicate) {
       duplicate.importance = Math.max(duplicate.importance, memory.importance);
       duplicate.occurredAt = Math.max(duplicate.occurredAt, memory.occurredAt);
@@ -112,6 +137,10 @@ export class MemoryStore {
     this.profile = this.profile.filter((memory) => memory.roleId !== roleId);
     this.episodic = this.episodic.filter((memory) => memory.roleId !== roleId);
     this.summaries = this.summaries.filter((summary) => summary.roleId !== roleId);
+    this.quarantine = this.quarantine.filter((item) => {
+      if (!item.payload || typeof item.payload !== 'object') return true;
+      return (item.payload as { roleId?: unknown }).roleId !== roleId;
+    });
     this.flush();
   }
 
@@ -119,20 +148,38 @@ export class MemoryStore {
     if (!existsSync(this.filePath)) return;
     try {
       const parsed = JSON.parse(readFileSync(this.filePath, 'utf8')) as PersistedMemorySnapshot;
-      if (parsed.version !== 1 && parsed.version !== MEMORY_SCHEMA_VERSION) return;
+      if (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== MEMORY_SCHEMA_VERSION) return;
+      const isCurrentSchema = parsed.version === MEMORY_SCHEMA_VERSION;
       this.profile = Array.isArray(parsed.profile)
-        ? parsed.profile.map((item) => sanitizeProfileMemory(item)).filter((item): item is ProfileMemory => Boolean(item)).slice(-200)
+        ? parsed.profile.map((item) => {
+            const memory = sanitizeProfileMemory(item);
+            return memory && !isCurrentSchema
+              ? {
+                  ...memory,
+                  provenance: { contextType: 'personal' as const, source: 'legacy' as const },
+                  reviewState: 'needs-review' as const
+                }
+              : memory;
+          }).filter((item): item is ProfileMemory => Boolean(item)).slice(-200)
         : [];
-      this.episodic = Array.isArray(parsed.episodic)
+      this.episodic = isCurrentSchema && Array.isArray(parsed.episodic)
         ? parsed.episodic.map((item) => sanitizeEpisodicMemory(item)).filter((item): item is EpisodicMemory => Boolean(item && item.importance >= 0.6)).slice(-400)
         : [];
-      this.summaries = Array.isArray(parsed.summaries)
+      this.summaries = isCurrentSchema && Array.isArray(parsed.summaries)
         ? parsed.summaries.map((item) => sanitizeConversationSummary(item)).filter((item): item is ConversationSummary => Boolean(item)).slice(-200)
+        : [];
+      this.quarantine = isCurrentSchema && Array.isArray(parsed.quarantine)
+        ? parsed.quarantine.filter((item): item is MemoryQuarantineItem => Boolean(item && typeof item === 'object'
+          && typeof (item as MemoryQuarantineItem).id === 'string'
+          && ((item as MemoryQuarantineItem).kind === 'episodic' || (item as MemoryQuarantineItem).kind === 'summary')
+          && ((item as MemoryQuarantineItem).reason === 'unknown-session' || (item as MemoryQuarantineItem).reason === 'invalid-legacy-record')
+          && Number.isFinite((item as MemoryQuarantineItem).quarantinedAt))).slice(-400)
         : [];
     } catch {
       this.profile = [];
       this.episodic = [];
       this.summaries = [];
+      this.quarantine = [];
     }
   }
 

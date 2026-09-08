@@ -72,6 +72,13 @@ function zip(entries: Array<{ name: string; data: Buffer; deflate?: boolean }>):
   return Buffer.concat([...local, centralBody, end]);
 }
 
+function mutateFirstCentralEntry(archive: Buffer, mutate: (archive: Buffer, centralOffset: number) => void): Buffer {
+  const copy = Buffer.from(archive);
+  const centralOffset = copy.readUInt32LE(copy.length - 6);
+  mutate(copy, centralOffset);
+  return copy;
+}
+
 function writeJson(path: string, value: unknown): void {
   writeFileSync(path, JSON.stringify(value, null, 2), 'utf8');
 }
@@ -145,6 +152,25 @@ describe('external Live2D model registry', () => {
     const registry = new Live2DModelRegistry(userData);
 
     expect(() => registry.importSelection(archive)).toThrow(/路径|ZIP|安全/);
+  });
+
+  it('rejects encrypted, symlink, CRC-corrupt, and oversized ZIP entries', () => {
+    const source = createModelRoot();
+    const userData = mkdtempSync(join(tmpdir(), 'starchat-user-data-'));
+    roots.push(userData);
+    const base = zip(modelEntries(source));
+    const cases = [
+      { name: 'encrypted.zip', archive: mutateFirstCentralEntry(base, (copy, offset) => copy.writeUInt16LE(1, offset + 8)), message: /加密/ },
+      { name: 'symlink.zip', archive: mutateFirstCentralEntry(base, (copy, offset) => copy.writeUInt32LE(0xa0000000, offset + 38)), message: /符号链接/ },
+      { name: 'crc.zip', archive: mutateFirstCentralEntry(base, (copy, offset) => copy.writeUInt32LE((copy.readUInt32LE(offset + 16) ^ 0xffffffff) >>> 0, offset + 16)), message: /校验/ },
+      { name: 'oversized.zip', archive: mutateFirstCentralEntry(base, (copy, offset) => copy.writeUInt32LE(0x08000001, offset + 24)), message: /大小/ }
+    ];
+    for (const item of cases) {
+      const archive = join(source, item.name);
+      writeFileSync(archive, item.archive);
+      const registry = new Live2DModelRegistry(join(userData, item.name));
+      expect(() => registry.importSelection(archive)).toThrow(item.message);
+    }
   });
 
   it('persists current selection, supports recovery after source loss, and removes records without deleting external folders', () => {

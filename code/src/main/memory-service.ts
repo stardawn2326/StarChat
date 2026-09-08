@@ -7,6 +7,8 @@ import {
   type ConversationSummary,
   type EpisodicMemory,
   type MemoryQuery,
+  type MemoryProvenance,
+  type MemoryReviewState,
   type MemoryRetrievalResult,
   type ProfileMemory,
   type ProfileMemoryKind
@@ -34,6 +36,7 @@ export interface ProfileMemoryCandidate {
   content: string;
   confidence?: number;
   source?: 'user_explicit' | 'assistant_inferred' | 'manual';
+  provenance?: MemoryProvenance;
 }
 
 export interface MemorySessionContext {
@@ -110,6 +113,7 @@ export class MemoryService {
       id: 'id' in candidate ? candidate.id : createMemoryId('profile', this.now()),
       confidence: candidate.confidence ?? 0.7,
       source: candidate.source ?? 'manual',
+      provenance: candidate.provenance ?? { contextType: 'personal', source: 'manual' },
       createdAt: 'createdAt' in candidate ? candidate.createdAt : this.now(),
       updatedAt: this.now()
     });
@@ -176,7 +180,15 @@ export class MemoryService {
     const canWritePersonalProfile = context.source === 'companion' && context.scope.contextType === 'personal';
     if (canWritePersonalProfile) for (const candidate of this.extractProfileCandidates(context.messages, context.roleId)) {
       try {
-        this.rememberProfile(candidate);
+      this.rememberProfile({
+        ...candidate,
+        provenance: {
+          contextType: context.scope.contextType,
+          ...(context.scope.workspaceId ? { workspaceId: context.scope.workspaceId } : {}),
+          sessionId: context.sessionId,
+          source: context.source
+        }
+      });
       } catch {
         // Sensitive candidates are deliberately rejected and never persisted.
       }
@@ -192,7 +204,7 @@ export class MemoryService {
     const normalizedQuery = compact(query.query ?? '', 500);
     const scope = normalizeMemoryScope(query.scope ?? { contextType: 'personal', sessionId: query.sessionId });
     const items: MemoryRetrievalResult['items'] = [
-      ...(scope.contextType === 'personal' ? this.options.store.listProfile(query.roleId).map((memory) => ({ kind: 'profile' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.confidence, memory.updatedAt, now), memory })) : []),
+      ...(scope.contextType === 'personal' ? this.options.store.listProfile(query.roleId, 'active').map((memory) => ({ kind: 'profile' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.confidence, memory.updatedAt, now), memory })) : []),
       ...this.options.store.listEpisodic(query.roleId, scope).map((memory) => ({ kind: 'episodic' as const, score: memoryRelevanceScore(normalizedQuery, memory.content, memory.importance, memory.occurredAt, now), memory })),
       ...this.options.store.listSummaries(query.roleId, scope).map((memory) => ({ kind: 'summary' as const, score: memoryRelevanceScore(normalizedQuery, memory.summary, 0.55, memory.updatedAt, now), memory }))
     ].sort((left, right) => right.score - left.score).slice(0, limit);
@@ -212,6 +224,14 @@ export class MemoryService {
 
   listProfile(roleId: string): ProfileMemory[] {
     return this.options.store.listProfile(roleId);
+  }
+
+  listPendingProfile(roleId: string): ProfileMemory[] {
+    return this.options.store.listPendingProfile(roleId);
+  }
+
+  reviewProfile(roleId: string, id: string, reviewState: MemoryReviewState): ProfileMemory | null {
+    return this.options.store.reviewProfile(roleId, id, reviewState);
   }
 
   deleteProfile(roleId: string, id: string): void {

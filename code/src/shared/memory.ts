@@ -1,9 +1,26 @@
 import { normalizeMemoryScope, type MemoryScope } from './memory-scope';
 
-export const MEMORY_SCHEMA_VERSION = 2 as const;
+export const MEMORY_SCHEMA_VERSION = 3 as const;
 
 export type ProfileMemoryKind = 'name' | 'identity' | 'preference' | 'habit' | 'person' | 'project' | 'boundary' | 'relationship';
 export type MemorySource = 'user_explicit' | 'assistant_inferred' | 'manual';
+export type MemoryProvenanceSource = 'companion' | 'agent' | 'manual' | 'legacy';
+export type MemoryReviewState = 'active' | 'needs-review';
+
+export interface MemoryProvenance {
+  contextType?: 'personal' | 'workspace';
+  workspaceId?: string;
+  sessionId?: string;
+  source: MemoryProvenanceSource;
+}
+
+export interface MemoryQuarantineItem {
+  id: string;
+  kind: 'episodic' | 'summary';
+  payload: unknown;
+  reason: 'unknown-session' | 'invalid-legacy-record';
+  quarantinedAt: number;
+}
 
 export interface ProfileMemory {
   id: string;
@@ -12,6 +29,8 @@ export interface ProfileMemory {
   content: string;
   confidence: number;
   source: MemorySource;
+  provenance: MemoryProvenance;
+  reviewState: MemoryReviewState;
   createdAt: number;
   updatedAt: number;
 }
@@ -47,6 +66,7 @@ export interface MemorySnapshot {
   profile: ProfileMemory[];
   episodic: EpisodicMemory[];
   summaries: ConversationSummary[];
+  quarantine: MemoryQuarantineItem[];
 }
 
 export interface MemoryQuery {
@@ -73,6 +93,7 @@ export interface MemoryRetrievalResult {
 const SENSITIVE_MEMORY = /(?:api[\s_-]?key|access[\s_-]?token|refresh[\s_-]?token|bearer\s+|password|passwd|secret|private[\s_-]?key|cookie|authorization|身份证|银行卡|信用卡|密码|口令|私钥|sk-[a-z0-9_-]{12,})/iu;
 export const PROFILE_MEMORY_KINDS: readonly ProfileMemoryKind[] = ['name', 'identity', 'preference', 'habit', 'person', 'project', 'boundary', 'relationship'];
 const MEMORY_SOURCES: readonly MemorySource[] = ['user_explicit', 'assistant_inferred', 'manual'];
+const MEMORY_PROVENANCE_SOURCES: readonly MemoryProvenanceSource[] = ['companion', 'agent', 'manual', 'legacy'];
 
 function text(value: unknown, maximum: number): string {
   return typeof value === 'string' ? value.trim().slice(0, maximum) : '';
@@ -90,6 +111,31 @@ export function sanitizeMemoryContent(value: unknown, maximum = 500): string | n
   const content = text(value, maximum);
   if (!content || isSensitiveMemoryContent(content)) return null;
   return content;
+}
+
+export function normalizeMemoryProvenance(
+  value: unknown,
+  fallback: MemoryProvenance = { contextType: 'personal', source: 'manual' }
+): MemoryProvenance {
+  const source = value && typeof value === 'object' ? value as Partial<MemoryProvenance> : {};
+  const sourceKind = MEMORY_PROVENANCE_SOURCES.includes(source.source as MemoryProvenanceSource)
+    ? source.source as MemoryProvenanceSource
+    : fallback.source;
+  const contextType = source.contextType === 'workspace' || source.contextType === 'personal'
+    ? source.contextType
+    : fallback.contextType;
+  const workspaceId = typeof source.workspaceId === 'string' && source.workspaceId.trim()
+    ? source.workspaceId.trim().slice(0, 160)
+    : fallback.workspaceId;
+  const sessionId = typeof source.sessionId === 'string' && source.sessionId.trim()
+    ? source.sessionId.trim().slice(0, 160)
+    : fallback.sessionId;
+  return {
+    ...(contextType ? { contextType } : {}),
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    source: sourceKind
+  };
 }
 
 export function createMemoryId(prefix: string, now = Date.now()): string {
@@ -113,6 +159,8 @@ export function sanitizeProfileMemory(value: unknown, fallbackNow = Date.now()):
     content,
     confidence: Math.min(1, Math.max(0, Number.isFinite(source.confidence) ? Number(source.confidence) : 0.5)),
     source: memorySource,
+    provenance: normalizeMemoryProvenance(source.provenance),
+    reviewState: source.reviewState === 'needs-review' ? 'needs-review' : 'active',
     createdAt,
     updatedAt: timestamp(source.updatedAt, createdAt)
   };

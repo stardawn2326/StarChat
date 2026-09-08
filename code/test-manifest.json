@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "invocations": [
+    {
+      "name": "regular",
+      "exclude": [
+        "src/main/git-runner.test.ts",
+        "src/main/brand-migration.test.ts"
+      ]
+    },
+    {
+      "name": "git-runner",
+      "include": ["src/main/git-runner.test.ts"]
+    },
+    {
+      "name": "brand-migration",
+      "include": ["src/main/brand-migration.test.ts"]
+    }
+  ]
+}

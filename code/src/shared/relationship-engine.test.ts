@@ -28,7 +28,8 @@ describe('relationship engine', () => {
   it('classifies meaningful relationship cues with explicit priority', () => {
     expect(classifyRelationshipEvent('我叫星晓。')).toMatchObject({ type: 'personal_disclosure' });
     expect(classifyRelationshipEvent('不要再这样了。')).toMatchObject({ type: 'boundary' });
-    expect(classifyRelationshipEvent('对不起，我刚才说错了。')).toMatchObject({ type: 'repair' });
+    expect(classifyRelationshipEvent('没关系，我接受你的道歉。', '抱歉，我刚才说错了。')).toMatchObject({ type: 'repair' });
+    expect(classifyRelationshipEvent('你刚才说错了。', '抱歉，我会改正。')).not.toMatchObject({ type: 'repair' });
     expect(classifyRelationshipEvent('气死我了，这太糟糕。')).toMatchObject({ type: 'conflict' });
     expect(classifyRelationshipEvent('谢谢你帮忙。')).toMatchObject({ type: 'positive_interaction' });
   });

@@ -666,6 +666,24 @@ function App(): JSX.Element {
     }
   };
 
+  const reviewMemory = async (id: string, action: 'confirm' | 'delete'): Promise<void> => {
+    try {
+      const next = await window.starchat.memory.review(id, action);
+      applyState(next);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : '记忆审核失败');
+    }
+  };
+
+  const reviewAllMemories = async (action: 'confirm' | 'delete'): Promise<void> => {
+    try {
+      const next = await window.starchat.memory.reviewAll(action);
+      applyState(next);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : '批量记忆审核失败');
+    }
+  };
+
   const importRole = async (): Promise<void> => {
     try {
       const next = await window.starchat.roles.import();
@@ -691,7 +709,7 @@ function App(): JSX.Element {
       ? <AgentConsole key={conversationKey} state={appState} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onModeChange={(mode) => onSettingsChange({ assistantMode: mode })} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onRequestWorkspace={() => void chooseWorkspace()} onShowPet={() => { setWorkbenchCharacterVisible(false); window.starchat.app.showPet(); }} characterVisible={workbenchCharacterVisible} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={workspaceAvailable} />
       : page === 'settings'
       ? <SettingsHome state={appState} presentation={presentationDraft} />
-      : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onRequestWorkspace={() => void chooseWorkspace()} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={workspaceAvailable} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} live2dAdapterDraft={live2dAdapterDraft} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings, false, live2dAdapterDraft)} onAdapterChange={onAdapterChange} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.starchat.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.starchat.presentation.emit(event)} onDebug={(command) => window.starchat.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings, false, live2dAdapterDraft)} onClearApiKey={() => void persistSettings(settings, true, live2dAdapterDraft)} onDeleteMemory={(id) => void deleteMemory(id)} onClearMemories={() => void clearMemories()} />;
+      : <SettingsDetailsV2 state={appState} page={page} conversationKey={conversationKey} onNewConversation={() => void startNewConversation()} onMessageSent={onMessageSent} onRequestWorkspace={() => void chooseWorkspace()} initialMessages={activeSession?.messages ?? []} sessionId={activeSession?.id ?? ''} workspaceAvailable={workspaceAvailable} settingsDraft={settings} roleDraft={roleDraft} presentationDraft={presentationDraft} live2dPreview={live2dPreview} live2dAdapterDraft={live2dAdapterDraft} debugMetrics={debugMetrics} runtimeCapabilities={runtimeCapabilities} runtimeResult={runtimeResult} displays={displays} error={error} modelViewport={modelViewport} agentTasks={visibleAgentTasks} agentEvent={activeAgentEvent} onBack={backToSettingsHome} onResetPage={resetPage} onSettingsChange={onSettingsChange} onPresentationChange={onPresentationChange} onRoleChange={onRoleChange} onSaveRole={() => void saveRole()} onActivateRole={(id) => void activateRole(id)} onCreateBlankRole={createBlankRole} onCloneRole={cloneRole} onDeleteRole={() => void deleteRole()} onImportRole={() => void importRole()} onExportRole={() => void exportRole()} onChooseModel={(kind) => void chooseModel(kind)} onInspectModel={() => void inspectModel()} onSaveSettings={() => void persistSettings(settings, false, live2dAdapterDraft)} onAdapterChange={onAdapterChange} onSwitchModel={(id) => void switchModel(id)} onRemoveModel={(id) => void removeModel(id)} onViewportChange={onViewportChange} onResetViewport={() => onViewportChange(DEFAULT_MODEL_VIEWPORT)} onCenterViewport={() => onViewportChange({ modelOffsetX: 0, modelOffsetY: 0 })} onFitViewport={() => window.starchat.debug.command({ type: 'fit-frame' })} onSendPresentation={(event) => window.starchat.presentation.emit(event)} onDebug={(command) => window.starchat.debug.command(command)} onRuntimeCommand={(command) => void runRuntimeCommand(command)} apiKeyDraft={apiKeyDraft} onApiKeyChange={setApiKeyDraft} onSaveService={() => void persistSettings(settings, false, live2dAdapterDraft)} onClearApiKey={() => void persistSettings(settings, true, live2dAdapterDraft)} onDeleteMemory={(id) => void deleteMemory(id)} onClearMemories={() => void clearMemories()} onReviewMemory={(id, action) => void reviewMemory(id, action)} onReviewAllMemories={(action) => void reviewAllMemories(action)} />;
 
      return <main className="app-shell settings-center-shell">
        <AgentWorkbench

@@ -212,7 +212,9 @@ const bridge = {
   memory: {
     list: (): Promise<import('../shared/memory').ProfileMemory[]> => ipcRenderer.invoke('memory:list'),
     delete: (id: string): Promise<PublicAppState> => ipcRenderer.invoke('memory:delete', { id }),
-    clear: (): Promise<PublicAppState> => ipcRenderer.invoke('memory:clear')
+    clear: (): Promise<PublicAppState> => ipcRenderer.invoke('memory:clear'),
+    review: (id: string, action: 'confirm' | 'delete'): Promise<PublicAppState> => ipcRenderer.invoke('memory:review', { id, action }),
+    reviewAll: (action: 'confirm' | 'delete'): Promise<PublicAppState> => ipcRenderer.invoke('memory:review-all', { action })
   },
   pet: {
     show: (): void => ipcRenderer.send('pet:show'),

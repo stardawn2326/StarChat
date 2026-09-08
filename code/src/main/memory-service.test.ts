@@ -85,4 +85,22 @@ describe('companion memory service', () => {
     expect(personal.profile).toHaveLength(0);
     expect(workspace.summaries[0]?.scope).toMatchObject({ contextType: 'workspace', workspaceId: 'workspace-a', sessionId: 'workspace-session' });
   });
+
+  it('excludes legacy review-required profiles until explicitly confirmed', () => {
+    const { store, service } = createMemoryTestService();
+    const memory = store.saveProfile({
+      roleId: 'role-a',
+      kind: 'preference',
+      content: '我喜欢低噪声界面',
+      confidence: 0.8,
+      source: 'manual',
+      provenance: { contextType: 'personal', source: 'legacy' },
+      reviewState: 'needs-review',
+      createdAt: 1,
+      updatedAt: 1
+    });
+    expect(service.retrieve({ roleId: 'role-a', query: '低噪声' }).profile).toHaveLength(0);
+    expect(service.reviewProfile('role-a', memory.id, 'active')).toMatchObject({ reviewState: 'active' });
+    expect(service.retrieve({ roleId: 'role-a', query: '低噪声' }).profile).toHaveLength(1);
+  });
 });

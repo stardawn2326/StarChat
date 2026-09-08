@@ -128,6 +128,8 @@ declare global {
         list(): Promise<import('../../shared/memory').ProfileMemory[]>;
         delete(id: string): Promise<PublicAppState>;
         clear(): Promise<PublicAppState>;
+        review(id: string, action: 'confirm' | 'delete'): Promise<PublicAppState>;
+        reviewAll(action: 'confirm' | 'delete'): Promise<PublicAppState>;
       };
       pet: {
         show(): void;

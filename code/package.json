@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
+    "verify:test-manifest": "node test-manifest.mjs",
     "verify:live2d": "vitest run src/main/live2d-verification.test.ts",
     "build": "electron-vite build",
     "package:win": "electron-vite build && electron-builder.cmd --win portable"

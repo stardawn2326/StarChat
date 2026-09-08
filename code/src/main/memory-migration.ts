@@ -1,4 +1,5 @@
 import type { ProfileMemoryKind } from '../shared/memory';
+import { PERSONAL_WORKSPACE_ID } from '../shared/session';
 import { MemoryStore } from './memory-store';
 import { SettingsStore } from './settings-store';
 
@@ -27,6 +28,8 @@ export function migrateLegacyCompanionMemories(settingsStore: SettingsStore, mem
           content: memory.content,
           confidence: 0.7,
           source: 'manual',
+          provenance: { contextType: 'personal', workspaceId: PERSONAL_WORKSPACE_ID, source: 'legacy' },
+          reviewState: 'needs-review',
           createdAt: memory.createdAt,
           updatedAt: memory.createdAt
         });

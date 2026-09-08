@@ -9,7 +9,9 @@ function combined(userMessage: string, assistantMessage = ''): string {
 export function classifyRelationshipEvent(userMessage: string, assistantMessage = ''): RelationshipEventInput {
   const text = combined(userMessage, assistantMessage);
   if (/(?:不要|别再|别这样|不希望|请停止|到此为止)/u.test(userMessage)) return { type: 'boundary' };
-  if (/(?:对不起|抱歉|我错了|原谅|接受道歉|没关系)/u.test(text)) return { type: 'repair' };
+  const assistantApology = /(?:对不起|抱歉|我错了)/u.test(assistantMessage);
+  const userAcceptance = /(?:接受道歉|没关系|原谅你|谢谢你的道歉|你说得对)/u.test(userMessage);
+  if (assistantApology && userAcceptance) return { type: 'repair' };
   if (/(?:生气|难过|失望|不满|讨厌|糟糕|错误|失败|焦虑|不安|气死|过分)/u.test(text)) return { type: 'conflict' };
   if (/(?:我(?:叫|是|喜欢|偏好|爱|习惯|通常|不喜欢|讨厌|不希望)|我的(?:朋友|家人|同事|伴侣|项目|工作|计划|目标))/u.test(userMessage)) {
     return { type: 'personal_disclosure' };
