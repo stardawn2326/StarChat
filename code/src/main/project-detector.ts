@@ -48,6 +48,7 @@ function packageData(root: string): { scripts: Record<string, string>; packageMa
 
 function packageManagerFor(root: string, packageManager: PackageManager | undefined): PackageManager {
   if (packageManager) return packageManager;
+  if (existsSync(join(root, 'pnpm-workspace.yaml'))) return 'pnpm';
   if (existsSync(join(root, 'pnpm-lock.yaml'))) return 'pnpm';
   if (existsSync(join(root, 'yarn.lock'))) return 'yarn';
   if (existsSync(join(root, 'bun.lockb')) || existsSync(join(root, 'bun.lock'))) return 'bun';

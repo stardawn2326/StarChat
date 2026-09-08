@@ -18,6 +18,11 @@ import { routeTurn } from './agent-router';
 import type { SessionExecutionContext } from './session-store';
 import { detectProject } from './project-detector';
 import { WorkspaceLockManager } from './workspace-lock-manager';
+import type { AgentTaskMetrics } from '../shared/agent-metrics';
+import { cloneAgentTaskMetrics, EMPTY_AGENT_TASK_METRICS, incrementAgentTaskMetrics } from '../shared/agent-metrics';
+import { taskContextStatusFromAgentStatus, type TaskContext } from '../shared/task-context';
+import { RepoMapBuilder } from './repo-map';
+import { TaskContextStore, type TaskContextPatch } from './task-context-store';
 
 function redact(text: string): string {
   return text
@@ -44,6 +49,8 @@ export interface AgentServiceOptions {
   maxReadOnlyConcurrency?: number;
   executeVerification?: (root: string, script: string, signal: AbortSignal) => Promise<VerificationResult>;
   workspaceLockManager?: WorkspaceLockManager;
+  taskContextStore?: TaskContextStore;
+  repoMapBuilder?: RepoMapBuilder;
 }
 
 interface LiveTask {
@@ -53,6 +60,8 @@ interface LiveTask {
   wrote: boolean;
   changedFiles: string[];
   trust?: SessionExecutionContext['trust'];
+  metrics: AgentTaskMetrics;
+  countedInvocations: Set<string>;
 }
 
 function automaticVerificationScript(workspaceRoot: string): string | null {
@@ -71,14 +80,24 @@ function active(status: AgentTaskStatus): boolean {
   return status === 'queued' || status === 'running' || status === 'waiting_for_approval' || status === 'waiting_for_input';
 }
 
+function metricFieldForTool(toolName: string): keyof AgentTaskMetrics | null {
+  if (toolName === 'read_file') return 'readFileCalls';
+  if (toolName === 'search_text') return 'searchCalls';
+  if (toolName === 'apply_patch' || toolName === 'apply_file_changes') return 'writeCalls';
+  if (toolName === 'run_verification') return 'verificationRuns';
+  return null;
+}
+
 export class AgentService {
   private readonly options: AgentServiceOptions;
   private readonly live = new Map<string, LiveTask>();
   private readonly workspaceLocks: WorkspaceLockManager;
+  private readonly repoMapBuilder: RepoMapBuilder;
 
   constructor(options: AgentServiceOptions) {
     this.options = options;
     this.workspaceLocks = options.workspaceLockManager ?? new WorkspaceLockManager();
+    this.repoMapBuilder = options.repoMapBuilder ?? new RepoMapBuilder();
   }
 
   private now(): number {
@@ -89,17 +108,85 @@ export class AgentService {
     this.options.emit?.(event);
   }
 
+  private updateTaskContext(taskId: string, patch: TaskContextPatch | ((current: TaskContext) => TaskContextPatch)): void {
+    try {
+      this.options.taskContextStore?.update(taskId, patch);
+    } catch {
+      // Task context is best-effort telemetry and must never interrupt Agent execution.
+    }
+  }
+
+  private syncTaskContextStatus(task: AgentTask): void {
+    this.updateTaskContext(task.id, {
+      status: taskContextStatusFromAgentStatus(task.status),
+      ...(task.error ? { latestFailure: { summary: redact(task.error).slice(0, 4000), createdAt: this.now() } } : {})
+    });
+  }
+
+  private initializeTaskContext(task: AgentTask, execution: Pick<SessionExecutionContext, 'sessionId' | 'workspaceRoot'> & Partial<Omit<SessionExecutionContext, 'sessionId' | 'workspaceRoot'>>): void {
+    const store = this.options.taskContextStore;
+    if (!store) return;
+    const workspaceId = typeof execution.workspaceId === 'string' && execution.workspaceId.trim() ? execution.workspaceId : execution.workspaceRoot;
+    let repoMap;
+    try {
+      repoMap = this.repoMapBuilder.build(workspaceId, execution.workspaceRoot);
+    } catch {
+      repoMap = undefined;
+    }
+    try {
+      store.create({
+        taskId: task.id,
+        workspaceId,
+        userRequest: task.message,
+        plan: [{ id: `${task.id}:plan`, text: '执行当前 Agent 任务', status: 'in-progress' }],
+        filesRead: [],
+        findings: [],
+        pendingChanges: [],
+        verification: [],
+        metrics: { ...EMPTY_AGENT_TASK_METRICS },
+        status: taskContextStatusFromAgentStatus(task.status),
+        ...(repoMap ? { repoMap } : {}),
+        createdAt: task.createdAt,
+        updatedAt: task.updatedAt
+      });
+    } catch {
+      // Invalid or unavailable telemetry storage must not block the task itself.
+    }
+  }
+
   private save(task: AgentTask): void {
     task.updatedAt = this.now();
     this.options.store.save(task);
     this.emit({ type: 'task', task: this.options.store.get(task.id) ?? task, taskId: task.id, timestamp: this.now() });
+    this.syncTaskContextStatus(task);
   }
 
   private setStatus(task: AgentTask, status: AgentTaskStatus, error?: string): void {
     task.status = status;
     if (error) task.error = redact(error);
     this.save(task);
+    if (!active(status)) this.syncTerminalTaskContext(task);
     if (!active(status)) this.releaseWriteLock(task.id);
+  }
+
+  private syncTerminalTaskContext(task: AgentTask, verification?: { value: VerificationResult; result: 'passed' | 'failed' | 'waiting' }): void {
+    this.updateTaskContext(task.id, (current) => ({
+      status: taskContextStatusFromAgentStatus(task.status),
+      ...(task.status === 'completed' ? { plan: current.plan.map((item) => ({ ...item, status: 'completed' as const })) } : {}),
+      ...(!active(task.status) ? { pendingApproval: undefined, pendingChanges: [] } : {}),
+      ...(task.error ? { latestFailure: { summary: redact(task.error).slice(0, 4000), createdAt: this.now() } } : {}),
+      ...(verification ? {
+        verification: [...current.verification, {
+          id: randomUUID(),
+          type: 'automatic',
+          command: `pnpm run ${verification.value.script}`,
+          result: verification.result,
+          exitCode: verification.result === 'passed' ? 0 : verification.result === 'failed' ? 1 : null,
+          summary: redact(verification.value.output).slice(0, 4000),
+          createdAt: this.now()
+        }]
+      } : {})
+    }));
   }
 
   private releaseWriteLock(taskId: string): void {
@@ -130,6 +217,12 @@ export class AgentService {
     }
     if (event.status === 'completed' || event.status === 'failed') invocation.finishedAt = now;
     const live = this.live.get(task.id);
+    if (live && !live.countedInvocations.has(event.invocationId)) {
+      live.countedInvocations.add(event.invocationId);
+      live.metrics = incrementAgentTaskMetrics(live.metrics, 'toolCalls');
+      const field = metricFieldForTool(event.toolName);
+      if (field) live.metrics = incrementAgentTaskMetrics(live.metrics, field);
+    }
     if (live && ['apply_patch', 'apply_file_changes'].includes(event.toolName) && event.status === 'completed') {
       live.wrote = true;
       try {
@@ -142,6 +235,23 @@ export class AgentService {
     task.invocations = invocations.slice(-100);
     if (event.status !== 'running') task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'tool', status: event.status === 'completed' ? 'completed' : event.status.startsWith('waiting') ? 'waiting' : 'failed', summary: `${event.toolName}：${event.summary}`, createdAt: now, finishedAt: event.status === 'completed' || event.status === 'failed' ? now : undefined, invocationId: event.invocationId });
     this.save(task);
+    this.updateTaskContext(task.id, (current) => {
+      const readFiles = event.toolName === 'read_file' && event.status === 'completed'
+        ? (event.paths ?? []).map((path) => ({ path, readAt: now }))
+        : [];
+      const nextStatus = event.status === 'waiting_for_approval'
+        ? 'waiting-approval' as const
+        : event.status === 'waiting_for_input'
+          ? 'waiting-input' as const
+          : current.status;
+      return {
+        status: nextStatus,
+        metrics: live ? cloneAgentTaskMetrics(live.metrics) : current.metrics,
+        ...(readFiles.length > 0 ? { filesRead: [...current.filesRead, ...readFiles] } : {}),
+        ...(event.status === 'waiting_for_approval' ? { pendingApproval: { summary: '等待用户批准精确计划', createdAt: now } } : {}),
+        ...(event.status === 'waiting_for_input' ? { pendingApproval: undefined } : {})
+      };
+    });
   }
 
   private assertConcurrency(roleId: string): void {
@@ -173,6 +283,7 @@ export class AgentService {
     task.steps[0].taskId = task.id;
     this.options.store.save(task);
     this.emit({ type: 'task', task, taskId: task.id, timestamp: this.now() });
+    this.initializeTaskContext(task, execution);
     void this.execute(task, context, execution);
     return { taskId: task.id, route };
   }
@@ -203,7 +314,7 @@ export class AgentService {
         toolTimeoutMs: 30_000,
         onTool: (event) => this.recordTool(task, event)
       });
-      this.live.set(task.id, { runtime, controller, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust });
+      this.live.set(task.id, { runtime, controller, workspaceRoot: execution.workspaceRoot, wrote: false, changedFiles: [], trust, metrics: { ...EMPTY_AGENT_TASK_METRICS }, countedInvocations: new Set() });
       task.status = 'running';
       task.steps.push({ id: randomUUID(), taskId: task.id, index: 1, kind: 'model', status: 'started', summary: 'StarChat 已接手，正在规划后台步骤。', createdAt: this.now() });
       task.currentStep = 1;
@@ -232,6 +343,11 @@ export class AgentService {
       task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'approval', status: 'waiting', summary: `等待批准：${task.approval.target}`, createdAt: this.now(), invocationId: result.approval.invocationId });
       this.save(task);
       this.emit({ type: 'approval', taskId: task.id, request: task.approval, timestamp: this.now() });
+      this.updateTaskContext(task.id, {
+        status: 'waiting-approval',
+        pendingApproval: { summary: redact(task.approval.plan).slice(0, 4000), createdAt: this.now() },
+        pendingChanges: task.approval.preview?.files.map((path, index) => ({ id: `${task.id}:change:${index}`, operation: 'update' as const, path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() })) ?? []
+      });
       return;
     }
     if (result.status === 'waiting_for_input') {
@@ -240,6 +356,7 @@ export class AgentService {
       task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'input', status: 'waiting', summary: task.input.prompt, createdAt: this.now(), invocationId: result.input.invocationId });
       this.save(task);
       this.emit({ type: 'input', taskId: task.id, request: task.input, timestamp: this.now() });
+      this.updateTaskContext(task.id, { status: 'waiting-input', pendingApproval: undefined });
       return;
     }
     if (result.status === 'completed') {
@@ -247,6 +364,8 @@ export class AgentService {
       if (live?.wrote) {
         const script = automaticVerificationScript(live.workspaceRoot);
         if (script) {
+          live.metrics = incrementAgentTaskMetrics(live.metrics, 'verificationRuns');
+          this.updateTaskContext(task.id, { metrics: cloneAgentTaskMetrics(live.metrics) });
           if (live.trust && live.trust !== 'trusted-execution') {
             const verification: VerificationResult = { script, ok: false, output: '自动验证未运行：当前工作区未信任脚本执行。请在环境信息中允许执行后重试验证。' };
             task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'verification', status: 'waiting', summary: `自动验证 ${script}：等待工作区信任`, createdAt: this.now(), finishedAt: this.now() });
@@ -267,6 +386,7 @@ export class AgentService {
               task.input = undefined;
               this.save(task);
               this.emit({ type: 'error', taskId: task.id, message: task.error, timestamp: this.now() });
+              this.syncTerminalTaskContext(task, { value: verification, result: 'failed' });
               return;
             }
           }
@@ -279,6 +399,14 @@ export class AgentService {
       task.steps.push({ id: randomUUID(), taskId: task.id, index: task.steps.length, kind: 'result', status: 'completed', summary: task.result.summary, createdAt: this.now(), finishedAt: this.now() });
       this.save(task);
       this.emit({ type: 'complete', taskId: task.id, result: task.result, timestamp: this.now() });
+      this.syncTerminalTaskContext(task, task.result.verification ? {
+        value: {
+          script: task.result.verification.script,
+          ok: task.result.verification.ok,
+          output: task.result.verification.output ?? ''
+        },
+        result: task.result.verification.ok ? 'passed' : 'waiting'
+      } : undefined);
       return;
     }
     this.setStatus(task, result.status, result.error);

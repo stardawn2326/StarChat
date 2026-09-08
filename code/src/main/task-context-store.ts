@@ -7,8 +7,6 @@ import type {
   FileReadRecord,
   PendingChange,
   TaskContext,
-  TaskContextApproval,
-  TaskContextFailure,
   TaskContextStatus,
   TaskFinding,
   TaskPlanItem,
@@ -55,6 +53,7 @@ function text(value: unknown, maximum = MAX_TEXT): string {
 function redactText(value: unknown, maximum = MAX_TEXT): string {
   return text(value, maximum)
     .replace(/sk-[A-Za-z0-9_-]{12,}/gu, '[REDACTED_API_KEY]')
+    .replace(/(bearer\s+)[^\s,;]+/giu, '$1[REDACTED]')
     .replace(/((?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|passwd|secret|private[_-]?key|authorization|bearer|token)\s*[:=]\s*)[^\s,;]+/giu, '$1[REDACTED]');
 }
 

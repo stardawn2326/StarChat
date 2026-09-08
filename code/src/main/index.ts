@@ -64,6 +64,7 @@ import { VoiceProfileStore } from './voice-profile-store';
 import { CubismRuntimeSession } from './cubism-runtime-session';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
+import { TaskContextStore } from './task-context-store';
 import { SessionStore } from './session-store';
 import { MemoryStore } from './memory-store';
 import { MemoryService } from './memory-service';
@@ -95,6 +96,7 @@ let live2dRegistry: Live2DModelRegistry;
 let live2dAdapterStore: Live2DAdapterStore;
 let agentStore: AgentStore;
 let agentService: AgentService;
+let taskContextStore: TaskContextStore;
 let sessionStore: SessionStore;
 let memoryService: MemoryService;
 let isQuitting = false;
@@ -2106,6 +2108,7 @@ if (singleInstanceLock) {
     live2dRegistry = new Live2DModelRegistry(userDataDir);
     live2dAdapterStore = new Live2DAdapterStore(userDataDir);
     agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
+    taskContextStore = new TaskContextStore(join(userDataDir, 'agent-task-contexts.json'));
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
     const memoryPath = join(userDataDir, 'memory.json');
@@ -2130,7 +2133,8 @@ if (singleInstanceLock) {
         if (!context.apiKey) throw new Error('没有 API Key');
         return classifyAmbiguousWithModel(context.settings, context.apiKey, message);
       },
-      emit: sendAgentEvent
+      emit: sendAgentEvent,
+      taskContextStore
     });
     const settings = settingsStore.readSettings();
     cubismRuntimeSession.setCurrentModel(settings.live2dModelPath);

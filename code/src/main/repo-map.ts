@@ -1,17 +1,17 @@
-import { existsSync, realpathSync } from 'node:fs';
-import { basename, dirname, extname, relative, sep } from 'node:path';
+import { basename, dirname, extname, sep } from 'node:path';
 import type { RepoMap, RepoMapEntry, RepoMapEntryKind, RepoMapLimits } from '../shared/repo-map';
 import { detectProject, type DetectedProject } from './project-detector';
-import { WorkspaceGuard, type WorkspaceWalkFile } from './agent-security';
+import { WorkspaceGuard } from './agent-security';
 
 const DEFAULT_LIMITS: RepoMapLimits = { maxDepth: 8, maxEntries: 5000, timeoutMs: 3000 };
 const IMPORTANT_LIMIT = 200;
-const SOURCE_DIRECTORY_NAMES = new Set(['src', 'app', 'lib', 'source', 'packages']);
+const SOURCE_DIRECTORY_NAMES = new Set(['src', 'lib', 'source', 'packages']);
 const TEST_DIRECTORY_NAMES = new Set(['test', 'tests', '__tests__', 'spec', 'specs']);
 const LANGUAGE_EXTENSIONS = new Set([
   'c', 'cc', 'cpp', 'cs', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx', 'json', 'kt', 'md', 'php',
   'py', 'rs', 'scss', 'sh', 'sql', 'swift', 'toml', 'ts', 'tsx', 'vue', 'xml', 'yaml', 'yml'
 ]);
+const SOURCE_EXTENSIONS = new Set(['c', 'cc', 'cpp', 'cs', 'css', 'go', 'h', 'hpp', 'html', 'java', 'js', 'jsx', 'kt', 'php', 'py', 'rs', 'scss', 'sh', 'sql', 'swift', 'ts', 'tsx', 'vue', 'xml']);
 const MANIFEST_NAMES = new Set([
   'package.json', 'pnpm-workspace.yaml', 'pnpm-lock.yaml', 'yarn.lock', 'package-lock.json', 'bun.lock', 'bun.lockb',
   'cargo.toml', 'cargo.lock', 'pyproject.toml', 'requirements.txt', 'go.mod', 'go.sum', 'pom.xml', 'build.gradle',
@@ -42,10 +42,6 @@ function limitsFor(options: RepoMapBuildOptions): RepoMapLimits {
     maxEntries: Math.max(1, Math.floor(options.maxEntries ?? DEFAULT_LIMITS.maxEntries)),
     timeoutMs: Math.max(1, Math.floor(options.timeoutMs ?? DEFAULT_LIMITS.timeoutMs))
   };
-}
-
-function relativePath(root: string, filePath: string): string {
-  return relative(root, filePath).replaceAll(sep, '/');
 }
 
 function isManifest(path: string): boolean {
@@ -82,9 +78,12 @@ function languageFor(path: string): string | null {
 
 function sourceRootFor(path: string, kind: RepoMapEntryKind): string | null {
   if (kind !== 'source') return null;
+  if (!SOURCE_EXTENSIONS.has(extname(path).slice(1).toLocaleLowerCase())) return null;
   const parts = path.split('/');
-  const sourceIndex = parts.findIndex((part) => SOURCE_DIRECTORY_NAMES.has(part.toLocaleLowerCase()));
+  const sourceIndex = parts.findIndex((part) => SOURCE_DIRECTORY_NAMES.has(part.toLocaleLowerCase()) && part.toLocaleLowerCase() !== 'packages');
   if (sourceIndex >= 0) return parts.slice(0, sourceIndex + 1).join('/');
+  const packageIndex = parts.findIndex((part) => part.toLocaleLowerCase() === 'packages');
+  if (packageIndex >= 0) return parts.slice(0, packageIndex + 1).join('/');
   return parts.length > 1 ? parts[0] : '.';
 }
 
@@ -191,7 +190,7 @@ export class RepoMapBuilder {
       const cached = this.cache.get(key);
       if (cached) return clone(cached);
     }
-    const scan = guard.walkFiles(limits);
+    const scan = guard.walkFiles({ ...limits, now });
     const result = mapFromScan(workspaceId, guard, project, scan, limits, now, warning ? [warning] : []);
     this.cache.set(key, clone(result));
     return clone(result);

@@ -36,6 +36,7 @@ export interface AgentToolExecutionEvent {
   toolName: string;
   status: 'running' | 'completed' | 'failed' | 'waiting_for_approval' | 'waiting_for_input';
   summary: string;
+  paths?: string[];
 }
 
 export interface AgentRuntimeInput {
@@ -122,6 +123,21 @@ function safeArguments(raw: string): { ok: true; value: unknown } | { ok: false;
   }
 }
 
+function telemetryPaths(toolName: string, args: unknown): string[] | undefined {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return undefined;
+  const source = args as { path?: unknown; changes?: unknown };
+  const paths: string[] = [];
+  if (typeof source.path === 'string' && source.path.trim()) paths.push(source.path.trim().slice(0, 2000));
+  if (toolName === 'apply_file_changes' && Array.isArray(source.changes)) {
+    for (const change of source.changes) {
+      if (!change || typeof change !== 'object') continue;
+      const path = (change as { path?: unknown }).path;
+      if (typeof path === 'string' && path.trim()) paths.push(path.trim().slice(0, 2000));
+    }
+  }
+  return paths.length > 0 ? [...new Set(paths)] : undefined;
+}
+
 function compactToolOutput(value: unknown): string {
   const text = typeof value === 'string' ? value : JSON.stringify(value);
   return (text || '').slice(0, 32 * 1024);
@@ -182,27 +198,28 @@ export class AgentRuntime {
       return null;
     }
     const args = parsed.value;
+    const paths = telemetryPaths(call.name, args);
     if (tool.requiresApproval) {
       const toolContext = { taskId: this.taskId, invocationId: call.id, signal };
       const plan = tool.approval?.(args, toolContext) ?? { target: tool.name, plan: `执行 ${tool.name} 的精确计划` };
-      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'waiting_for_approval', summary: '等待用户批准' });
+      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'waiting_for_approval', summary: '等待用户批准', paths });
       this.pending = { call, tool, args, messages: [...this.messages], route };
       return { status: 'waiting_for_approval', approval: { invocationId: call.id, toolName: call.name, ...plan } };
     }
     if (tool.requestsInput) {
-      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'waiting_for_input', summary: '等待用户补充信息' });
+      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'waiting_for_input', summary: '等待用户补充信息', paths });
       this.pending = { call, tool, args, messages: [...this.messages], route };
       return { status: 'waiting_for_input', input: { invocationId: call.id, toolName: call.name, prompt: tool.inputPrompt?.(args) ?? '请补充 Agent 所需信息。' } };
     }
-    this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'running', summary: '工具执行中' });
+    this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'running', summary: '工具执行中', paths });
     try {
       const value = await withTimeout((childSignal) => tool.run(args, { taskId: this.taskId, invocationId: call.id, signal: childSignal }), Math.min(this.toolTimeoutMs, this.remaining()), signal);
       this.messages.push({ role: 'tool', toolCallId: call.id, content: compactToolOutput(value) });
-      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'completed', summary: '工具执行完成' });
+      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'completed', summary: '工具执行完成', paths });
     } catch (error) {
       if (isAbortError(error) || signal.aborted) throw abortError();
       const message = error instanceof Error ? error.message : '工具执行失败';
-      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'failed', summary: '工具执行失败' });
+      this.onTool?.({ invocationId: call.id, toolName: call.name, status: 'failed', summary: '工具执行失败', paths });
       this.messages.push({ role: 'tool', toolCallId: call.id, content: `工具执行错误：${message.slice(0, 1000)}` });
     }
     return null;
