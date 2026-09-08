@@ -136,7 +136,7 @@ export function migrateMemorySchema(
   }
   if (parsed.version === MEMORY_SCHEMA_VERSION || (parsed.version !== 1 && parsed.version !== 2)) return empty;
 
-  const backupPath = join(dirname(filePath), 'memory.v1.backup.json');
+  const backupPath = join(dirname(filePath), `memory.v${parsed.version}.backup.json`);
   if (!existsSync(backupPath)) writeFileSync(backupPath, raw, 'utf8');
   const profile = (Array.isArray(parsed.profile) ? parsed.profile : [])
     .map((item) => profileFromLegacy(item, now))

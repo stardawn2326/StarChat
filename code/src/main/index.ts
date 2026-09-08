@@ -347,10 +347,9 @@ function getPublicState(): PublicAppState {
   adapterStore.migrateLegacy(join(app.getPath('userData'), 'live2d-adapter.json'), registry.list());
   const inspectedLive2d = inspectExternalLive2DModel(settings.live2dModelPath);
   const currentRecord = settings.live2dModelPath ? registry.findByEntryPath(settings.live2dModelPath) : null;
-  const resolvedAdapter = currentRecord ? adapterStore.resolve(currentRecord, inspectedLive2d.adapter) : inspectedLive2d.adapter;
-  const live2d = resolvedAdapter && resolvedAdapter !== inspectedLive2d.adapter
-    ? { ...inspectedLive2d, adapter: resolvedAdapter }
-    : inspectedLive2d;
+  const autoAdapter = inspectedLive2d.adapter;
+  const resolvedAdapter = currentRecord ? adapterStore.resolve(currentRecord, autoAdapter) : autoAdapter;
+  const live2d = { ...inspectedLive2d, adapter: resolvedAdapter, autoAdapter };
   const roles = store.readRolePackages();
   const role = roles.find((item) => item.id === settings.activeRoleId) ?? roles[0] ?? DEFAULT_ROLE_PACKAGE;
   const companion = store.readCompanionState(role.id);

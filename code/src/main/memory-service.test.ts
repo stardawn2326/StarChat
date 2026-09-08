@@ -103,4 +103,28 @@ describe('companion memory service', () => {
     expect(service.reviewProfile('role-a', memory.id, 'active')).toMatchObject({ reviewState: 'active' });
     expect(service.retrieve({ roleId: 'role-a', query: '低噪声' }).profile).toHaveLength(1);
   });
+
+  it('promotes a legacy review profile when the user explicitly repeats the same fact', () => {
+    const { store, service } = createMemoryTestService();
+    store.saveProfile({
+      roleId: 'role-a',
+      kind: 'preference',
+      content: '我喜欢紫色',
+      confidence: 0.8,
+      source: 'manual',
+      provenance: { contextType: 'personal', source: 'legacy' },
+      reviewState: 'needs-review',
+      createdAt: 1,
+      updatedAt: 1
+    });
+
+    service.recordConversation('role-a', 'session-repeat', [
+      { role: 'user', content: '我现在还是喜欢紫色。' },
+      { role: 'assistant', content: '记住了。' }
+    ]);
+
+    expect(store.listProfile('role-a')).toHaveLength(1);
+    expect(store.listProfile('role-a')[0]).toMatchObject({ content: '我现在还是喜欢紫色', source: 'user_explicit', reviewState: 'active' });
+    expect(service.retrieve({ roleId: 'role-a', query: '紫色' }).profile).toHaveLength(1);
+  });
 });

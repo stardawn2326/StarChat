@@ -71,13 +71,14 @@ function sentences(value: string): string[] {
 }
 
 function kindForSentence(value: string): ProfileMemoryKind | null {
-  if (/^我(?:叫|的名字是)/u.test(value)) return 'name';
-  if (/^我是/u.test(value)) return 'identity';
-  if (/^我(?:喜欢|偏好|爱)/u.test(value)) return 'preference';
-  if (/^我(?:习惯|通常|一般会)/u.test(value)) return 'habit';
-  if (/^我的(?:朋友|家人|同事|伴侣)/u.test(value)) return 'person';
-  if (/^我的(?:项目|工作|计划|目标)/u.test(value)) return 'project';
-  if (/^我(?:不喜欢|讨厌|不希望|不要)/u.test(value)) return 'boundary';
+  const stable = value.replace(/^我(?:(?:现在)?(?:还是|仍然|依然|还))?/u, '我');
+  if (/^我(?:叫|的名字是)/u.test(stable)) return 'name';
+  if (/^我是/u.test(stable)) return 'identity';
+  if (/^我(?:喜欢|偏好|爱)/u.test(stable)) return 'preference';
+  if (/^我(?:习惯|通常|一般会)/u.test(stable)) return 'habit';
+  if (/^我的(?:朋友|家人|同事|伴侣)/u.test(stable)) return 'person';
+  if (/^我的(?:项目|工作|计划|目标)/u.test(stable)) return 'project';
+  if (/^我(?:不喜欢|讨厌|不希望|不要)/u.test(stable)) return 'boundary';
   return null;
 }
 

@@ -107,6 +107,14 @@ export function isSensitiveMemoryContent(value: unknown): boolean {
   return typeof value === 'string' && SENSITIVE_MEMORY.test(value);
 }
 
+export function normalizeProfileFact(value: string): string {
+  return value
+    .replace(/[，。！？…,.!?]/gu, '')
+    .replace(/\s+/gu, '')
+    .replace(/^我(?:(?:现在)?(?:还是|仍然|依然|还))?/u, '我')
+    .trim();
+}
+
 export function sanitizeMemoryContent(value: unknown, maximum = 500): string | null {
   const content = text(value, maximum);
   if (!content || isSensitiveMemoryContent(content)) return null;

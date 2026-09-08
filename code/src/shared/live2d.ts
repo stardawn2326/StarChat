@@ -229,6 +229,7 @@ export interface Live2DModelState {
   groups: Live2DModelGroup[];
   physics: Live2DPhysicsSummary | null;
   adapter: Live2DAdapterConfig | null;
+  autoAdapter?: Live2DAdapterConfig | null;
   license: Live2DLicenseNotice | null;
   issues: string[];
   warnings: string[];

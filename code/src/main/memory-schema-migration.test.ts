@@ -53,4 +53,16 @@ describe('memory schema migration', () => {
     expect(snapshot.profile).toHaveLength(0);
     expect(snapshot.quarantine).toHaveLength(0);
   });
+
+  it('keeps v1 and v2 backups independent and names each backup by source schema', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-memory-backup-versions-'));
+    const filePath = join(root, 'memory.json');
+    writeFileSync(join(root, 'memory.v1.backup.json'), 'existing-v1', 'utf8');
+    writeFileSync(filePath, JSON.stringify({ version: 2, profile: [], episodic: [], summaries: [] }), 'utf8');
+
+    const result = migrateMemorySchema(filePath, resolver, now);
+    expect(result.backupPath).toBe(join(root, 'memory.v2.backup.json'));
+    expect(existsSync(join(root, 'memory.v1.backup.json'))).toBe(true);
+    expect(existsSync(join(root, 'memory.v2.backup.json'))).toBe(true);
+  });
 });

@@ -10,6 +10,7 @@ export interface Live2DAdapterOverrideSnapshot {
 export interface LegacyLive2DAdapterMigrationResult {
   migrated: boolean;
   backupPath: string | null;
+  migratedPath: string | null;
   modelId: string | null;
 }
 
@@ -98,7 +99,9 @@ export class Live2DAdapterStore {
   }
 
   migrateLegacy(legacyPath: string, models: readonly Live2DModelRecord[]): LegacyLive2DAdapterMigrationResult {
-    if (!existsSync(legacyPath)) return { migrated: false, backupPath: null, modelId: null };
+    if (!existsSync(legacyPath)) return { migrated: false, backupPath: null, migratedPath: null, modelId: null };
+    const migratedPath = resolve(dirname(legacyPath), 'live2d-adapter.v1.migrated.json');
+    if (existsSync(migratedPath)) return { migrated: false, backupPath: null, migratedPath, modelId: null };
     let legacy: Live2DAdapterConfig | null = null;
     try {
       legacy = JSON.parse(readFileSync(legacyPath, 'utf8')) as Live2DAdapterConfig;
@@ -108,11 +111,12 @@ export class Live2DAdapterStore {
     const backupPath = resolve(dirname(legacyPath), 'live2d-adapter.v1.backup.json');
     if (!existsSync(backupPath)) writeFileSync(backupPath, readFileSync(legacyPath), 'utf8');
     const legacyOverride = normalizeOverride(legacy?.overrides);
-    if (!legacyOverride) return { migrated: false, backupPath, modelId: null };
+    if (!legacyOverride) return { migrated: false, backupPath, migratedPath: null, modelId: null };
     const model = models.find((candidate) => samePath(candidate.entryPath, legacyOverride.sourceEntryPath));
-    if (!model) return { migrated: false, backupPath, modelId: null };
+    if (!model) return { migrated: false, backupPath, migratedPath: null, modelId: null };
     if (!this.read(model.id)) this.save(model.id, legacyOverride);
-    return { migrated: true, backupPath, modelId: model.id };
+    renameSync(legacyPath, migratedPath);
+    return { migrated: true, backupPath, migratedPath, modelId: model.id };
   }
 
   private write(snapshot: Live2DAdapterOverrideSnapshot): void {

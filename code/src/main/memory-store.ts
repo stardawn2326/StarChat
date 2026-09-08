@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from '
 import { dirname } from 'node:path';
 import {
   MEMORY_SCHEMA_VERSION,
+  normalizeProfileFact,
   sanitizeConversationSummary,
   sanitizeEpisodicMemory,
   sanitizeProfileMemory,
@@ -62,12 +63,20 @@ export class MemoryStore {
   saveProfile(input: unknown): ProfileMemory {
     const memory = sanitizeProfileMemory(input);
     if (!memory) throw new Error('资料记忆为空或包含敏感信息');
-    const duplicate = this.profile.find((item) => item.roleId === memory.roleId && item.kind === memory.kind && item.content === memory.content);
+    const duplicate = this.profile.find((item) => item.roleId === memory.roleId
+      && item.kind === memory.kind
+      && (item.content === memory.content || normalizeProfileFact(item.content) === normalizeProfileFact(memory.content)));
     if (duplicate) {
       duplicate.confidence = Math.max(duplicate.confidence, memory.confidence);
       duplicate.updatedAt = memory.updatedAt;
       duplicate.provenance = memory.provenance;
-      if (memory.reviewState === 'needs-review') duplicate.reviewState = 'needs-review';
+      if (memory.source === 'user_explicit' && duplicate.reviewState === 'needs-review') {
+        duplicate.content = memory.content;
+        duplicate.source = memory.source;
+        duplicate.reviewState = 'active';
+      } else if (memory.reviewState === 'needs-review') {
+        duplicate.reviewState = 'needs-review';
+      }
       this.flush();
       return clone(duplicate);
     }

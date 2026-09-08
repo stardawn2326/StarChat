@@ -38,8 +38,15 @@ describe('Live2D model adapter store', () => {
     const result = store.migrateLegacy(legacyPath, [model('model-a', 'C:/models/a.model3.json'), model('model-b', 'C:/models/b.model3.json')]);
     expect(result).toMatchObject({ migrated: true, modelId: 'model-a' });
     expect(result.backupPath && existsSync(result.backupPath)).toBe(true);
+    expect(result.migratedPath && existsSync(result.migratedPath)).toBe(true);
+    expect(existsSync(legacyPath)).toBe(false);
     expect(store.read('model-a')?.parameterBindings?.mouth_open).toBe('ParamLegacy');
     expect(store.read('model-b')).toBeNull();
+
+    store.remove('model-a');
+    const second = store.migrateLegacy(legacyPath, [model('model-a', 'C:/models/a.model3.json')]);
+    expect(second.migrated).toBe(false);
+    expect(store.read('model-a')).toBeNull();
   });
 
   it('backs up an unmatched legacy adapter without applying it to another model', () => {
