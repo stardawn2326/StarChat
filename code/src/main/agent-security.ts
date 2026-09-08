@@ -7,6 +7,7 @@ import {
   realpathSync,
   renameSync,
   statSync,
+  type Dirent,
   unlinkSync,
   writeFileSync
 } from 'node:fs';
@@ -107,6 +108,10 @@ export interface PatchPreview {
   deletions: number;
 }
 
+export function isSensitiveWorkspacePath(relativePath: string): boolean {
+  return isSensitive(relativePath);
+}
+
 const MAX_FILE_CHANGE_BYTES = 512 * 1024;
 const MAX_FILE_CHANGE_COUNT = 50;
 
@@ -163,6 +168,24 @@ export interface WorkspaceGuardOptions {
   maxReadBytes?: number;
   maxSearchResults?: number;
   deniedRoots?: string[];
+}
+
+export interface WorkspaceWalkOptions {
+  maxDepth?: number;
+  maxEntries?: number;
+  timeoutMs?: number;
+}
+
+export interface WorkspaceWalkFile {
+  path: string;
+  size: number;
+  depth: number;
+}
+
+export interface WorkspaceWalkResult {
+  files: WorkspaceWalkFile[];
+  partial: boolean;
+  warnings: string[];
 }
 
 export class WorkspaceGuard {
@@ -261,6 +284,83 @@ export class WorkspaceGuard {
     };
     if (statSync(root).isDirectory()) visit(root);
     return results;
+  }
+
+  walkFiles(options: WorkspaceWalkOptions = {}): WorkspaceWalkResult {
+    const maxDepth = Math.max(0, Math.floor(options.maxDepth ?? 8));
+    const maxEntries = Math.max(1, Math.floor(options.maxEntries ?? 5000));
+    const timeoutMs = Math.max(1, Math.floor(options.timeoutMs ?? 3000));
+    const startedAt = Date.now();
+    const files: WorkspaceWalkFile[] = [];
+    const warnings: string[] = [];
+    const ignoredDirectories = new Set(['.git', 'node_modules', 'out', 'dist', 'build', 'coverage', '.cache', 'tmp', 'temp']);
+    let entryCount = 0;
+    let partial = false;
+
+    const warn = (message: string): void => {
+      if (!warnings.includes(message) && warnings.length < 20) warnings.push(message);
+    };
+    const stopIfLimited = (): boolean => {
+      if (Date.now() - startedAt >= timeoutMs) {
+        partial = true;
+        warn(`扫描达到 ${timeoutMs}ms 时间上限`);
+        return true;
+      }
+      if (entryCount >= maxEntries) {
+        partial = true;
+        warn(`扫描达到 ${maxEntries} 项数量上限`);
+        return true;
+      }
+      return false;
+    };
+    const visit = (directory: string, depth: number): void => {
+      if (stopIfLimited()) return;
+      let entries: Dirent[];
+      try {
+        entries = readdirSync(directory, { withFileTypes: true });
+      } catch {
+        partial = true;
+        warn(`无法读取目录：${relative(this.root, directory).replaceAll(sep, '/') || '.'}`);
+        return;
+      }
+      for (const entry of entries) {
+        if (stopIfLimited()) return;
+        if (entry.isSymbolicLink() || ignoredDirectories.has(entry.name)) continue;
+        const child = join(directory, entry.name);
+        const relativePath = relative(this.root, child).replaceAll(sep, '/');
+        if (isSensitive(relativePath)) continue;
+        entryCount += 1;
+        let safeChild: string;
+        try {
+          safeChild = this.resolve(relativePath);
+        } catch {
+          partial = true;
+          warn(`已跳过不受授权范围的路径：${relativePath}`);
+          continue;
+        }
+        let stat;
+        try {
+          stat = statSync(safeChild);
+        } catch {
+          partial = true;
+          warn(`无法读取条目：${relativePath}`);
+          continue;
+        }
+        if (stat.isDirectory()) {
+          if (depth >= maxDepth) {
+            partial = true;
+            warn(`扫描达到 ${maxDepth} 层深度上限`);
+            continue;
+          }
+          visit(safeChild, depth + 1);
+          continue;
+        }
+        if (stat.isFile()) files.push({ path: relativePath, size: stat.size, depth });
+      }
+    };
+
+    visit(this.root, 0);
+    return { files, partial, warnings };
   }
 
   previewPatch(patch: string): PatchPreview {

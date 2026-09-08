@@ -16,14 +16,18 @@ export const EMPTY_AGENT_TASK_METRICS: Readonly<AgentTaskMetrics> = Object.freez
   contextCompactions: 0
 });
 
+function count(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
 export function cloneAgentTaskMetrics(metrics: AgentTaskMetrics = EMPTY_AGENT_TASK_METRICS): AgentTaskMetrics {
   return {
-    toolCalls: Math.max(0, Math.floor(metrics.toolCalls)),
-    readFileCalls: Math.max(0, Math.floor(metrics.readFileCalls)),
-    searchCalls: Math.max(0, Math.floor(metrics.searchCalls)),
-    writeCalls: Math.max(0, Math.floor(metrics.writeCalls)),
-    verificationRuns: Math.max(0, Math.floor(metrics.verificationRuns)),
-    contextCompactions: Math.max(0, Math.floor(metrics.contextCompactions))
+    toolCalls: count(metrics.toolCalls),
+    readFileCalls: count(metrics.readFileCalls),
+    searchCalls: count(metrics.searchCalls),
+    writeCalls: count(metrics.writeCalls),
+    verificationRuns: count(metrics.verificationRuns),
+    contextCompactions: count(metrics.contextCompactions)
   };
 }
 
