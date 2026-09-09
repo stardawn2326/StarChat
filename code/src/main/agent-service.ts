@@ -24,6 +24,8 @@ import { taskContextStatusFromAgentStatus, type TaskContext } from '../shared/ta
 import { buildRepoContextSummary, RepoMapBuilder, toTaskRepoSummary } from './repo-map';
 import type { RepoMap } from '../shared/repo-map';
 import { TaskContextStore, type TaskContextPatch } from './task-context-store';
+import { ChangeSetManager } from './change-set';
+import { ChangeSetStore } from './change-set-store';
 
 function redact(text: string): string {
   return text
@@ -52,6 +54,7 @@ export interface AgentServiceOptions {
   workspaceLockManager?: WorkspaceLockManager;
   taskContextStore?: TaskContextStore;
   repoMapBuilder?: RepoMapBuilder;
+  changeSetStore?: ChangeSetStore;
 }
 
 interface LiveTask {
@@ -94,11 +97,16 @@ export class AgentService {
   private readonly live = new Map<string, LiveTask>();
   private readonly workspaceLocks: WorkspaceLockManager;
   private readonly repoMapBuilder: RepoMapBuilder;
+  private readonly changeSetStore?: ChangeSetStore;
+  private readonly changeSetManager?: ChangeSetManager;
 
   constructor(options: AgentServiceOptions) {
     this.options = options;
     this.workspaceLocks = options.workspaceLockManager ?? new WorkspaceLockManager();
     this.repoMapBuilder = options.repoMapBuilder ?? new RepoMapBuilder();
+    this.changeSetStore = options.changeSetStore;
+    this.changeSetManager = options.changeSetStore ? new ChangeSetManager(options.changeSetStore, () => this.now()) : undefined;
+    this.reconcileRestartState();
   }
 
   private now(): number {
@@ -114,6 +122,28 @@ export class AgentService {
       this.options.taskContextStore?.update(taskId, patch);
     } catch {
       // Task context is best-effort telemetry and must never interrupt Agent execution.
+    }
+  }
+
+  private reconcileRestartState(): void {
+    const interruptionReason = 'Task interrupted because previous runtime no longer exists.';
+    for (const task of this.options.store.list().filter((item) => item.status === 'interrupted')) {
+      try {
+        this.options.taskContextStore?.markInterrupted(task.id, interruptionReason, 'runtime-lost');
+      } catch {
+        // A missing or stale context must not prevent the app from starting.
+      }
+    }
+    for (const changeSet of this.changeSetStore?.invalidateOnRestart() ?? []) {
+      const task = this.options.store.get(changeSet.taskId);
+      this.updateTaskContext(changeSet.taskId, (current) => ({
+        ...(task?.status === 'interrupted' ? { status: 'interrupted' as const } : {}),
+        ...(current.activeChangeSetId === changeSet.id ? { activeChangeSetId: undefined, pendingChanges: [] } : {}),
+        pendingApproval: undefined,
+        findings: current.findings.some((finding) => finding.id === `${changeSet.taskId}:change-set:${changeSet.id}`)
+          ? current.findings
+          : [...current.findings, { id: `${changeSet.taskId}:change-set:${changeSet.id}`, type: 'risk' as const, summary: '应用重启后旧 ChangeSet 已失效，不能继续使用原批准。', createdAt: this.now() }]
+      }));
     }
   }
 
@@ -174,7 +204,10 @@ export class AgentService {
     task.status = status;
     if (error) task.error = redact(error);
     this.save(task);
-    if (!active(status)) this.syncTerminalTaskContext(task);
+    if (!active(status)) {
+      this.changeSetManager?.invalidateForTask(task.id);
+      this.syncTerminalTaskContext(task);
+    }
     if (!active(status)) this.releaseWriteLock(task.id);
   }
 
@@ -183,6 +216,7 @@ export class AgentService {
       status: taskContextStatusFromAgentStatus(task.status),
       ...(task.status === 'completed' ? { plan: current.plan.map((item) => ({ ...item, status: 'completed' as const })) } : {}),
       ...(!active(task.status) ? { pendingApproval: undefined, pendingChanges: [] } : {}),
+      ...(!active(task.status) ? { activeChangeSetId: undefined } : {}),
       ...(task.error ? { latestFailure: { summary: redact(task.error).slice(0, 4000), createdAt: this.now() } } : {}),
       ...(verification ? {
         verification: [...current.verification, {
@@ -312,6 +346,8 @@ export class AgentService {
         tools: createAgentTools(guard, this.options.executeVerification ?? runVerification, {
           allowWrite,
           allowExecution,
+          changeSetManager: this.changeSetManager,
+          workspaceId: this.workspaceIdFor(execution),
           beforeWrite: (_toolName) => {
             this.workspaceLocks.acquireWrite(execution.workspaceRoot, task.id, this.now());
           },
@@ -363,6 +399,7 @@ export class AgentService {
       this.updateTaskContext(task.id, {
         status: 'waiting-approval',
         pendingApproval: { summary: redact(task.approval.plan).slice(0, 4000), createdAt: this.now() },
+        ...(task.approval.preview?.changeSetId ? { activeChangeSetId: task.approval.preview.changeSetId } : {}),
         pendingChanges: task.approval.preview?.changes?.map((change, index) => ({ id: `${task.id}:change:${index}`, operation: change.operation, path: change.path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() }))
           ?? task.approval.preview?.files.map((path, index) => ({ id: `${task.id}:change:${index}`, operation: 'update' as const, path, summary: redact(task.approval!.plan).slice(0, 4000), createdAt: this.now() }))
           ?? []
@@ -447,6 +484,7 @@ export class AgentService {
     if (!task || task.status !== 'waiting_for_approval' || task.approval?.id !== requestId) throw new Error('审批请求已过期或不匹配');
     const live = this.live.get(taskId);
     if (!live) throw new Error('应用重启后任务已中断，不能继续执行');
+    if (!approved) this.changeSetManager?.reject(taskId, task.approval.invocationId);
     task.status = 'running'; task.approval = undefined; this.save(task);
     if (!approved) this.releaseWriteLock(taskId);
     try {
@@ -475,7 +513,22 @@ export class AgentService {
     const source = this.options.store.get(taskId);
     if (!source) throw new Error('Agent 任务不存在');
     if (!['interrupted', 'failed', 'cancelled', 'timed_out'].includes(source.status)) throw new Error('只有已中断或未完成的任务可以重新执行');
+    this.changeSetManager?.invalidateForTask(source.id);
     return this.start({ message: source.message, mode: source.mode, sessionId: source.sessionId }, source.route, source.id);
+  }
+
+  context(taskId: string): TaskContext | null {
+    if (!this.options.store.get(taskId)) throw new Error('Agent 任务不存在');
+    return this.options.taskContextStore?.get(taskId) ?? null;
+  }
+
+  dismiss(taskId: string): void {
+    const task = this.options.store.get(taskId);
+    if (!task) throw new Error('Agent 任务不存在');
+    if (active(task.status)) throw new Error('活动任务不能移除，请先停止任务');
+    this.changeSetManager?.invalidateForTask(taskId);
+    this.options.taskContextStore?.delete(taskId);
+    this.options.store.delete(taskId);
   }
 
   list(): AgentTask[] { return this.options.store.list(); }

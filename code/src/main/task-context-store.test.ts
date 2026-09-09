@@ -50,6 +50,23 @@ describe('task context store', () => {
     expect(store.get('task-a')).toMatchObject({ status: 'completed' });
   });
 
+  it('clears pending approval and ChangeSet linkage when a task is interrupted', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-task-context-interrupted-'));
+    const store = new TaskContextStore(join(root, 'contexts.json'), { now: () => 300 });
+    store.create({
+      ...context('task-interrupted'),
+      status: 'waiting-approval',
+      activeChangeSetId: 'change-set-1',
+      pendingApproval: { summary: '更新文件', createdAt: 200 },
+      pendingChanges: [{ id: 'change-1', operation: 'update', path: 'src/main.ts', summary: '更新入口', createdAt: 200 }]
+    });
+    const interrupted = store.markInterrupted('task-interrupted', '任务因之前的 Runtime 已不存在而中断。');
+    expect(interrupted).toMatchObject({ status: 'interrupted', interruptionReason: 'runtime-lost', latestFailure: { summary: '任务因之前的 Runtime 已不存在而中断。' }, pendingChanges: [] });
+    expect(interrupted.findings).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'risk' })]));
+    expect(interrupted.pendingApproval).toBeUndefined();
+    expect(interrupted.activeChangeSetId).toBeUndefined();
+  });
+
   it('filters secrets and unsafe paths without storing file contents', () => {
     const root = mkdtempSync(join(tmpdir(), 'starchat-task-context-safe-'));
     const file = join(root, 'contexts.json');

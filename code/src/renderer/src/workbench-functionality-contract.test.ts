@@ -101,6 +101,15 @@ describe('StarChat workbench functionality contracts', () => {
     expect(workbenchSource).toContain('data-agent-ui="approval-center"');
     expect(workbenchSource).toContain('approval.preview.patch');
     expect(workbenchSource).toContain('重新执行');
+    expect(workbenchSource).toContain('查看上下文');
+    expect(workbenchSource).toContain('移除记录');
+    expect(appSource).toContain('onDismissTask');
+    expect(appSource).toContain('window.starchat.agent.dismiss');
+    expect(workbenchSource).toContain('window.starchat.agent.context');
+    expect(preloadSource).toContain("ipcRenderer.invoke('agent:context'");
+    expect(preloadSource).toContain("ipcRenderer.invoke('agent:dismiss'");
+    expect(mainSource).toContain("ipcMain.handle('agent:context'");
+    expect(mainSource).toContain("ipcMain.handle('agent:dismiss'");
   });
 
   it('does not let a late chat start reattach after the session component was disposed', () => {

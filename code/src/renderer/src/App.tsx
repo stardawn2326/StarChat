@@ -600,6 +600,16 @@ function App(): JSX.Element {
     }
   };
 
+  const dismissAgentTask = async (task: AgentTask): Promise<void> => {
+    if (['queued', 'running', 'waiting_for_approval', 'waiting_for_input'].includes(task.status)) return;
+    try {
+      await window.starchat.agent.dismiss(task.id);
+      setAgentTasks((current) => (current ?? []).filter((item) => item.id !== task.id));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : '移除 Agent 任务记录失败');
+    }
+  };
+
   const respondAgentTask = async (task: AgentTask): Promise<void> => {
     if (!task.input) return;
     const value = window.prompt(task.input.prompt, '');
@@ -754,6 +764,7 @@ function App(): JSX.Element {
          onApproveTask={(task, approved) => void approveAgentTask(task, approved)}
          onRetryTask={(task) => void retryAgentTask(task)}
          onRespondTask={(task) => void respondAgentTask(task)}
+         onDismissTask={(task) => void dismissAgentTask(task)}
          onShare={shareEnvironment}
          onCancelTask={(taskId) => void cancelAgentTask(taskId)}
          onMinimize={() => window.starchat.app.minimize()}

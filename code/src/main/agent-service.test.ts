@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APP_SETTINGS } from '../shared/settings';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
+import { ChangeSetStore } from './change-set-store';
 import { TaskContextStore } from './task-context-store';
 
 async function waitFor(check: () => boolean): Promise<void> {
@@ -22,6 +23,8 @@ function setup() {
   writeFileSync(join(root, 'src', 'main.ts'), 'export const main = true\n', 'utf8');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { typecheck: 'tsc --noEmit' } }), 'utf8');
   const store = new AgentStore(join(root, 'tasks.json'));
+  const taskContextStore = new TaskContextStore(join(root, 'task-contexts.json'));
+  const changeSetStore = new ChangeSetStore(join(root, 'change-sets.json'));
   const executeVerification = vi.fn(async () => ({ script: 'typecheck', ok: true, output: 'types ok' }));
   let response: { type: 'final'; content: string } | { type: 'tool_calls'; calls: Array<{ id: string; name: string; arguments: string }> } = { type: 'final', content: '完成了' };
   const service = new AgentService({
@@ -31,9 +34,11 @@ function setup() {
     getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
     createModel: () => ({ complete: vi.fn(async () => response) }),
     executeVerification,
+    taskContextStore,
+    changeSetStore,
     now: () => Date.now()
   });
-  return { root, store, service, executeVerification, setResponse: (next: typeof response) => { response = next; } };
+  return { root, store, service, executeVerification, taskContextStore, changeSetStore, setResponse: (next: typeof response) => { response = next; } };
 }
 
 describe('Agent service lifecycle', () => {
@@ -211,7 +216,7 @@ describe('Agent service lifecycle', () => {
   });
 
   it('retries an interrupted task as a new linked task instead of pretending to resume runtime state', async () => {
-    const { store, service } = setup();
+    const { store, service, taskContextStore } = setup();
     const interrupted = {
       id: 'old-task', sessionId: 'session-a', roleId: 'baoyin.default', message: '读取 src/note.txt', mode: 'agent' as const,
       route: { route: 'agent' as const, method: 'forced' as const, explain: '后台 Agent 任务' }, status: 'interrupted' as const,
@@ -223,5 +228,72 @@ describe('Agent service lifecycle', () => {
     await waitFor(() => store.get(retried.taskId)?.status === 'completed');
     expect(retried.taskId).not.toBe(interrupted.id);
     expect(store.get(retried.taskId)).toMatchObject({ resumedFromTaskId: interrupted.id, sessionId: interrupted.sessionId, message: interrupted.message });
+    expect(taskContextStore.get(retried.taskId)?.repoMap).toBeDefined();
+  });
+
+  it('invalidates the ChangeSet and fails without writing after an external edit', async () => {
+    const { root, store, service, setResponse, taskContextStore, changeSetStore } = setup();
+    const patch = '*** Begin Patch\n*** Update File: src/note.txt\n@@\n hello\n-world\n+approved\n*** End Patch';
+    setResponse({ type: 'tool_calls', calls: [{ id: 'write-toctou', name: 'apply_patch', arguments: JSON.stringify({ patch }) }] });
+    const started = await service.start({ mode: 'agent', message: '修改 src/note.txt' });
+    await waitFor(() => store.get(started.taskId)?.status === 'waiting_for_approval');
+    const approval = store.get(started.taskId)!.approval!;
+    const changeSetId = approval.preview?.changeSetId;
+    expect(changeSetId).toBeTruthy();
+    writeFileSync(join(root, 'src', 'note.txt'), 'external\n', 'utf8');
+    setResponse({ type: 'final', content: '不应继续到最终摘要' });
+
+    await service.approve(started.taskId, approval.id, true);
+    await waitFor(() => store.get(started.taskId)?.status === 'failed');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('external\n');
+    expect(changeSetStore.get(changeSetId!)?.state).toBe('invalidated');
+    expect(taskContextStore.get(started.taskId)).toMatchObject({ status: 'failed', pendingChanges: [] });
+    expect(taskContextStore.get(started.taskId)?.activeChangeSetId).toBeUndefined();
+  });
+
+  it('reconciles interrupted tasks, old approvals, contexts, and ChangeSets on restart', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-service-restart-'));
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src', 'note.txt'), 'hello\n', 'utf8');
+    const taskFile = join(root, 'tasks.json');
+    const contextFile = join(root, 'contexts.json');
+    const changeSetFile = join(root, 'change-sets.json');
+    const initialStore = new AgentStore(taskFile);
+    initialStore.save({
+      id: 'task-restart', sessionId: 'session-a', roleId: 'baoyin.default', message: '修改文件', mode: 'agent',
+      route: { route: 'agent', method: 'forced', explain: '后台 Agent 任务' }, status: 'waiting_for_approval', createdAt: 1, updatedAt: 1, currentStep: 1, steps: [],
+      approval: { id: 'approval-restart', taskId: 'task-restart', invocationId: 'invocation-restart', toolName: 'apply_patch', target: 'src/note.txt', plan: '更新文件', preview: { files: ['src/note.txt'], patch: 'private', additions: 1, deletions: 1 }, createdAt: 1 }
+    });
+    const taskContextStore = new TaskContextStore(contextFile);
+    taskContextStore.create({
+      taskId: 'task-restart', workspaceId: 'workspace-a', userRequest: '修改文件', plan: [], filesRead: [], findings: [],
+      pendingChanges: [{ id: 'change-1', operation: 'update', path: 'src/note.txt', summary: '更新文件', createdAt: 1 }], verification: [], metrics: { toolCalls: 1, readFileCalls: 0, searchCalls: 0, writeCalls: 1, verificationRuns: 0, contextCompactions: 0 },
+      status: 'waiting-approval', createdAt: 1, updatedAt: 1, activeChangeSetId: 'change-set-restart', pendingApproval: { summary: '更新文件', createdAt: 1 }
+    });
+    const changeSetStore = new ChangeSetStore(changeSetFile);
+    changeSetStore.create({
+      id: 'change-set-restart', taskId: 'task-restart', workspaceId: 'workspace-a', invocationId: 'invocation-restart', state: 'waiting-approval', createdAt: 1, updatedAt: 1,
+      entries: [{ path: 'src/note.txt', operation: 'update', beforeHash: 'a'.repeat(64), afterHash: 'b'.repeat(64), diffHash: 'c'.repeat(64), additions: 1, deletions: 1 }]
+    });
+
+    const restartedStore = new AgentStore(taskFile);
+    new AgentService({
+      store: restartedStore,
+      workspaceRoot: root,
+      resolveExecutionContext: () => ({ sessionId: 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
+      getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
+      createModel: () => ({ complete: vi.fn(async () => ({ type: 'final' as const, content: '不会执行' })) }),
+      taskContextStore,
+      changeSetStore
+    });
+
+    expect(restartedStore.get('task-restart')).toMatchObject({ status: 'interrupted' });
+    expect(restartedStore.get('task-restart')?.approval).toBeUndefined();
+    expect(taskContextStore.get('task-restart')).toMatchObject({ status: 'interrupted', interruptionReason: 'runtime-lost', pendingChanges: [] });
+    expect(taskContextStore.get('task-restart')?.findings).toEqual(expect.arrayContaining([expect.objectContaining({ summary: 'Task interrupted because previous runtime no longer exists.' })]));
+    expect(taskContextStore.get('task-restart')?.findings).toEqual(expect.arrayContaining([expect.objectContaining({ type: 'risk' })]));
+    expect(taskContextStore.get('task-restart')?.pendingApproval).toBeUndefined();
+    expect(taskContextStore.get('task-restart')?.activeChangeSetId).toBeUndefined();
+    expect(changeSetStore.get('change-set-restart')?.state).toBe('invalidated');
   });
 });

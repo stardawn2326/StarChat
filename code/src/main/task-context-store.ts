@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { AgentTaskMetrics } from '../shared/agent-metrics';
+import type { AgentInterruptionReason } from '../shared/agent';
 import { cloneAgentTaskMetrics, EMPTY_AGENT_TASK_METRICS } from '../shared/agent-metrics';
 import type {
   FileReadRecord,
@@ -27,6 +28,7 @@ const TASK_CONTEXT_STATUSES: readonly TaskContextStatus[] = ['running', 'waiting
 const PLAN_STATUSES: readonly TaskPlanItem['status'][] = ['pending', 'in-progress', 'completed', 'blocked'];
 const FINDING_TYPES: readonly TaskFinding['type'][] = ['project', 'file', 'test', 'risk', 'decision'];
 const VERIFICATION_RESULTS: readonly VerificationRecord['result'][] = ['passed', 'failed', 'skipped', 'waiting'];
+const INTERRUPTION_REASONS: readonly AgentInterruptionReason[] = ['application-restart', 'runtime-lost', 'workspace-unavailable', 'approval-expired', 'input-expired'];
 
 interface PersistedTaskContexts {
   version: 1;
@@ -73,6 +75,10 @@ function relativePath(value: unknown): string | null {
 
 function status(value: unknown): TaskContextStatus {
   return TASK_CONTEXT_STATUSES.includes(value as TaskContextStatus) ? value as TaskContextStatus : 'running';
+}
+
+function interruptionReason(value: unknown): AgentInterruptionReason | undefined {
+  return INTERRUPTION_REASONS.includes(value as AgentInterruptionReason) ? value as AgentInterruptionReason : undefined;
 }
 
 function metrics(value: unknown): AgentTaskMetrics {
@@ -204,6 +210,8 @@ function sanitizeContext(value: unknown, fallbackNow: number): TaskContext | nul
   const pendingApproval = source.pendingApproval && typeof source.pendingApproval === 'object' && redactText(source.pendingApproval.summary, 4000)
     ? { summary: redactText(source.pendingApproval.summary, 4000), createdAt: timestamp(source.pendingApproval.createdAt, fallbackNow) }
     : undefined;
+  const activeChangeSetId = id(source.activeChangeSetId);
+  const interruptionReasonValue = interruptionReason(source.interruptionReason);
   const repoMap = sanitizeRepoMap(source.repoMap);
   return {
     taskId,
@@ -216,11 +224,13 @@ function sanitizeContext(value: unknown, fallbackNow: number): TaskContext | nul
     verification: sanitizeVerifications(source.verification),
     metrics: metrics(source.metrics),
     status: status(source.status),
+    ...(interruptionReasonValue ? { interruptionReason: interruptionReasonValue } : {}),
     createdAt: timestamp(source.createdAt, fallbackNow),
     updatedAt: timestamp(source.updatedAt, fallbackNow),
     ...(repoMap ? { repoMap } : {}),
     ...(latestFailure ? { latestFailure } : {}),
     ...(pendingApproval ? { pendingApproval } : {}),
+    ...(activeChangeSetId ? { activeChangeSetId } : {}),
     ...(Array.isArray(source.userConstraints) ? { userConstraints: source.userConstraints.map((item) => redactText(item, 2000)).filter(Boolean).slice(-MAX_USER_CONSTRAINTS) } : {})
   };
 }
@@ -279,11 +289,21 @@ export class TaskContextStore {
   }
 
   markCompleted(taskId: string): TaskContext {
-    return this.update(taskId, { status: 'completed', pendingApproval: undefined });
+    return this.update(taskId, { status: 'completed', pendingApproval: undefined, pendingChanges: [], activeChangeSetId: undefined, interruptionReason: undefined });
   }
 
-  markInterrupted(taskId: string, reason = '应用重启时任务未完成'): TaskContext {
-    return this.update(taskId, { status: 'interrupted', latestFailure: { summary: redactText(reason, 4000), createdAt: this.now() }, pendingApproval: undefined });
+  markInterrupted(taskId: string, reason = 'Task interrupted because previous runtime no longer exists.', reasonCode: AgentInterruptionReason = 'runtime-lost'): TaskContext {
+    return this.update(taskId, (current) => ({
+      status: 'interrupted',
+      interruptionReason: reasonCode,
+      latestFailure: { summary: redactText(reason, 4000), createdAt: this.now() },
+      pendingApproval: undefined,
+      pendingChanges: [],
+      activeChangeSetId: undefined,
+      findings: current.findings.some((finding) => finding.type === 'risk' && finding.summary === 'Task interrupted because previous runtime no longer exists.')
+        ? current.findings
+        : [...current.findings, { id: `${taskId}:interrupted`, type: 'risk' as const, summary: 'Task interrupted because previous runtime no longer exists.', createdAt: this.now() }]
+    }));
   }
 
   delete(taskId: string): void {

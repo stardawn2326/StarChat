@@ -251,6 +251,8 @@ const bridge = {
     respond: (request: AgentRespondRequest): Promise<void> => ipcRenderer.invoke('agent:respond', request),
     list: (): Promise<AgentTask[]> => ipcRenderer.invoke('agent:list'),
     get: (taskId: string): Promise<AgentTask | null> => ipcRenderer.invoke('agent:get', taskId),
+    context: (taskId: string): Promise<import('../shared/task-context').TaskContext | null> => ipcRenderer.invoke('agent:context', taskId),
+    dismiss: (taskId: string): Promise<void> => ipcRenderer.invoke('agent:dismiss', taskId),
     onEvent: (callback: (event: AgentEvent) => void): (() => void) => {
       const listener = (_event: IpcRendererEvent, payload: AgentEvent): void => callback(payload);
       ipcRenderer.on('agent:event', listener);
