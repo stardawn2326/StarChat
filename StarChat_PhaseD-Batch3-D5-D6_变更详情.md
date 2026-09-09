@@ -104,7 +104,7 @@
 | `pnpm exec vitest run src/main/git-runner.test.ts` | 通过；1 个测试文件、3 个测试 |
 | `pnpm exec vitest run src/main/brand-migration.test.ts` | 通过；1 个测试文件、2 个测试 |
 | `pnpm build` | 通过；D7 Windows 打包前置构建再次通过 |
-| `pnpm run package:win` | 通过；最终 master `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc` 生成 Windows x64 portable EXE |
+| `pnpm run package:win` | 通过；在 D7 代码合并提交 `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc` 上生成 Windows x64 portable EXE；后续仅文档收尾合并，未改变打包代码 |
 | `git diff --check` | 通过；仅有 Windows 换行转换提示 |
 
 新增覆盖包括：哈希与元数据不落正文、创建/更新/删除组合、外部修改/目标消失、内容/操作/范围/工作区身份变化、拒绝目录/敏感文件/符号链接、大小限制、事务阶段失败、三类回滚、回滚失败、Agent 终止模型循环、重启归一化、上下文审计、重试新任务、D7 组合链路和 UI/IPC 契约。
@@ -155,6 +155,7 @@
 - D7 提交：`02bae1b`（`test: add agent v1.5 e2e acceptance`）。
 - D7 PR：[#3](https://github.com/stardawn2326/StarChat/pull/3)，PR HEAD `02bae1b0a803ea79ce1a1f41ecbfcc5f8bdf2756`，已合并。
 - D7 PR CI：Actions run `34348153314`，通过；合并提交：`ab9d6f3e31dc9bc69920ca637902ca336bcb17dc`。
-- D7 合并后 master CI：Actions run `34348335347`，通过；当前最终 master 为 `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc`。
+- D7 合并后 master CI：Actions run `34348335347`，通过；D7 代码最终提交为 `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc`。
 - D5/D6 Seal PR #2：最终提交 `7de02af`，PR CI run `34346796811` 通过；合并提交 `069a2890c0cf95f4b2322616c4798baf36572ff7`，master CI run `34347002823` 通过。
-- D7 推送分支：`feat/phase-d-agent-v1-5-e2e`；详情文档、验收代码和最终 master 状态均已推送到 `https://github.com/stardawn2326/StarChat.git`。
+- 详情文档收尾 PR #4：合并提交 `0b7dff48acc603afca86b45930a88419458cfe58`，master CI run `34349163859` 通过；该合并只更新交付回执，不改变 D7 代码或 EXE。
+- D7 推送分支：`feat/phase-d-agent-v1-5-e2e`；详情文档、验收代码和交付回执均已推送到 `https://github.com/stardawn2326/StarChat.git`。
