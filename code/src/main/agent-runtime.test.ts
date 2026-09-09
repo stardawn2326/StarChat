@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { AgentModelMessage } from '../shared/agent';
 import { AgentRuntime } from './agent-runtime';
+import { ChangeSetApplyError } from './change-set';
 
 function tool(name: string, run: (args: unknown) => Promise<unknown>) {
   return { name, description: name, schema: { type: 'object' }, run };
@@ -173,5 +174,27 @@ describe('agent model-tool runtime', () => {
     expect(summaries[2]).toContain('src/c.ts');
     expect(summaries[2]).toContain('src/d.ts');
     expect(summaries[2]).toContain('typecheck: failed');
+  });
+
+  it('stops after a partial ChangeSet failure instead of continuing the model loop', async () => {
+    const complete = vi.fn().mockResolvedValueOnce({ type: 'tool_calls' as const, calls: [{ id: 'write-1', name: 'write', arguments: '{}' }] }).mockResolvedValue({ type: 'final' as const, content: '不应继续' });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      tools: [{
+        ...tool('write', async () => ({ ok: true })),
+        requiresApproval: true,
+        approval: () => ({ target: 'src/a.ts', plan: '更新 src/a.ts' }),
+        runApproved: async () => {
+          throw new ChangeSetApplyError('partial-failure', '变更集应用失败（partial-failure）', ['src/a.ts'], ['恢复备份失败']);
+        }
+      }]
+    });
+
+    const waiting = await runtime.run({ taskId: 'task-partial-failure', message: '修改文件' });
+    expect(waiting.status).toBe('waiting_for_approval');
+    const result = await runtime.approve(true);
+
+    expect(result).toMatchObject({ status: 'failed', writeFailure: { state: 'partial-failure', affectedPaths: ['src/a.ts'], rollbackFailures: ['恢复备份失败'] } });
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 });

@@ -11,9 +11,9 @@ import type {
 import { sanitizeAgentStartRequest } from '../shared/agent';
 import type { AppSettings } from '../shared/settings';
 import { AgentStore } from './agent-store';
-import { AgentRuntime, type AgentModel, type AgentToolExecutionEvent } from './agent-runtime';
+import { AgentRuntime, type AgentModel, type AgentToolExecutionEvent, type AgentWriteFailure } from './agent-runtime';
 import { createAgentTools, runVerification, type VerificationResult } from './agent-tools';
-import { WorkspaceGuard } from './agent-security';
+import { WorkspaceGuard, type WorkspaceFileSystemAdapter } from './agent-security';
 import { routeTurn } from './agent-router';
 import type { SessionExecutionContext } from './session-store';
 import { detectProject } from './project-detector';
@@ -55,6 +55,7 @@ export interface AgentServiceOptions {
   taskContextStore?: TaskContextStore;
   repoMapBuilder?: RepoMapBuilder;
   changeSetStore?: ChangeSetStore;
+  workspaceFileSystem?: WorkspaceFileSystemAdapter;
 }
 
 interface LiveTask {
@@ -232,6 +233,17 @@ export class AgentService {
     }));
   }
 
+  private recordChangeSetFailure(taskId: string, failure: AgentWriteFailure): void {
+    const paths = failure.affectedPaths.map((path) => redact(path).replaceAll('\\', '/').slice(0, 2_000)).filter(Boolean).slice(0, 50);
+    const rollbackFailures = failure.rollbackFailures.map((item) => redact(item).slice(0, 400)).filter(Boolean).slice(0, 20);
+    const summary = `ChangeSet ${failure.state}；受影响路径：${paths.join('、') || '未确定'}${rollbackFailures.length > 0 ? `；回滚失败：${rollbackFailures.join('；')}` : ''}`;
+    this.updateTaskContext(taskId, (current) => ({
+      findings: current.findings.some((finding) => finding.id.startsWith(`${taskId}:change-set-apply:`))
+        ? current.findings
+        : [...current.findings, { id: `${taskId}:change-set-apply:${this.now()}`, type: 'risk' as const, summary, createdAt: this.now() }]
+    }));
+  }
+
   private releaseWriteLock(taskId: string): void {
     const live = this.live.get(taskId);
     if (!live) return;
@@ -340,7 +352,7 @@ export class AgentService {
     const allowExecution = trust === 'trusted-execution';
     try {
       if (this.options.store.get(task.id)?.status === 'cancelled') return;
-      const guard = new WorkspaceGuard(execution.workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [] });
+      const guard = new WorkspaceGuard(execution.workspaceRoot, { deniedRoots: context.live2dPath ? [context.live2dPath] : [], fileSystem: this.options.workspaceFileSystem });
       runtime = new AgentRuntime({
         model: this.options.createModel(context),
         tools: createAgentTools(guard, this.options.executeVerification ?? runVerification, {
@@ -465,6 +477,7 @@ export class AgentService {
       } : undefined);
       return;
     }
+    if (result.writeFailure) this.recordChangeSetFailure(task.id, result.writeFailure);
     this.setStatus(task, result.status, result.error);
     this.emit({ type: 'error', taskId: task.id, message: result.error, timestamp: this.now() });
   }

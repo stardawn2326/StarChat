@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, renameSync as nativeRenameSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
 import { ChangeSetStore } from './change-set-store';
 import { TaskContextStore } from './task-context-store';
+import { createWorkspaceFileSystemAdapter, type WorkspaceFileSystemAdapter } from './agent-security';
 
 async function waitFor(check: () => boolean): Promise<void> {
   for (let index = 0; index < 40; index += 1) {
@@ -16,7 +17,7 @@ async function waitFor(check: () => boolean): Promise<void> {
   throw new Error('等待 Agent 任务状态超时');
 }
 
-function setup() {
+function setup(options: { workspaceFileSystem?: WorkspaceFileSystemAdapter } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'starchat-agent-service-'));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'note.txt'), 'hello\nworld\n', 'utf8');
@@ -36,6 +37,7 @@ function setup() {
     executeVerification,
     taskContextStore,
     changeSetStore,
+    workspaceFileSystem: options.workspaceFileSystem,
     now: () => Date.now()
   });
   return { root, store, service, executeVerification, taskContextStore, changeSetStore, setResponse: (next: typeof response) => { response = next; } };
@@ -249,6 +251,34 @@ describe('Agent service lifecycle', () => {
     expect(changeSetStore.get(changeSetId!)?.state).toBe('invalidated');
     expect(taskContextStore.get(started.taskId)).toMatchObject({ status: 'failed', pendingChanges: [] });
     expect(taskContextStore.get(started.taskId)?.activeChangeSetId).toBeUndefined();
+  });
+
+  it('records a risk finding and affected paths after partial ChangeSet rollback failure', async () => {
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: (source, destination) => {
+        if (/[\\/]second\.txt$/u.test(source) && /\.backup$/u.test(destination)) throw new Error('injected second item failure');
+        if (/[\\/]\.note\.txt\.starchat-agent-.*\.backup$/u.test(source) && /[\\/]note\.txt$/u.test(destination)) throw new Error('injected rollback failure');
+        nativeRenameSync(source, destination);
+      }
+    });
+    const { root, store, service, setResponse, taskContextStore } = setup({ workspaceFileSystem: fileSystem });
+    writeFileSync(join(root, 'src', 'second.txt'), 'second before\n', 'utf8');
+    const changes = [
+      { type: 'update', path: 'src/note.txt', content: 'first after\n' },
+      { type: 'update', path: 'src/second.txt', content: 'second after\n' }
+    ];
+    setResponse({ type: 'tool_calls', calls: [{ id: 'partial-write', name: 'apply_file_changes', arguments: JSON.stringify({ changes }) }] });
+    const started = await service.start({ mode: 'agent', message: '执行多文件变更' });
+    await waitFor(() => store.get(started.taskId)?.status === 'waiting_for_approval');
+    const approval = store.get(started.taskId)!.approval!;
+    setResponse({ type: 'final', content: '不应继续到最终摘要' });
+
+    await service.approve(started.taskId, approval.id, true);
+    await waitFor(() => store.get(started.taskId)?.status === 'failed');
+    expect(store.get(started.taskId)?.error).toContain('partial-failure');
+    expect(taskContextStore.get(started.taskId)?.findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'risk', summary: expect.stringContaining('src/note.txt') })
+    ]));
   });
 
   it('reconciles interrupted tasks, old approvals, contexts, and ChangeSets on restart', () => {
