@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { ChangeSet, ChangeSetEntry } from '../shared/change-set';
 import { MAX_CHANGESET_ENTRIES } from '../shared/change-set';
 import { ChangeSetStore } from './change-set-store';
-import { WorkspaceGuard, type PatchPreview, type PreparedPatchPreview, type PreparedWorkspaceChange } from './agent-security';
+import { WorkspaceApplyError, WorkspaceGuard, WorkspacePreconditionError, type PatchPreview, type PreparedPatchPreview, type PreparedWorkspaceChange } from './agent-security';
 
 export interface ChangeSetIdentity {
   taskId: string;
@@ -14,6 +14,20 @@ export interface CreatedChangeSet {
   changeSet: ChangeSet;
   preview: PatchPreview;
   prepared: PreparedWorkspaceChange[];
+}
+
+export class ChangeSetApplyError extends Error {
+  readonly state: 'apply-failed' | 'partial-failure';
+  readonly affectedPaths: string[];
+  readonly rollbackFailures: string[];
+
+  constructor(state: 'apply-failed' | 'partial-failure', message: string, affectedPaths: string[] = [], rollbackFailures: string[] = []) {
+    super(message);
+    this.name = 'ChangeSetApplyError';
+    this.state = state;
+    this.affectedPaths = [...new Set(affectedPaths)].slice(0, MAX_CHANGESET_ENTRIES);
+    this.rollbackFailures = rollbackFailures.slice(0, 20);
+  }
 }
 
 export class ChangeSetInvalidatedError extends Error {
@@ -132,6 +146,14 @@ export class ChangeSetManager {
       this.store.update(changeSet.id, { state: 'applied' });
       return { ...prepared.preview, changeSetId: changeSet.id };
     } catch (error) {
+      if (error instanceof WorkspaceApplyError) {
+        this.store.update(changeSet.id, { state: error.state });
+        throw new ChangeSetApplyError(error.state, error.message, error.affectedPaths, error.rollbackFailures);
+      }
+      if (error instanceof WorkspacePreconditionError) {
+        this.invalidate(changeSet.id);
+        throw new ChangeSetInvalidatedError();
+      }
       this.invalidate(changeSet.id);
       if (error instanceof ChangeSetInvalidatedError) throw error;
       throw new ChangeSetInvalidatedError();

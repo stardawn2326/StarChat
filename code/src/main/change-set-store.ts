@@ -4,7 +4,7 @@ import type { ChangeSet, ChangeSetEntry, ChangeSetState } from '../shared/change
 import { MAX_CHANGESET_ENTRIES, MAX_CHANGESET_PATH_CHARS } from '../shared/change-set';
 import { isSensitiveWorkspacePath } from './agent-security';
 
-const STATES: readonly ChangeSetState[] = ['draft', 'waiting-approval', 'approved', 'applied', 'rejected', 'invalidated'];
+const STATES: readonly ChangeSetState[] = ['draft', 'waiting-approval', 'approved', 'applied', 'apply-failed', 'partial-failure', 'rejected', 'invalidated'];
 const MAX_STORED_CHANGESETS = 200;
 
 interface PersistedChangeSets {
@@ -152,7 +152,7 @@ export class ChangeSetStore {
   private prune(): void {
     if (this.changeSets.size <= this.maxChangeSets) return;
     const removable = [...this.changeSets.values()]
-      .filter((changeSet) => ['applied', 'rejected', 'invalidated'].includes(changeSet.state))
+      .filter((changeSet) => ['applied', 'apply-failed', 'partial-failure', 'rejected', 'invalidated'].includes(changeSet.state))
       .sort((left, right) => left.updatedAt - right.updatedAt);
     for (const changeSet of removable) {
       if (this.changeSets.size <= this.maxChangeSets) break;

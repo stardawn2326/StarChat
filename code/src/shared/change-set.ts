@@ -3,6 +3,8 @@ export type ChangeSetState =
   | 'waiting-approval'
   | 'approved'
   | 'applied'
+  | 'apply-failed'
+  | 'partial-failure'
   | 'rejected'
   | 'invalidated';
 

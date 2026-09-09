@@ -1,20 +1,21 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync as nativeRenameSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it } from 'vitest';
 import { ChangeSetInvalidatedError, ChangeSetManager } from './change-set';
 import { ChangeSetStore } from './change-set-store';
-import { WorkspaceGuard } from './agent-security';
+import { ChangeSetApplyError } from './change-set';
+import { createWorkspaceFileSystemAdapter, WorkspaceGuard, type WorkspaceFileSystemAdapter } from './agent-security';
 
 const UPDATE_PATCH = '*** Begin Patch\n*** Update File: src/note.txt\n@@\n hello\n-world\n+approved\n*** End Patch';
 
-function setup(): { root: string; guard: WorkspaceGuard; store: ChangeSetStore; manager: ChangeSetManager } {
+function setup(fileSystem?: WorkspaceFileSystemAdapter): { root: string; guard: WorkspaceGuard; store: ChangeSetStore; manager: ChangeSetManager } {
   const root = mkdtempSync(join(tmpdir(), 'starchat-change-set-'));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'note.txt'), 'hello\nworld\n', 'utf8');
   writeFileSync(join(root, 'src', 'remove.txt'), 'remove me\n', 'utf8');
   const store = new ChangeSetStore(join(root, 'change-sets.json'));
-  return { root, guard: new WorkspaceGuard(root), store, manager: new ChangeSetManager(store) };
+  return { root, guard: new WorkspaceGuard(root, { fileSystem }), store, manager: new ChangeSetManager(store) };
 }
 
 function identity(invocationId = 'invocation-1') {
@@ -149,5 +150,108 @@ describe('change set approval boundary', () => {
     expect(store.get(created.changeSet.id)?.state).toBe('rejected');
     expect(() => manager.applyPatch(guard, { taskId: 'task-1', workspaceId: 'workspace-1', invocationId: 'rejected' }, UPDATE_PATCH)).toThrow(ChangeSetInvalidatedError);
     expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+  });
+
+  it('records apply-failed and leaves files unchanged when the first commit operation fails', () => {
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: () => { throw new Error('injected first rename failure'); }
+    });
+    const { root, guard, store, manager } = setup(fileSystem);
+    const created = manager.createFileChanges(guard, identity('first-write-failed'), [{ type: 'update', path: 'src/note.txt', content: 'after\n' }]);
+
+    expect(() => manager.applyFileChanges(guard, identity('first-write-failed'), [{ type: 'update', path: 'src/note.txt', content: 'after\n' }]))
+      .toThrow(ChangeSetApplyError);
+    expect(store.get(created.changeSet.id)?.state).toBe('apply-failed');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+  });
+
+  it('rolls back the first update when the second update fails', () => {
+    let renameCount = 0;
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: (source, destination) => {
+        renameCount += 1;
+        if (renameCount === 3) throw new Error('injected second item failure');
+        nativeRenameSync(source, destination);
+      }
+    });
+    const { root, guard, store, manager } = setup(fileSystem);
+    writeFileSync(join(root, 'src', 'second.txt'), 'second before\n', 'utf8');
+    const changes = [
+      { type: 'update' as const, path: 'src/note.txt', content: 'first after\n' },
+      { type: 'update' as const, path: 'src/second.txt', content: 'second after\n' }
+    ];
+    const created = manager.createFileChanges(guard, identity('second-item-failed'), changes);
+
+    expect(() => manager.applyFileChanges(guard, identity('second-item-failed'), changes)).toThrow(ChangeSetApplyError);
+    expect(store.get(created.changeSet.id)?.state).toBe('apply-failed');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+    expect(readFileSync(join(root, 'src', 'second.txt'), 'utf8')).toBe('second before\n');
+  });
+
+  it('rolls back a created file when a later update fails', () => {
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: (source, destination) => {
+        if (/[\\/]note\.txt$/u.test(source) && /\.backup$/u.test(destination)) throw new Error('injected later update failure');
+        nativeRenameSync(source, destination);
+      }
+    });
+    const { root, guard, store, manager } = setup(fileSystem);
+    const changes = [
+      { type: 'create' as const, path: 'src/new.txt', content: 'new\n' },
+      { type: 'update' as const, path: 'src/note.txt', content: 'updated\n' }
+    ];
+    const created = manager.createFileChanges(guard, identity('create-rollback'), changes);
+
+    expect(() => manager.applyFileChanges(guard, identity('create-rollback'), changes)).toThrow(ChangeSetApplyError);
+    expect(store.get(created.changeSet.id)?.state).toBe('apply-failed');
+    expect(existsSync(join(root, 'src', 'new.txt'))).toBe(false);
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+  });
+
+  it('rolls back a deleted file when a later update fails', () => {
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: (source, destination) => {
+        if (/[\\/]note\.txt$/u.test(source) && /\.backup$/u.test(destination)) throw new Error('injected later update failure');
+        nativeRenameSync(source, destination);
+      }
+    });
+    const { root, guard, store, manager } = setup(fileSystem);
+    const changes = [
+      { type: 'delete' as const, path: 'src/remove.txt' },
+      { type: 'update' as const, path: 'src/note.txt', content: 'updated\n' }
+    ];
+    const created = manager.createFileChanges(guard, identity('delete-rollback'), changes);
+
+    expect(() => manager.applyFileChanges(guard, identity('delete-rollback'), changes)).toThrow(ChangeSetApplyError);
+    expect(store.get(created.changeSet.id)?.state).toBe('apply-failed');
+    expect(readFileSync(join(root, 'src', 'remove.txt'), 'utf8')).toBe('remove me\n');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+  });
+
+  it('records partial-failure and affected paths when rollback itself fails', () => {
+    const fileSystem = createWorkspaceFileSystemAdapter({
+      renameSync: (source, destination) => {
+        if (/[\\/]second\.txt$/u.test(source) && /\.backup$/u.test(destination)) throw new Error('injected second item failure');
+        if (/[\\/]\.note\.txt\.starchat-agent-.*\.backup$/u.test(source) && /[\\/]note\.txt$/u.test(destination)) throw new Error('injected rollback failure');
+        nativeRenameSync(source, destination);
+      }
+    });
+    const { root, guard, store, manager } = setup(fileSystem);
+    writeFileSync(join(root, 'src', 'second.txt'), 'second before\n', 'utf8');
+    const changes = [
+      { type: 'update' as const, path: 'src/note.txt', content: 'first after\n' },
+      { type: 'update' as const, path: 'src/second.txt', content: 'second after\n' }
+    ];
+    const created = manager.createFileChanges(guard, identity('partial-failure'), changes);
+
+    let thrown: unknown;
+    try {
+      manager.applyFileChanges(guard, identity('partial-failure'), changes);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toMatchObject({ name: 'ChangeSetApplyError', state: 'partial-failure', affectedPaths: expect.arrayContaining(['src/note.txt']) });
+    expect(store.get(created.changeSet.id)?.state).toBe('partial-failure');
+    expect(existsSync(join(root, 'src', 'note.txt'))).toBe(false);
   });
 });

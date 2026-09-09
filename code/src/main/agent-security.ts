@@ -1,4 +1,5 @@
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -11,7 +12,8 @@ import {
   unlinkSync,
   writeFileSync
 } from 'node:fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { AgentChangePreview, AgentFileChange } from '../shared/agent';
 
 const DEFAULT_MAX_READ_BYTES = 128 * 1024;
@@ -19,6 +21,49 @@ const DEFAULT_MAX_RESULTS = 50;
 const TEXT_ENCODER = new TextEncoder();
 const MAX_PATH_CHARS = 2_000;
 const MAX_PATCH_BYTES = 512 * 1024;
+
+export interface WorkspaceFileSystemAdapter {
+  copyFileSync: (source: string, destination: string) => void;
+  mkdirSync: (path: string, options: { recursive?: boolean }) => void;
+  renameSync: (source: string, destination: string) => void;
+  unlinkSync: (path: string) => void;
+  writeFileSync: (path: string, data: string) => void;
+}
+
+const DEFAULT_WORKSPACE_FILE_SYSTEM: WorkspaceFileSystemAdapter = {
+  copyFileSync: (source, destination) => { copyFileSync(source, destination); },
+  mkdirSync: (path, options) => { mkdirSync(path, options); },
+  renameSync: (source, destination) => { renameSync(source, destination); },
+  unlinkSync: (path) => { unlinkSync(path); },
+  writeFileSync: (path, data) => { writeFileSync(path, data, 'utf8'); }
+};
+
+export function createWorkspaceFileSystemAdapter(overrides: Partial<WorkspaceFileSystemAdapter> = {}): WorkspaceFileSystemAdapter {
+  return { ...DEFAULT_WORKSPACE_FILE_SYSTEM, ...overrides };
+}
+
+export class WorkspacePreconditionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'WorkspacePreconditionError';
+  }
+}
+
+export type WorkspaceApplyFailureState = 'apply-failed' | 'partial-failure';
+
+export class WorkspaceApplyError extends Error {
+  readonly state: WorkspaceApplyFailureState;
+  readonly affectedPaths: string[];
+  readonly rollbackFailures: string[];
+
+  constructor(state: WorkspaceApplyFailureState, message: string, affectedPaths: string[] = [], rollbackFailures: string[] = []) {
+    super(message);
+    this.name = 'WorkspaceApplyError';
+    this.state = state;
+    this.affectedPaths = [...new Set(affectedPaths)].slice(0, 50);
+    this.rollbackFailures = rollbackFailures.slice(0, 20);
+  }
+}
 
 function lowerPath(value: string): string {
   return value.replaceAll('\\', '/').replace(/\/+/g, '/').replace(/\/$/, '').toLocaleLowerCase();
@@ -126,6 +171,29 @@ export interface PreparedPatchPreview {
   changes: PreparedWorkspaceChange[];
 }
 
+export interface StagedWorkspaceChange {
+  path: string;
+  operation: PreparedWorkspaceChange['operation'];
+  beforeContent: string | null;
+  afterContent: string | null;
+  targetPath: string;
+  temporaryPath?: string;
+  snapshotPath?: string;
+  backupPath?: string;
+  temporaryCreated: boolean;
+  snapshotCreated: boolean;
+  targetMayBeChanged: boolean;
+  targetMovedToBackup: boolean;
+  targetCreated: boolean;
+  backupRemoved: boolean;
+}
+
+export interface WorkspaceRollbackResult {
+  complete: boolean;
+  affectedPaths: string[];
+  errors: string[];
+}
+
 export function isSensitiveWorkspacePath(relativePath: string): boolean {
   return isSensitive(relativePath);
 }
@@ -188,6 +256,7 @@ export interface WorkspaceGuardOptions {
   maxReadBytes?: number;
   maxSearchResults?: number;
   deniedRoots?: string[];
+  fileSystem?: WorkspaceFileSystemAdapter;
 }
 
 export interface WorkspaceWalkOptions {
@@ -215,6 +284,7 @@ export class WorkspaceGuard {
   readonly maxReadBytes: number;
   readonly maxSearchResults: number;
   private readonly deniedRoots: string[];
+  private readonly fileSystem: WorkspaceFileSystemAdapter;
 
   constructor(rootDirectory: string, options: WorkspaceGuardOptions = {}) {
     if (!isAbsolute(rootDirectory) || !existsSync(rootDirectory)) throw new Error('授权工作区不存在');
@@ -222,6 +292,7 @@ export class WorkspaceGuard {
     this.maxReadBytes = options.maxReadBytes ?? DEFAULT_MAX_READ_BYTES;
     this.maxSearchResults = options.maxSearchResults ?? DEFAULT_MAX_RESULTS;
     this.deniedRoots = (options.deniedRoots ?? []).filter((item) => existsSync(item)).map((item) => realpathSync(item));
+    this.fileSystem = options.fileSystem ?? createWorkspaceFileSystemAdapter();
   }
 
   resolve(requestedPath: string): string {
@@ -463,18 +534,225 @@ export class WorkspaceGuard {
     return this.prepareFileChangesPreview(input).preview;
   }
 
-  applyPreparedFileChanges(changes: readonly PreparedWorkspaceChange[]): void {
-    for (const change of changes) {
-      const target = this.resolve(change.path);
-      if (change.operation === 'delete') {
-        unlinkSync(target);
-        continue;
+  private artifactPath(targetPath: string, kind: 'temporary' | 'snapshot' | 'backup' | 'restore'): string {
+    return join(dirname(targetPath), `.${basename(targetPath)}.starchat-agent-${process.pid}-${Date.now()}-${randomUUID()}.${kind}`);
+  }
+
+  private errorMessage(error: unknown): string {
+    return error instanceof Error ? error.message : '文件变更操作失败';
+  }
+
+  private prepareStagedChanges(changes: readonly PreparedWorkspaceChange[]): StagedWorkspaceChange[] {
+    if (changes.length === 0 || changes.length > MAX_FILE_CHANGE_COUNT) throw new WorkspacePreconditionError('变更集没有有效文件');
+    const seen = new Set<string>();
+    return changes.map((change) => {
+      const path = change.path.replaceAll('\\', '/');
+      if (!path || seen.has(path)) throw new WorkspacePreconditionError(`变更集包含重复路径：${path}`);
+      seen.add(path);
+      let targetPath: string;
+      try {
+        targetPath = this.resolve(path);
+      } catch {
+        throw new WorkspacePreconditionError(`变更集路径无法复核：${path}`);
       }
-      mkdirSync(dirname(target), { recursive: true });
-      const temporary = `${target}.starchat-agent-${process.pid}-${Date.now()}.tmp`;
-      writeFileSync(temporary, change.afterContent ?? '', 'utf8');
-      renameSync(temporary, target);
+      const exists = existsSync(targetPath);
+      if (change.operation === 'create') {
+        if (exists || change.beforeContent !== null || change.afterContent === null) throw new WorkspacePreconditionError(`创建前置条件已变化：${path}`);
+      } else {
+        if (!exists || !statSync(targetPath).isFile() || change.beforeContent === null || (change.operation === 'update' && change.afterContent === null) || (change.operation === 'delete' && change.afterContent !== null)) {
+          throw new WorkspacePreconditionError(`修改前置条件已变化：${path}`);
+        }
+        try {
+          if (this.readText(path) !== change.beforeContent) throw new WorkspacePreconditionError(`文件在批准前发生变化：${path}`);
+        } catch (error) {
+          if (error instanceof WorkspacePreconditionError) throw error;
+          throw new WorkspacePreconditionError(`文件在批准前无法复核：${path}`);
+        }
+      }
+      const staged: StagedWorkspaceChange = {
+        path,
+        operation: change.operation,
+        beforeContent: change.beforeContent,
+        afterContent: change.afterContent,
+        targetPath,
+        ...(change.operation === 'create' || change.operation === 'update' ? { temporaryPath: this.artifactPath(targetPath, 'temporary') } : {}),
+        ...(change.operation !== 'create' ? {
+          snapshotPath: this.artifactPath(targetPath, 'snapshot'),
+          backupPath: this.artifactPath(targetPath, 'backup')
+        } : {}),
+        temporaryCreated: false,
+        snapshotCreated: false,
+        targetMayBeChanged: false,
+        targetMovedToBackup: false,
+        targetCreated: false,
+        backupRemoved: false
+      };
+      if (staged.temporaryPath && existsSync(staged.temporaryPath) || staged.snapshotPath && existsSync(staged.snapshotPath) || staged.backupPath && existsSync(staged.backupPath)) {
+        throw new WorkspacePreconditionError(`变更集临时路径已存在：${path}`);
+      }
+      return staged;
+    });
+  }
+
+  private cleanupStagedArtifacts(staged: readonly StagedWorkspaceChange[]): string[] {
+    const errors: string[] = [];
+    for (const item of [...staged].reverse()) {
+      for (const artifact of [item.temporaryPath, item.snapshotPath]) {
+        if (!artifact || !existsSync(artifact)) continue;
+        try {
+          this.fileSystem.unlinkSync(artifact);
+        } catch (error) {
+          errors.push(`${item.path}: ${this.errorMessage(error)}`);
+        }
+      }
     }
+    return errors;
+  }
+
+  stagePreparedFileChanges(changes: readonly PreparedWorkspaceChange[]): StagedWorkspaceChange[] {
+    const staged = this.prepareStagedChanges(changes);
+    try {
+      for (const item of staged) {
+        if (item.snapshotPath) {
+          this.fileSystem.copyFileSync(item.targetPath, item.snapshotPath);
+          item.snapshotCreated = true;
+        }
+        if (item.temporaryPath) {
+          this.fileSystem.mkdirSync(dirname(item.targetPath), { recursive: true });
+          this.fileSystem.writeFileSync(item.temporaryPath, item.afterContent ?? '');
+          item.temporaryCreated = true;
+        }
+      }
+      return staged;
+    } catch (error) {
+      const cleanupErrors = this.cleanupStagedArtifacts(staged);
+      if (error instanceof WorkspacePreconditionError && cleanupErrors.length === 0) throw error;
+      const details = cleanupErrors.length > 0 ? `；暂存清理失败：${cleanupErrors.join('；')}` : '';
+      throw new WorkspaceApplyError('apply-failed', `变更集阶段准备失败：${this.errorMessage(error)}${details}`, staged.map((item) => item.path), cleanupErrors);
+    }
+  }
+
+  private assertCommitPrecondition(item: StagedWorkspaceChange): void {
+    let resolved: string;
+    try {
+      resolved = this.resolve(item.path);
+    } catch {
+      throw new WorkspacePreconditionError(`变更集路径无法复核：${item.path}`);
+    }
+    if (resolved !== item.targetPath) throw new WorkspacePreconditionError(`变更集路径身份已变化：${item.path}`);
+    const exists = existsSync(item.targetPath);
+    if (item.operation === 'create') {
+      if (exists || !item.temporaryPath || !existsSync(item.temporaryPath)) throw new WorkspacePreconditionError(`创建前置条件已变化：${item.path}`);
+      return;
+    }
+    if (!exists || !statSync(item.targetPath).isFile() || !item.backupPath || existsSync(item.backupPath) || !item.snapshotPath || !existsSync(item.snapshotPath) || (item.operation === 'update' && (!item.temporaryPath || !existsSync(item.temporaryPath)))) {
+      throw new WorkspacePreconditionError(`修改前置条件已变化：${item.path}`);
+    }
+    try {
+      if (this.readText(item.path) !== item.beforeContent) throw new WorkspacePreconditionError(`文件在批准前发生变化：${item.path}`);
+    } catch (error) {
+      if (error instanceof WorkspacePreconditionError) throw error;
+      throw new WorkspacePreconditionError(`文件在批准前无法复核：${item.path}`);
+    }
+  }
+
+  private targetNeedsRestore(item: StagedWorkspaceChange): boolean {
+    if (!item.targetMayBeChanged && !item.targetMovedToBackup && !item.targetCreated) return false;
+    if (item.targetMovedToBackup || item.targetCreated || !existsSync(item.targetPath)) return true;
+    try {
+      return this.readText(item.path) !== item.beforeContent;
+    } catch {
+      return true;
+    }
+  }
+
+  private restoreFromSnapshot(item: StagedWorkspaceChange): void {
+    if (!item.snapshotPath || !existsSync(item.snapshotPath)) throw new Error('原文件备份不存在');
+    const restorePath = this.artifactPath(item.targetPath, 'restore');
+    try {
+      this.fileSystem.copyFileSync(item.snapshotPath, restorePath);
+      this.fileSystem.renameSync(restorePath, item.targetPath);
+    } finally {
+      if (existsSync(restorePath)) this.fileSystem.unlinkSync(restorePath);
+    }
+  }
+
+  rollbackPreparedFileChanges(staged: readonly StagedWorkspaceChange[]): WorkspaceRollbackResult {
+    const affectedPaths: string[] = [];
+    const errors: string[] = [];
+    for (const item of [...staged].reverse()) {
+      const needsRestore = item.operation === 'create' ? item.targetMayBeChanged || item.targetCreated : this.targetNeedsRestore(item);
+      if (needsRestore) affectedPaths.push(item.path);
+      try {
+        if (item.operation === 'create') {
+          if (existsSync(item.targetPath)) this.fileSystem.unlinkSync(item.targetPath);
+        } else if (needsRestore) {
+          if (existsSync(item.targetPath)) this.fileSystem.unlinkSync(item.targetPath);
+          if (item.backupPath && existsSync(item.backupPath)) {
+            this.fileSystem.renameSync(item.backupPath, item.targetPath);
+            item.targetMovedToBackup = false;
+          } else {
+            this.restoreFromSnapshot(item);
+          }
+          item.targetCreated = false;
+        }
+      } catch (error) {
+        errors.push(`${item.path}: ${this.errorMessage(error)}`);
+      }
+      for (const artifact of [item.temporaryPath, item.snapshotPath]) {
+        if (!artifact || !existsSync(artifact)) continue;
+        try {
+          this.fileSystem.unlinkSync(artifact);
+        } catch (error) {
+          errors.push(`${item.path}: ${this.errorMessage(error)}`);
+        }
+      }
+    }
+    return { complete: errors.length === 0, affectedPaths: [...new Set(affectedPaths)], errors };
+  }
+
+  commitPreparedFileChanges(staged: readonly StagedWorkspaceChange[]): void {
+    try {
+      for (const item of staged) {
+        this.assertCommitPrecondition(item);
+        if (item.operation === 'create') {
+          item.targetMayBeChanged = true;
+          this.fileSystem.renameSync(item.temporaryPath!, item.targetPath);
+          item.temporaryCreated = false;
+          item.targetCreated = true;
+          continue;
+        }
+        item.targetMayBeChanged = true;
+        this.fileSystem.renameSync(item.targetPath, item.backupPath!);
+        item.targetMovedToBackup = true;
+        if (item.operation === 'update') {
+          this.fileSystem.renameSync(item.temporaryPath!, item.targetPath);
+          item.temporaryCreated = false;
+          item.targetCreated = true;
+        }
+      }
+      for (const item of staged) {
+        if (item.operation === 'create') continue;
+        if (!item.backupPath || !existsSync(item.backupPath)) throw new Error(`变更集备份不存在：${item.path}`);
+        this.fileSystem.unlinkSync(item.backupPath);
+        item.backupRemoved = true;
+      }
+      for (const item of staged) {
+        if (item.snapshotPath && existsSync(item.snapshotPath)) this.fileSystem.unlinkSync(item.snapshotPath);
+      }
+    } catch (error) {
+      const rollback = this.rollbackPreparedFileChanges(staged);
+      const touched = staged.some((item) => item.targetMayBeChanged || item.targetMovedToBackup || item.targetCreated);
+      if (error instanceof WorkspacePreconditionError && !touched && rollback.complete) throw error;
+      const state: WorkspaceApplyFailureState = rollback.complete ? 'apply-failed' : 'partial-failure';
+      const affectedPaths = [...new Set([...staged.map((item) => item.path), ...rollback.affectedPaths])];
+      const rollbackDetails = rollback.errors.length > 0 ? `；回滚失败：${rollback.errors.join('；')}` : '；已完成回滚';
+      throw new WorkspaceApplyError(state, `变更集应用失败（${state}）：${this.errorMessage(error)}${rollbackDetails}`, affectedPaths, rollback.errors);
+    }
+  }
+
+  applyPreparedFileChanges(changes: readonly PreparedWorkspaceChange[]): void {
+    this.commitPreparedFileChanges(this.stagePreparedFileChanges(changes));
   }
 
   applyApprovedFileChanges(expectedPlan: string, approvedPlan: string): PatchPreview {
