@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { DEFAULT_APP_SETTINGS } from '../shared/settings';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
+import { TaskContextStore } from './task-context-store';
 
 async function waitFor(check: () => boolean): Promise<void> {
   for (let index = 0; index < 40; index += 1) {
@@ -18,6 +19,7 @@ function setup() {
   const root = mkdtempSync(join(tmpdir(), 'starchat-agent-service-'));
   mkdirSync(join(root, 'src'));
   writeFileSync(join(root, 'src', 'note.txt'), 'hello\nworld\n', 'utf8');
+  writeFileSync(join(root, 'src', 'main.ts'), 'export const main = true\n', 'utf8');
   writeFileSync(join(root, 'package.json'), JSON.stringify({ scripts: { typecheck: 'tsc --noEmit' } }), 'utf8');
   const store = new AgentStore(join(root, 'tasks.json'));
   const executeVerification = vi.fn(async () => ({ script: 'typecheck', ok: true, output: 'types ok' }));
@@ -49,6 +51,54 @@ describe('Agent service lifecycle', () => {
     expect(store.get(started.taskId)?.sessionId).toBe('session-a');
   });
 
+  it('creates a repo-aware task context and records safe tool metrics and file paths', async () => {
+    const { root, store } = setup();
+    const contextStore = new TaskContextStore(join(root, 'task-contexts.json'));
+    let completions = 0;
+    const service = new AgentService({
+      store,
+      resolveExecutionContext: (sessionId) => ({ sessionId: sessionId ?? 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
+      getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
+      createModel: () => ({ complete: vi.fn(async () => {
+        if (completions++ === 0) return { type: 'tool_calls' as const, calls: [{ id: 'read-1', name: 'read_file', arguments: JSON.stringify({ path: 'src/note.txt' }) }] };
+        return { type: 'final' as const, content: '已读取' };
+      }) }),
+      taskContextStore: contextStore
+    });
+
+    const started = await service.start({ mode: 'agent', message: '读取 src/note.txt' });
+    await waitFor(() => store.get(started.taskId)?.status === 'completed');
+    expect(contextStore.get(started.taskId)).toMatchObject({
+      workspaceId: 'workspace-a',
+      status: 'completed',
+      filesRead: [{ path: 'src/note.txt' }],
+      metrics: { toolCalls: 1, readFileCalls: 1 },
+      repoMap: { sourceRoots: ['src'] }
+    });
+  });
+
+  it('passes only bounded repository metadata to the Agent model', async () => {
+    const { root, store } = setup();
+    let modelMessages: Array<{ role: string; content: string }> = [];
+    const service = new AgentService({
+      store,
+      resolveExecutionContext: (sessionId) => ({ sessionId: sessionId ?? 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
+      getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
+      createModel: () => ({ complete: vi.fn(async (messages) => {
+        modelMessages = messages;
+        return { type: 'final' as const, content: '已读取' };
+      }) })
+    });
+
+    const started = await service.start({ mode: 'agent', message: '检查项目结构' });
+    await waitFor(() => store.get(started.taskId)?.status === 'completed');
+    const repositoryMessage = modelMessages.find((message) => message.content.includes('受控仓库上下文'));
+    expect(repositoryMessage?.content).toContain('Project: node');
+    expect(repositoryMessage?.content).toContain('Source roots:');
+    expect(repositoryMessage?.content).not.toContain(root);
+    expect(repositoryMessage?.content).not.toContain('package.json 内容');
+  });
+
   it('keeps Agent task state out of companion memory and completes a read-only task', async () => {
     const { service, store } = setup();
     const started = await service.start({ mode: 'agent', message: '读取 src/note.txt' });
@@ -77,6 +127,70 @@ describe('Agent service lifecycle', () => {
       changedFiles: ['src/note.txt'],
       verification: { script: 'typecheck', ok: true, output: 'types ok' }
     });
+  });
+
+  it('persists pending approval and automatic verification as bounded task context', async () => {
+    const { root, store, executeVerification } = setup();
+    const contextStore = new TaskContextStore(join(root, 'task-contexts.json'));
+    const patch = '*** Begin Patch\n*** Update File: src/note.txt\n@@\n hello\n-world\n+context\n*** End Patch';
+    let response: { type: 'final'; content: string } | { type: 'tool_calls'; calls: Array<{ id: string; name: string; arguments: string }> } = { type: 'tool_calls', calls: [{ id: 'write-context', name: 'apply_patch', arguments: JSON.stringify({ patch }) }] };
+    const service = new AgentService({
+      store,
+      resolveExecutionContext: (sessionId) => ({ sessionId: sessionId ?? 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
+      getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
+      createModel: () => ({ complete: vi.fn(async () => response) }),
+      executeVerification,
+      taskContextStore: contextStore
+    });
+    const started = await service.start({ mode: 'agent', message: '修改并验证 src/note.txt' });
+    await waitFor(() => store.get(started.taskId)?.status === 'waiting_for_approval');
+    expect(contextStore.get(started.taskId)).toMatchObject({ status: 'waiting-approval', pendingChanges: [{ path: 'src/note.txt', operation: 'update' }], metrics: { toolCalls: 1, writeCalls: 1 } });
+    const approval = store.get(started.taskId)!.approval!;
+    response = { type: 'final', content: '已完成' };
+    await service.approve(started.taskId, approval.id, true);
+    await waitFor(() => store.get(started.taskId)?.status === 'completed');
+    expect(contextStore.get(started.taskId)).toMatchObject({ status: 'completed', pendingChanges: [], metrics: { writeCalls: 1, verificationRuns: 1 }, verification: [{ result: 'passed', type: 'automatic' }] });
+  });
+
+  it('persists exact create, update and delete operations while approval is pending', async () => {
+    const { root, store, executeVerification } = setup();
+    writeFileSync(join(root, 'src', 'remove.txt'), 'remove me\n', 'utf8');
+    const contextStore = new TaskContextStore(join(root, 'task-contexts.json'));
+    let response: { type: 'final'; content: string } | { type: 'tool_calls'; calls: Array<{ id: string; name: string; arguments: string }> } = {
+      type: 'tool_calls',
+      calls: [{ id: 'mixed-write', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [
+        { type: 'create', path: 'src/new.txt', content: 'new file\n' },
+        { type: 'update', path: 'src/note.txt', content: 'updated file\n' },
+        { type: 'delete', path: 'src/remove.txt' }
+      ] }) }]
+    };
+    const service = new AgentService({
+      store,
+      resolveExecutionContext: (sessionId) => ({ sessionId: sessionId ?? 'session-a', workspaceRoot: root, workspaceId: 'workspace-a', contextType: 'workspace', trust: 'trusted-execution' }),
+      getContext: () => ({ settings: { ...DEFAULT_APP_SETTINGS, assistantMode: 'agent' }, apiKey: 'test-key', roleId: 'baoyin.default', live2dPath: null }),
+      createModel: () => ({ complete: vi.fn(async () => response) }),
+      executeVerification,
+      taskContextStore: contextStore
+    });
+
+    const started = await service.start({ mode: 'agent', message: '准备三类文件变更' });
+    await waitFor(() => store.get(started.taskId)?.status === 'waiting_for_approval');
+    expect(contextStore.get(started.taskId)?.pendingChanges).toMatchObject([
+      { path: 'src/new.txt', operation: 'create' },
+      { path: 'src/note.txt', operation: 'update' },
+      { path: 'src/remove.txt', operation: 'delete' }
+    ]);
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('hello\nworld\n');
+    expect(readFileSync(join(root, 'src', 'remove.txt'), 'utf8')).toBe('remove me\n');
+
+    const approval = store.get(started.taskId)!.approval!;
+    response = { type: 'final', content: '三类变更已完成' };
+    await service.approve(started.taskId, approval.id, true);
+    await waitFor(() => store.get(started.taskId)?.status === 'completed');
+    expect(readFileSync(join(root, 'src', 'new.txt'), 'utf8')).toBe('new file\n');
+    expect(readFileSync(join(root, 'src', 'note.txt'), 'utf8')).toBe('updated file\n');
+    expect(store.get(started.taskId)?.result?.changedFiles).toEqual(['src/new.txt', 'src/note.txt', 'src/remove.txt']);
+    expect(contextStore.get(started.taskId)?.pendingChanges).toEqual([]);
   });
 
   it('keeps applied changes and fails the task when automatic verification fails', async () => {

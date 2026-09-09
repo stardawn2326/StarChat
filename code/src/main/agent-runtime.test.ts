@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import type { AgentModelMessage } from '../shared/agent';
 import { AgentRuntime } from './agent-runtime';
 
 function tool(name: string, run: (args: unknown) => Promise<unknown>) {
@@ -57,5 +58,120 @@ describe('agent model-tool runtime', () => {
     abort.abort();
     release?.();
     await expect(pending).resolves.toMatchObject({ status: 'cancelled' });
+  });
+
+  it('compresses bounded tool facts after the message or output threshold and reports real compactions', async () => {
+    let calls = 0;
+    let compactions = 0;
+    const complete = vi.fn(async (_messages: unknown) => {
+      calls += 1;
+      if (calls <= 5) return { type: 'tool_calls' as const, calls: [{ id: `read-${calls}`, name: 'read', arguments: JSON.stringify({ path: `src/file-${calls}.ts` }) }] };
+      return { type: 'final' as const, content: '已完成' };
+    });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      tools: [tool('read', async () => '受控工具输出')],
+      onContextCompaction: () => { compactions += 1; }
+    });
+
+    await expect(runtime.run({
+      taskId: 'task-compress',
+      message: '检查项目',
+      repositoryContext: '受控仓库上下文\nProject: web\nSource roots:\n- src'
+    })).resolves.toMatchObject({ status: 'completed' });
+
+    expect(compactions).toBeGreaterThan(0);
+    const compactedMessages = complete.mock.calls.map((call) => call[0] as unknown as Array<{ role: string; content: string }>).find((messages) => messages.some((message) => message.content.includes('[受控任务上下文摘要]')));
+    expect(compactedMessages).toBeDefined();
+    expect(compactedMessages?.some((message) => message.content.includes('src/file-1.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('受控仓库上下文'))).toBe(true);
+  });
+
+  it('carries user clarification into a later compression after responding to input', async () => {
+    let calls = 0;
+    let compactedMessages: AgentModelMessage[] | undefined;
+    const complete = vi.fn(async (messages: AgentModelMessage[]) => {
+      if (messages.some((message) => message.content.includes('[受控任务上下文摘要]'))) compactedMessages = messages;
+      const call = calls++;
+      if (call === 0) return { type: 'tool_calls' as const, calls: [{ id: 'input-1', name: 'ask', arguments: '{}' }] };
+      if (compactedMessages) return { type: 'final' as const, content: '已按澄清完成' };
+      return { type: 'tool_calls' as const, calls: [{ id: `read-${call}`, name: 'read', arguments: '{}' }] };
+    });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      tools: [
+        { ...tool('ask', async () => ({ waiting: true })), requestsInput: true },
+        tool('read', async () => '受控工具输出')
+      ]
+    });
+
+    const waiting = await runtime.run({ taskId: 'task-input-compress', message: '确认修改范围' });
+    expect(waiting.status).toBe('waiting_for_input');
+    const result = await runtime.respond('只修改 src/a.ts，不要修改 src/b.ts');
+
+    expect(result).toMatchObject({ status: 'completed' });
+    expect(compactedMessages?.some((message) => message.content.includes('只修改 src/a.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('不要修改 src/b.ts'))).toBe(true);
+    expect(compactedMessages?.some((message) => message.content.includes('"userInput"'))).toBe(false);
+  });
+
+  it('preserves critical facts through three cumulative compactions', async () => {
+    const plan = [
+      { name: 'read_file', args: { path: 'src/a.ts' } },
+      { name: 'run_verification', args: { script: 'typecheck' } },
+      { name: 'read_file', args: { path: 'src/a.ts' } },
+      { name: 'read_file', args: { path: 'src/b.ts' } },
+      { name: 'workspace_search', args: { mode: 'text', query: 'Foo' } },
+      { name: 'run_verification', args: { script: 'test' } },
+      { name: 'read_file', args: { path: 'src/c.ts' } },
+      { name: 'workspace_search', args: { mode: 'symbol-lite', query: 'Bar' } },
+      { name: 'read_file', args: { path: 'src/d.ts' } }
+    ];
+    let calls = 0;
+    let compactions = 0;
+    const summaries: string[] = [];
+    const seenSummaries = new Set<string>();
+    const complete = vi.fn(async (messages: AgentModelMessage[]) => {
+      const summary = messages.find((message) => message.content.includes('[受控任务上下文摘要]'))?.content;
+      if (summary && !seenSummaries.has(summary)) {
+        seenSummaries.add(summary);
+        summaries.push(summary);
+      }
+      const step = plan[calls++];
+      if (!step) return { type: 'final' as const, content: '多阶段任务已完成' };
+      return { type: 'tool_calls' as const, calls: [{ id: `step-${calls}`, name: step.name, arguments: JSON.stringify(step.args) }] };
+    });
+    const runtime = new AgentRuntime({
+      model: { complete },
+      maxSteps: 12,
+      tools: [
+        tool('read_file', async (args) => {
+          if ((args as { path?: string }).path === 'src/a.ts') throw new Error('TS1111');
+          return `read ${(args as { path?: string }).path ?? 'unknown'}`;
+        }),
+        tool('run_verification', async (args) => {
+          const script = (args as { script?: string }).script ?? 'unknown';
+          return { script, ok: script !== 'typecheck', output: script === 'typecheck' ? 'TS1111' : 'all tests passed' };
+        }),
+        tool('workspace_search', async (args) => ({ query: (args as { query?: string }).query ?? '', matches: 1 }))
+      ],
+      onContextCompaction: () => { compactions += 1; }
+    });
+
+    await expect(runtime.run({ taskId: 'task-three-compactions', message: '追踪多阶段任务' })).resolves.toMatchObject({ status: 'completed' });
+
+    expect(compactions).toBe(3);
+    expect(summaries).toHaveLength(3);
+    expect(summaries[0]).toContain('TS1111');
+    expect(summaries[1]).toContain('TS1111');
+    expect(summaries[1]).toContain('typecheck: failed');
+    expect(summaries[1]).toContain('src/a.ts');
+    expect(summaries[1]).toContain('src/b.ts');
+    expect(summaries[1]).toContain('test: passed');
+    expect(summaries[2]).toContain('src/a.ts');
+    expect(summaries[2]).toContain('src/b.ts');
+    expect(summaries[2]).toContain('src/c.ts');
+    expect(summaries[2]).toContain('src/d.ts');
+    expect(summaries[2]).toContain('typecheck: failed');
   });
 });

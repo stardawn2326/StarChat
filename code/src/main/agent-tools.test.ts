@@ -12,7 +12,7 @@ describe('agent explicit tool allowlist', () => {
     writeFileSync(join(root, 'src', 'a.txt'), 'a', 'utf8');
     const tools = createAgentTools(new WorkspaceGuard(root));
     expect(tools.map((tool) => tool.name)).toEqual([
-      'list_directory', 'read_file', 'search_text', 'git_status', 'git_diff',
+      'list_directory', 'read_file', 'search_text', 'workspace_search', 'git_status', 'git_diff',
       'request_user_approval', 'request_user_input', 'apply_patch', 'apply_file_changes', 'run_verification'
     ]);
     expect(tools.some((tool) => /shell|exec|command|network|delete|move/i.test(tool.name))).toBe(false);
@@ -39,11 +39,31 @@ describe('agent explicit tool allowlist', () => {
     });
   });
 
+  it('keeps create, update and delete operations in the approval preview', () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-operations-'));
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src', 'update.txt'), 'before\n', 'utf8');
+    writeFileSync(join(root, 'src', 'delete.txt'), 'remove\n', 'utf8');
+    const applyChanges = createAgentTools(new WorkspaceGuard(root)).find((tool) => tool.name === 'apply_file_changes');
+
+    const preview = applyChanges?.approval?.({ changes: [
+      { type: 'create', path: 'src/create.txt', content: 'create\n' },
+      { type: 'update', path: 'src/update.txt', content: 'update\n' },
+      { type: 'delete', path: 'src/delete.txt' }
+    ] });
+
+    expect(preview?.preview?.changes).toEqual([
+      { path: 'src/create.txt', operation: 'create' },
+      { path: 'src/update.txt', operation: 'update' },
+      { path: 'src/delete.txt', operation: 'delete' }
+    ]);
+  });
+
   it('registers tools from the trust matrix instead of inferring write intent from prose', () => {
     const root = mkdtempSync(join(tmpdir(), 'starchat-agent-tools-matrix-'));
     const names = (options: Parameters<typeof createAgentTools>[2]) => createAgentTools(new WorkspaceGuard(root), runVerification, options).map((tool) => tool.name);
     expect(names({ allowWrite: false, allowExecution: false })).toEqual([
-      'list_directory', 'read_file', 'search_text', 'git_status', 'git_diff', 'request_user_approval', 'request_user_input'
+      'list_directory', 'read_file', 'search_text', 'workspace_search', 'git_status', 'git_diff', 'request_user_approval', 'request_user_input'
     ]);
     expect(names({ allowWrite: true, allowExecution: false })).toContain('apply_patch');
     expect(names({ allowWrite: true, allowExecution: true })).toContain('run_verification');
