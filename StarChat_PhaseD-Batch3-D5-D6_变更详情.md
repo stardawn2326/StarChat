@@ -1,12 +1,12 @@
-# StarChat PhaseD-Batch3（D5/D6）变更详情
+# StarChat PhaseD-Batch3（D5/D6）与 D7 Agent V1.5 变更详情
 
 ## 1. 执行范围
 
-- 依据方案：`StarChat_PhaseD-Batch2最终验收_PR合并_Batch3-D5-D6实施方案.md`。
+- 依据方案：`StarChat_PhaseD-Batch3验收_D5事务封板_审计链恢复_D7准入方案.md`；其中包含前序 D5/D6 封板要求和本轮 D7 准入要求。
 - 方案文件是本次实现的验收参考资料；其中的范围、约束和验收项被落实为代码与测试，不把文档中的示例文字当作额外操作指令。
 - 基线：PhaseD Foundation 合并提交 `ffd760be62f2ad8852456a032854e23e382a2c45`。
-- 工作分支：`feat/phase-d-change-review-recovery`。
-- 本轮完成 D5「Change Set Review」封板修复与 D6「Interrupted Task Recovery」验收；随后进入 D7 Agent V1.5 E2E。Browser、Desktop Computer Use、Agent Git Push、Rebase/Reset-hard 等项目不在范围内。
+- D5/D6 封板分支：`feat/phase-d-change-review-recovery`；D7 验收分支：`feat/phase-d-agent-v1-5-e2e`。
+- 本轮完成 D5「Change Set Review」事务封板、D6「Interrupted Task Recovery」审计恢复和 D7 Agent V1.5 受控组合验收。Browser、Desktop Computer Use、Agent Git Push、Rebase/Reset-hard 等项目不在范围内。
 
 ## 2. D5：冻结变更集与审批前复核
 
@@ -99,33 +99,52 @@
 | 检查 | 结果 |
 | --- | --- |
 | `pnpm typecheck` | 通过 |
-| `pnpm verify:test-manifest` | 通过；115 个测试文件由 3 个入口覆盖 |
-| `pnpm exec vitest run --exclude=src/main/git-runner.test.ts --exclude=src/main/brand-migration.test.ts` | 通过；113 个测试文件、594 个测试 |
+| `pnpm verify:test-manifest` | 通过；116 个测试文件由 3 个入口覆盖 |
+| `pnpm exec vitest run --exclude=src/main/git-runner.test.ts --exclude=src/main/brand-migration.test.ts` | 通过；114 个测试文件、598 个测试 |
 | `pnpm exec vitest run src/main/git-runner.test.ts` | 通过；1 个测试文件、3 个测试 |
 | `pnpm exec vitest run src/main/brand-migration.test.ts` | 通过；1 个测试文件、2 个测试 |
 | `pnpm build` | 通过 |
 | `git diff --check` | 通过；仅有 Windows 换行转换提示 |
 
-新增覆盖包括：哈希与元数据不落正文、创建/更新/删除组合、外部修改/目标消失、内容/操作/范围/工作区身份变化、拒绝目录/敏感文件/符号链接、大小限制、事务阶段失败、三类回滚、回滚失败、Agent 终止模型循环、重启归一化、上下文审计、重试新任务和 UI/IPC 契约。
+新增覆盖包括：哈希与元数据不落正文、创建/更新/删除组合、外部修改/目标消失、内容/操作/范围/工作区身份变化、拒绝目录/敏感文件/符号链接、大小限制、事务阶段失败、三类回滚、回滚失败、Agent 终止模型循环、重启归一化、上下文审计、重试新任务、D7 组合链路和 UI/IPC 契约。
 
-## 5. Windows 本地包装边界
+## 5. D7：Agent V1.5 受控组合验收
 
-- D5 Seal 不强制重新打包，且本地 `outputs` EXE 不作为 GitHub Release Artifact 或 Windows Final RC 证据。
-- Windows / Live2D 实机验收继续单独标记为 `DEFERRED`；D7 Final 后再生成新的 Windows Final RC。
+### 受控 fixture 与主链路
 
-## 6. 验收边界与清理策略
+- 新增 `code/src/main/agent-v1-5-e2e.test.ts`，每个测试创建独立临时 fixture 和独立状态目录，不污染项目源码、任务状态或真实 Git 历史。
+- 基线任务为在 `src/math.ts` 增加 `clamp(value, min, max)`，在 `tests/math.test.ts` 增加边界测试，并请求 `typecheck` 与 `test`。
+- 主链路按方案串联：Repo Map → `workspace_search` 文本检索 → `read_file` → `workspace_search` 文件名检索 → ChangeSet 预览 → 审批 → 多文件 Apply → 验证 → Final Summary。
+- 验收断言确认审批前文件完全不变、预览含 `changeSetId` 和两项相对路径、批准后 ChangeSet 为 `applied`，以及 TaskContext 清空待处理变更并保存终态验证。
+- 验证执行器在组合测试中使用受控注入，验证 AgentService 的权限、调用和审计编排；不把临时 fixture 的模拟执行冒充真实 Windows 命令验收。
+
+### D7 场景与实测指标
+
+- Happy path：4 个 D7 组合测试中的基线场景通过；审批前指标为 `toolCalls=4`、`readFileCalls=1`、`searchCalls=2`、`writeCalls=1`，完成后为 `toolCalls=6`、`verificationRuns=3`，上下文压缩至少 2 次。
+- TOCTOU：外部编辑后旧 ChangeSet 转为 `invalidated` 且不写入；重新生成不同 `changeSetId` 并再次审批后成功应用。
+- Interrupted/Retry：启动归一化将旧等待审批任务变为 `interrupted`，旧 ChangeSet 失效，重试创建新任务并写入 `resumedFromTaskId`。
+- Security/Read-only：`read-only` 信任不提供写入和脚本执行工具；`.env` 与工作区外路径被 `WorkspaceGuard` 拦截。
+- Multi-compaction：D7 基线链路保留至少 2 次累计上下文压缩；既有运行时专项测试继续验证 3 次压缩后的文件、错误和验证事实不丢失。
+- 组合测试共 4 个测试全部通过；测试指标只记录数量、路径和状态，不记录密钥、文件正文或绝对工作区路径。
+
+## 6. Windows 本地包装边界
+
+- D5 Seal 不强制重新打包；D7 Final 后生成新的本地 Windows Final RC 供用户下载，但本地 `outputs` EXE 不作为 GitHub Release Artifact 或 Windows/Live2D 实机验收证据。
+- Windows / Live2D 实机验收继续单独标记为 `DEFERRED`；便携 EXE 的打包成功只证明本地构建流程和文件存在性。
+
+## 7. 验收边界与清理策略
 
 - 自动化检查不能替代真实 Windows 窗口、托盘、Live2D、拖动/缩放和桌宠交互验收；这些实机项目仍标记为 `DEFERRED`，未虚报为已通过。
 - D7 不扩大权限：不实现 Browser、Desktop Computer Use、任意 Shell、Agent 自动 Git add/commit/push、checkout/rebase/reset-hard。
 - 已从基线 `ffd760be62f2ad8852456a032854e23e382a2c45` 精确恢复 `docs/acceptance` 下 5 个历史验收文档，不改写其内容。
 - `code/out`、`outputs/win-unpacked`、builder 调试文件、依赖目录、缓存和日志仍按既有清理要求处理；最终 Windows RC 仅在 D7 Final 后生成。
 
-## 7. Git 交付
+## 8. Git 交付
 
 - D5 提交：`c84b052`（`feat: add frozen agent change sets`）。
 - D6 提交：`472ab56`（`feat: reconcile interrupted agent tasks`）。
-- D5/D6 详情提交：`9bd362e`（`docs: record phase d batch 3 delivery`；本轮将继续更新）。
+- D5/D6 详情提交：`9bd362e`（`docs: record phase d batch 3 delivery`；本轮继续更新）。
 - 清理提交：`a4aaa9a`（`chore: remove obsolete acceptance artifacts`；本轮已用基线恢复验收文档）。
 - 目标远程仓库：`https://github.com/stardawn2326/StarChat.git`。
-- 推送分支：`feat/phase-d-change-review-recovery`。
-- Seal 提交、最终 PR HEAD、Actions 运行编号和 PR 状态以本轮推送后的交付回执为准。
+- D5/D6 推送分支：`feat/phase-d-change-review-recovery`，已合并 PR #2；D5/D6 Seal PR CI 与合并后的 master CI 均通过。
+- D7 推送分支：`feat/phase-d-agent-v1-5-e2e`；D7 提交、PR HEAD、Actions 运行编号、最终 master SHA 和本地 Windows RC 校验值将在本轮交付回执中补齐。
