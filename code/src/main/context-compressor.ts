@@ -30,6 +30,7 @@ export interface ContextCompressionInput {
   messages: AgentModelMessage[];
   repositoryContext?: string;
   constraints?: string[];
+  previousContext?: CompressedTaskContext;
 }
 
 export interface ContextCompressionResult {
@@ -49,6 +50,7 @@ const MAX_ITEM_CHARS = 2_000;
 const MAX_FILES = 60;
 const MAX_ITEMS_PER_SECTION = 40;
 const MAX_CONSTRAINT_ITEMS = 20;
+const MAX_TOOL_LIFECYCLE_ITEMS = 40;
 const MAX_REPO_SUMMARY_CHARS = 6_000;
 const TEXT_ENCODER = new TextEncoder();
 
@@ -145,9 +147,9 @@ function recordToolResult(context: CompressedTaskContext, message: AgentModelMes
     addUnique(context.constraints, `User clarification: ${boundedText(parsed.userInput, MAX_ITEM_CHARS)}`, MAX_CONSTRAINT_ITEMS);
     return;
   }
-  if (content.includes('用户拒绝')) {
+  if (content.startsWith('用户拒绝了这次精确计划')) {
     addUnique(context.decisions, content);
-  } else if (/^工具执行错误：|失败|错误|超时|拒绝|不可/u.test(content)) {
+  } else if (content.startsWith('工具执行错误：')) {
     addUnique(context.findings, content, MAX_ITEMS_PER_SECTION);
   }
   if (parsed) {
@@ -161,8 +163,8 @@ function recordToolResult(context: CompressedTaskContext, message: AgentModelMes
 function lifecycleState(message: AgentModelMessage | undefined): ToolLifecycleFact['state'] {
   if (!message) return 'requested';
   const content = boundedText(message.content, 4_000);
-  if (content.includes('用户拒绝')) return 'rejected';
-  if (/^工具执行错误：|工具执行失败|失败|错误|超时/u.test(content)) return 'failed';
+  if (content.startsWith('用户拒绝了这次精确计划')) return 'rejected';
+  if (content.startsWith('工具执行错误：')) return 'failed';
   return 'completed';
 }
 
@@ -179,6 +181,82 @@ function recordWriteLifecycle(context: CompressedTaskContext, call: AgentToolCal
     if (state === 'failed') addUnique(context.findings, `failed ${change.operation}: ${change.path}${result ? `; ${boundedText(result.content, 1_500)}` : ''}`);
     if (state === 'rejected') addUnique(context.decisions, `user rejected ${change.operation}: ${change.path}`);
   }
+}
+
+function mergeRecentItems(previous: readonly string[], current: readonly string[], maximum: number, priority: (value: string) => boolean = () => false): string[] {
+  const merged: string[] = [];
+  for (const value of [...previous, ...current]) {
+    const next = boundedText(value);
+    if (!next) continue;
+    const existing = merged.indexOf(next);
+    if (existing >= 0) merged.splice(existing, 1);
+    merged.push(next);
+  }
+  if (merged.length <= maximum) return merged;
+  const prioritized = merged.filter(priority);
+  const ordinary = merged.filter((value) => !priority(value));
+  const selectedPrioritized = prioritized.slice(-maximum);
+  const remaining = Math.max(0, maximum - selectedPrioritized.length);
+  return [...selectedPrioritized, ...ordinary.slice(-remaining)];
+}
+
+function mergeFiles(previous: CompressedTaskContext | undefined, current: CompressedTaskContext): Array<{ path: string; summary: string }> {
+  const files = new Map<string, { path: string; summary: string }>();
+  for (const file of [...(previous?.files ?? []), ...current.files]) {
+    const path = safeRelativePath(file.path);
+    if (!path) continue;
+    files.set(path, { path, summary: boundedText(file.summary, 500) || '工具访问的文件' });
+  }
+  return [...files.values()].slice(-MAX_FILES);
+}
+
+function mergeLifecycle(previous: readonly ToolLifecycleFact[], current: readonly ToolLifecycleFact[]): ToolLifecycleFact[] {
+  const facts = new Map<string, ToolLifecycleFact>();
+  for (const fact of [...previous, ...current]) {
+    if (!fact || typeof fact.toolCallId !== 'string' || typeof fact.toolName !== 'string') continue;
+    const changes = fact.changes
+      .map((change) => {
+        const path = safeRelativePath(change.path);
+        if (!path || !['create', 'update', 'delete'].includes(change.operation)) return null;
+        return { path, operation: change.operation };
+      })
+      .filter((change): change is { path: string; operation: AgentFileChangeOperation } => Boolean(change));
+    const next: ToolLifecycleFact = { toolCallId: fact.toolCallId, toolName: boundedText(fact.toolName, 100), state: fact.state, changes };
+    const existing = facts.get(next.toolCallId);
+    if (!existing || existing.state === 'requested' || next.state !== 'requested') facts.set(next.toolCallId, next);
+  }
+  const values = [...facts.values()];
+  if (values.length <= MAX_TOOL_LIFECYCLE_ITEMS) return values;
+  const requested = values.filter((fact) => fact.state === 'requested');
+  const remaining = Math.max(0, MAX_TOOL_LIFECYCLE_ITEMS - requested.length);
+  const recent = values.filter((fact) => fact.state !== 'requested').slice(-remaining);
+  return [...requested.slice(-MAX_TOOL_LIFECYCLE_ITEMS), ...recent].slice(-MAX_TOOL_LIFECYCLE_ITEMS);
+}
+
+function pendingFromLifecycle(facts: readonly ToolLifecycleFact[]): string[] {
+  const pending: string[] = [];
+  for (const fact of facts) {
+    if (fact.state !== 'requested') continue;
+    for (const change of fact.changes) addUnique(pending, `${change.operation}: ${change.path}`);
+  }
+  return pending;
+}
+
+export function mergeCompressedTaskContext(previous: CompressedTaskContext | undefined, current: CompressedTaskContext): CompressedTaskContext {
+  const toolLifecycle = mergeLifecycle(previous?.toolLifecycle ?? [], current.toolLifecycle);
+  const repoSummary = current.repoSummary || previous?.repoSummary;
+  const goal = boundedText(previous?.goal || current.goal, MAX_GOAL_CHARS);
+  return {
+    goal,
+    ...(repoSummary ? { repoSummary: boundedText(repoSummary, MAX_REPO_SUMMARY_CHARS) } : {}),
+    files: mergeFiles(previous, current),
+    toolLifecycle,
+    findings: mergeRecentItems(previous?.findings ?? [], current.findings, MAX_ITEMS_PER_SECTION, (value) => /工具执行错误|failed|失败|error|错误|timeout|超时/iu.test(value)),
+    decisions: mergeRecentItems(previous?.decisions ?? [], current.decisions, MAX_ITEMS_PER_SECTION),
+    pendingChanges: pendingFromLifecycle(toolLifecycle),
+    verification: mergeRecentItems(previous?.verification ?? [], current.verification, MAX_ITEMS_PER_SECTION, (value) => /failed|失败|error|错误|timeout|超时/iu.test(value)),
+    constraints: mergeRecentItems(previous?.constraints ?? [], current.constraints, MAX_CONSTRAINT_ITEMS)
+  };
 }
 
 export function buildCompressedTaskContext(input: ContextCompressionInput): CompressedTaskContext {
@@ -210,7 +288,7 @@ export function buildCompressedTaskContext(input: ContextCompressionInput): Comp
   for (const call of calls.values()) {
     if (call.name === 'apply_patch' || call.name === 'apply_file_changes') recordWriteLifecycle(context, call, results.get(call.id));
   }
-  return context;
+  return mergeCompressedTaskContext(input.previousContext, context);
 }
 
 function section(lines: string[], title: string, values: readonly string[]): void {

@@ -8,7 +8,7 @@ import type {
   AgentToolCall,
   AgentToolDescriptor
 } from '../shared/agent';
-import { compressMessages } from './context-compressor';
+import { compressMessages, type CompressedTaskContext } from './context-compressor';
 
 export interface AgentToolContext {
   taskId: string;
@@ -171,6 +171,7 @@ export class AgentRuntime {
   private taskId = '';
   private repositoryContext?: string;
   private constraints: string[] = [];
+  private compressedContext?: CompressedTaskContext;
 
   private recordUserConstraint(value: string): void {
     const normalized = redactConstraint(value).trim().slice(0, MAX_RUNTIME_CONSTRAINT_CHARS);
@@ -257,9 +258,10 @@ export class AgentRuntime {
       if (signal.aborted) return { status: 'cancelled', error: 'Agent 已取消' };
       const remaining = this.remaining();
       if (remaining <= 0) return { status: 'timed_out', error: 'Agent 总体执行超时' };
-      const compression = compressMessages({ messages: this.messages, repositoryContext: this.repositoryContext, constraints: this.constraints });
+      const compression = compressMessages({ messages: this.messages, repositoryContext: this.repositoryContext, constraints: this.constraints, previousContext: this.compressedContext });
       if (compression.compacted) {
         this.messages = compression.messages;
+        this.compressedContext = compression.context;
         this.onContextCompaction?.();
       }
       let response: AgentModelResponse;
@@ -299,6 +301,7 @@ export class AgentRuntime {
     this.controller = new AbortController();
     this.taskId = input.taskId;
     this.repositoryContext = input.repositoryContext;
+    this.compressedContext = undefined;
     this.constraints = (input.constraints ?? [])
       .filter((value): value is string => typeof value === 'string')
       .map((value) => redactConstraint(value).trim().slice(0, MAX_RUNTIME_CONSTRAINT_CHARS))

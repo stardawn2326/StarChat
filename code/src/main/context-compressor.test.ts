@@ -113,4 +113,85 @@ describe('bounded task context compression', () => {
     expect(summary).not.toContain('"userInput"');
     expect(summary).not.toContain('sk-sensitive-key-1234567890');
   });
+
+  it('accumulates facts across compactions and derives pending changes from the merged lifecycle', () => {
+    const first = compressMessages({
+      messages: [
+        { role: 'user' as const, content: '完成 src/a.ts 的修改' },
+        {
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{ id: 'write-a', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'update', path: 'src/a.ts', content: 'applied' }] }) }]
+        },
+        { role: 'tool' as const, toolCallId: 'write-a', content: JSON.stringify({ files: ['src/a.ts'] }) }
+      ]
+    }, { messageThreshold: 1 });
+
+    const second = compressMessages({
+      messages: [
+        { role: 'system' as const, content: '系统规则' },
+        { role: 'user' as const, content: '继续处理 src/b.ts' },
+        {
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{ id: 'write-b', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'create', path: 'src/b.ts', content: 'waiting' }] }) }]
+        }
+      ],
+      previousContext: first.context
+    }, { messageThreshold: 1 });
+
+    expect(second.context.goal).toBe('完成 src/a.ts 的修改');
+    expect(second.context.decisions).toContain('applied update: src/a.ts');
+    expect(second.context.pendingChanges).toEqual(['create: src/b.ts']);
+    expect(second.context.pendingChanges).not.toContain('update: src/a.ts');
+    expect(second.context.toolLifecycle).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: 'write-a', state: 'completed' }),
+      expect.objectContaining({ toolCallId: 'write-b', state: 'requested' })
+    ]));
+  });
+
+  it('keeps a successful write completed when its returned patch contains failure words', () => {
+    const content = "export const message = '验证失败时显示错误';";
+    const result = compressMessages({
+      messages: [
+        { role: 'user' as const, content: '创建消息文件' },
+        {
+          role: 'assistant' as const,
+          content: '',
+          toolCalls: [{ id: 'write-content', name: 'apply_file_changes', arguments: JSON.stringify({ changes: [{ type: 'create', path: 'src/message.ts', content }] }) }]
+        },
+        { role: 'tool' as const, toolCallId: 'write-content', content: JSON.stringify({ patch: content, files: ['src/message.ts'] }) }
+      ]
+    }, { messageThreshold: 1 });
+
+    expect(result.context.toolLifecycle).toEqual(expect.arrayContaining([
+      expect.objectContaining({ toolCallId: 'write-content', state: 'completed' })
+    ]));
+    expect(result.context.pendingChanges).toEqual([]);
+    expect(result.context.decisions).toContain('applied create: src/message.ts');
+    expect(result.context.findings).not.toEqual(expect.arrayContaining([expect.stringContaining('src/message.ts')]));
+  });
+
+  it('preserves a user clarification from the first compaction in a later compaction', () => {
+    const first = compressMessages({
+      messages: [
+        { role: 'user' as const, content: '确认范围' },
+        { role: 'assistant' as const, content: '', toolCalls: [{ id: 'input-a', name: 'request_user_input', arguments: '{"prompt":"范围"}' }] },
+        { role: 'tool' as const, toolCallId: 'input-a', content: JSON.stringify({ userInput: '只改 src/a.ts，不要修改 src/b.ts' }) }
+      ]
+    }, { messageThreshold: 1 });
+    const second = compressMessages({
+      messages: [
+        { role: 'user' as const, content: '继续执行' },
+        { role: 'assistant' as const, content: '', toolCalls: [{ id: 'read-b', name: 'read_file', arguments: '{"path":"src/b.ts"}' }] },
+        { role: 'tool' as const, toolCallId: 'read-b', content: '已读取' }
+      ],
+      previousContext: first.context
+    }, { messageThreshold: 1 });
+
+    expect(second.context.constraints).toEqual(expect.arrayContaining([
+      'User clarification: 只改 src/a.ts，不要修改 src/b.ts'
+    ]));
+    expect(formatCompressedTaskContext(second.context)).toContain('只改 src/a.ts，不要修改 src/b.ts');
+  });
 });
