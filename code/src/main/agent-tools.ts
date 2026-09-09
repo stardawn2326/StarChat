@@ -4,6 +4,7 @@ import { runGitReadOnly } from './git-runner';
 import { verificationCommand, isVerificationScript } from './project-detector';
 import { runControlledProcess } from './process-runner';
 import { WORKSPACE_SEARCH_MODES, WorkspaceSearch, type WorkspaceSearchMode } from './workspace-search';
+import { ChangeSetManager } from './change-set';
 
 function record(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('工具参数必须是对象');
@@ -64,6 +65,8 @@ function gitReadOnly(root: string, args: string[], signal: AbortSignal): Promise
 export interface AgentToolOptions {
   beforeVerification?: (script: string) => void;
   beforeWrite?: (toolName: string, context: AgentToolContext) => void;
+  changeSetManager?: ChangeSetManager;
+  workspaceId?: string;
   allowWrite?: boolean;
   allowExecution?: boolean;
 }
@@ -141,31 +144,58 @@ export function createAgentTools(guard: WorkspaceGuard, executeVerification: typ
       requiresApproval: true,
       approval: (input, context) => {
         const patch = stringArg(record(input).patch, 'patch', 512 * 1024);
-        const preview = guard.previewPatch(patch);
-        if (context) options.beforeWrite?.('apply_patch', context);
+        const created = context && options.changeSetManager
+          ? options.changeSetManager.createPatch(guard, { taskId: context.taskId, workspaceId: options.workspaceId ?? guard.root, invocationId: context.invocationId }, patch)
+          : null;
+        const preview = created?.preview ?? guard.previewPatch(patch);
+        if (context) {
+          try {
+            options.beforeWrite?.('apply_patch', context);
+          } catch (error) {
+            if (created) options.changeSetManager?.invalidate(created.changeSet.id);
+            throw error;
+          }
+        }
         return {
           target: preview.files.join(', '),
           plan: preview.summary,
-          preview: { files: preview.files, patch, ...patchLineCounts(patch) }
+          preview: { ...preview, files: preview.files, patch, ...patchLineCounts(patch) }
         };
       },
       run: async (input) => guard.previewPatch(stringArg(record(input).patch, 'patch', 512 * 1024)),
-      runApproved: async (input) => { const patch = stringArg(record(input).patch, 'patch', 512 * 1024); return guard.applyApprovedPatch(patch, patch); }
+      runApproved: async (input, context) => {
+        const patch = stringArg(record(input).patch, 'patch', 512 * 1024);
+        return options.changeSetManager
+          ? options.changeSetManager.applyPatch(guard, { taskId: context.taskId, workspaceId: options.workspaceId ?? guard.root, invocationId: context.invocationId }, patch)
+          : guard.applyApprovedPatch(patch, patch);
+      }
     } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> },
     {
       name: 'apply_file_changes', description: '预览创建、更新或删除文件的精确计划，并在用户批准后应用。', schema: { type: 'object', required: ['changes'], properties: { changes: { type: 'array', maxItems: 50, items: { type: 'object' } } }, additionalProperties: false },
       requiresApproval: true,
       approval: (input, context) => {
         const changes = record(input).changes;
-        const preview = guard.previewFileChanges(changes);
-        if (context) options.beforeWrite?.('apply_file_changes', context);
+        const created = context && options.changeSetManager
+          ? options.changeSetManager.createFileChanges(guard, { taskId: context.taskId, workspaceId: options.workspaceId ?? guard.root, invocationId: context.invocationId }, changes)
+          : null;
+        const preview = created?.preview ?? guard.previewFileChanges(changes);
+        if (context) {
+          try {
+            options.beforeWrite?.('apply_file_changes', context);
+          } catch (error) {
+            if (created) options.changeSetManager?.invalidate(created.changeSet.id);
+            throw error;
+          }
+        }
         return { target: preview.files.join(', '), plan: preview.summary, preview };
       },
       run: async (input) => guard.previewFileChanges(record(input).changes),
-      runApproved: async (input) => {
+      runApproved: async (input, context) => {
         const changes = record(input).changes;
         const plan = JSON.stringify(changes);
-        return guard.applyApprovedFileChanges(plan, plan);
+        return options.changeSetManager
+          ? options.changeSetManager.applyFileChanges(guard, { taskId: context.taskId, workspaceId: options.workspaceId ?? guard.root, invocationId: context.invocationId }, changes)
+          : guard.applyApprovedFileChanges(plan, plan);
       }
     } as AgentTool & { runApproved: (input: unknown, context: import('./agent-runtime').AgentToolContext) => Promise<unknown> }
   ];

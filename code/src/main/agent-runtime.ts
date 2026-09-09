@@ -94,6 +94,10 @@ function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
 }
 
+function isChangeSetInvalidationError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ChangeSetInvalidatedError';
+}
+
 async function withTimeout<T>(factory: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parentSignal: AbortSignal): Promise<T> {
   if (parentSignal.aborted) throw abortError();
   const controller = new AbortController();
@@ -340,7 +344,9 @@ export class AgentRuntime {
         this.onTool?.({ invocationId: pending.call.id, toolName: pending.call.name, status: 'completed', summary: approved ? '用户批准后执行完成' : '用户拒绝计划' });
       } catch (error) {
         this.onTool?.({ invocationId: pending.call.id, toolName: pending.call.name, status: 'failed', summary: '批准后执行失败' });
-        this.messages.push({ role: 'tool', toolCallId: pending.call.id, content: `工具执行错误：${error instanceof Error ? error.message : '工具执行失败'}` });
+        const message = error instanceof Error ? error.message : '工具执行失败';
+        this.messages.push({ role: 'tool', toolCallId: pending.call.id, content: `工具执行错误：${message}` });
+        if (isChangeSetInvalidationError(error)) return { status: 'failed', error: message };
       }
     }
     this.startedAt = Date.now();
