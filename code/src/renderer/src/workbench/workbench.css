@@ -2171,6 +2171,22 @@ body[data-window="settings"] #root > main.app-shell.settings-center-shell {
 .wb-task-status { display: inline-flex; padding: 3px 7px; color: var(--theme-accent-strong); background: var(--theme-accent-soft); border-radius: 999px; font-size: 10px; }
 .wb-task-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .wb-tool-error { color: var(--theme-danger, #b84040); }
+.wb-task-context-trigger { margin: 4px 0 10px; }
+
+.wb-task-context {
+  display: grid;
+  gap: 6px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--theme-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-surface) 94%, var(--theme-accent-soft));
+}
+
+.wb-task-context h4,
+.wb-task-context p { margin: 0; }
+.wb-task-context h4 { color: var(--theme-heading); font-size: 12px; }
+.wb-task-context p { color: var(--theme-muted); font-size: 11px; line-height: 1.5; }
 
 .wb-agent-timeline {
   position: relative;

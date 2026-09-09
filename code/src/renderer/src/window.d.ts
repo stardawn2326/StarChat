@@ -157,6 +157,8 @@ declare global {
         respond(request: import('../../shared/ipc').AgentRespondRequest): Promise<void>;
         list(): Promise<AgentTask[]>;
         get(taskId: string): Promise<AgentTask | null>;
+        context(taskId: string): Promise<import('../../shared/task-context').TaskContext | null>;
+        dismiss(taskId: string): Promise<void>;
         onEvent(callback: (event: AgentEvent) => void): () => void;
       };
     };

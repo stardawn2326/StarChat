@@ -1,9 +1,11 @@
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, vi } from 'vitest';
 import { WorkspaceGuard } from './agent-security';
 import { createAgentTools, runVerification } from './agent-tools';
+import { ChangeSetManager } from './change-set';
+import { ChangeSetStore } from './change-set-store';
 
 describe('agent explicit tool allowlist', () => {
   it('registers only the first-party structured tools and no shell/executable tool', () => {
@@ -82,5 +84,26 @@ describe('agent explicit tool allowlist', () => {
     const patch = '*** Begin Patch\n*** Update File: src/a.txt\n@@\n-before\n+after\n*** End Patch';
     applyPatch?.approval?.({ patch }, { taskId: 'task', invocationId: 'call', signal: new AbortController().signal });
     expect(beforeWrite).toHaveBeenCalledWith('apply_patch', expect.objectContaining({ taskId: 'task', invocationId: 'call' }));
+  });
+
+  it('attaches an approval-scoped ChangeSet and revalidates it before applying', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'starchat-agent-tools-change-set-'));
+    mkdirSync(join(root, 'src'));
+    writeFileSync(join(root, 'src', 'a.txt'), 'before\n', 'utf8');
+    const store = new ChangeSetStore(join(root, 'change-sets.json'));
+    const manager = new ChangeSetManager(store);
+    const guard = new WorkspaceGuard(root);
+    const writeTool = createAgentTools(guard, runVerification, { changeSetManager: manager, workspaceId: 'workspace-a' }).find((tool) => tool.name === 'apply_file_changes');
+    const input = { changes: [{ type: 'update', path: 'src/a.txt', content: 'after\n' }] };
+    const context = { taskId: 'task-a', invocationId: 'invocation-a', signal: new AbortController().signal };
+    const approval = writeTool?.approval?.(input, context);
+    const changeSetId = approval?.preview?.changeSetId;
+    expect(changeSetId).toBeTruthy();
+    expect(store.get(changeSetId!)?.state).toBe('waiting-approval');
+    writeFileSync(join(root, 'src', 'a.txt'), 'external\n', 'utf8');
+    expect(writeTool?.runApproved).toBeDefined();
+    await expect(writeTool!.runApproved!(input, context)).rejects.toMatchObject({ name: 'ChangeSetInvalidatedError' });
+    expect(readFileSync(join(root, 'src', 'a.txt'), 'utf8')).toBe('external\n');
+    expect(store.get(changeSetId!)?.state).toBe('invalidated');
   });
 });

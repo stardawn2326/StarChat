@@ -1,4 +1,4 @@
-import type { AgentTaskStatus } from './agent';
+import type { AgentInterruptionReason, AgentTaskStatus } from './agent';
 import type { AgentTaskMetrics } from './agent-metrics';
 import type { RepoMapEntry } from './repo-map';
 
@@ -86,11 +86,13 @@ export interface TaskContext {
   verification: VerificationRecord[];
   metrics: AgentTaskMetrics;
   status: TaskContextStatus;
+  interruptionReason?: AgentInterruptionReason;
   createdAt: number;
   updatedAt: number;
   repoMap?: TaskRepoSummary;
   latestFailure?: TaskContextFailure;
   pendingApproval?: TaskContextApproval;
+  activeChangeSetId?: string;
   userConstraints?: string[];
 }
 

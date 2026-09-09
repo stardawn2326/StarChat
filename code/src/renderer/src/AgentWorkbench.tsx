@@ -1,5 +1,6 @@
 import { forwardRef, useEffect, useMemo, useRef, useState, type ButtonHTMLAttributes, type CSSProperties, type HTMLAttributes, type ReactNode, type RefObject } from 'react';
 import type { AgentTask } from '../../shared/agent';
+import type { TaskContext } from '../../shared/task-context';
 import type { WorkbenchDiffPreview, WorkbenchEnvironment, WorkbenchFilePreview, WorkbenchInspection, WorkbenchVerificationResult, WorkbenchVerificationScript } from '../../shared/workbench';
 import { workbenchGitStatusLabel, workbenchSessionMeta } from '../../shared/workbench';
 import { AGENT_TASK_STATUS_LABELS, currentAgentStep, isActiveAgentTaskStatus } from './agent-ui-model';
@@ -263,6 +264,7 @@ interface WorkbenchToolPanelProps {
   onApproveTask?: (task: AgentTask, approved: boolean) => void;
   onRetryTask?: (task: AgentTask) => void;
   onRespondTask?: (task: AgentTask) => void;
+  onDismissTask?: (task: AgentTask) => void;
 }
 
 const STEP_STATUS_LABELS = { started: '进行中', completed: '已完成', waiting: '等待中', failed: '失败' } as const;
@@ -282,14 +284,39 @@ function AgentApprovalCenter({ task, onApprove }: { task: AgentTask; onApprove?:
   </section>;
 }
 
-function AgentTaskDetail({ task, onApprove, onRetry, onRespond, onCancel }: { task: AgentTask; onApprove?: (task: AgentTask, approved: boolean) => void; onRetry?: (task: AgentTask) => void; onRespond?: (task: AgentTask) => void; onCancel?: (taskId: string) => void }): JSX.Element {
+function AgentTaskDetail({ task, onApprove, onRetry, onRespond, onCancel, onDismiss }: { task: AgentTask; onApprove?: (task: AgentTask, approved: boolean) => void; onRetry?: (task: AgentTask) => void; onRespond?: (task: AgentTask) => void; onCancel?: (taskId: string) => void; onDismiss?: (task: AgentTask) => void }): JSX.Element {
   const retryable = ['interrupted', 'failed', 'cancelled', 'timed_out'].includes(task.status);
+  const [context, setContext] = useState<TaskContext | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
+  const [contextBusy, setContextBusy] = useState(false);
+  const [contextError, setContextError] = useState('');
+  useEffect(() => {
+    setContext(null);
+    setContextOpen(false);
+    setContextError('');
+  }, [task.id]);
+  const loadContext = async (): Promise<void> => {
+    setContextBusy(true);
+    setContextError('');
+    try {
+      setContext(await window.starchat.agent.context(task.id));
+      setContextOpen(true);
+    } catch (reason) {
+      setContext(null);
+      setContextError(reason instanceof Error ? reason.message : '任务上下文读取失败');
+      setContextOpen(true);
+    } finally {
+      setContextBusy(false);
+    }
+  };
   return <>
     <header><span className={`wb-task-status is-${task.status}`}>{AGENT_TASK_STATUS_LABELS[task.status].label}</span><h3>{task.message}</h3><p>{task.route.explain}</p>{task.resumedFromTaskId ? <p className="wb-task-lineage">由中断任务重新执行 · 原任务 {task.resumedFromTaskId.slice(0, 8)}</p> : null}</header>
     <ol className="wb-agent-timeline" data-agent-ui="timeline" aria-label="Agent 执行时间线">{task.steps.map((step) => <li key={step.id} className={`is-${step.status}`}><WorkbenchIcon name={step.status === 'completed' ? 'agentDone' : 'agentStep'} size={16} /><span><strong>{step.summary}</strong><small>{STEP_STATUS_LABELS[step.status]} · {new Date(step.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</small></span></li>)}</ol>
     <AgentApprovalCenter task={task} onApprove={onApprove} />
     {task.result ? <section className="wb-task-result" aria-label="任务结果"><h4>结果</h4><p>{task.result.summary}</p>{task.result.changedFiles?.length ? <p>已修改：{task.result.changedFiles.join('、')}</p> : null}{task.result.verification ? <p className={task.result.verification.ok ? 'is-success' : 'is-error'}>自动验证 {task.result.verification.script}：{task.result.verification.ok ? '通过' : '失败'}</p> : null}</section> : null}
-    <div className="wb-task-actions">{task.input ? <button type="button" className="primary-button" onClick={() => onRespond?.(task)}>补充信息</button> : null}{isActiveAgentTaskStatus(task.status) ? <button type="button" className="secondary-button" onClick={() => onCancel?.(task.id)}>停止任务</button> : null}{retryable ? <button type="button" className="primary-button" onClick={() => onRetry?.(task)}>重新执行</button> : null}</div>
+    {!isActiveAgentTaskStatus(task.status) ? <button type="button" className="secondary-button wb-task-context-trigger" disabled={contextBusy} onClick={() => void loadContext()}>{contextBusy ? '读取中…' : '查看上下文'}</button> : null}
+    {contextOpen ? <section className="wb-task-context" data-agent-ui="task-context" aria-label="任务上下文"><h4>任务上下文</h4>{context ? <p>状态：{context.status} · 中断原因：{context.interruptionReason ?? '未记录'} · 已读文件 {context.filesRead.length} 个 · 发现 {context.findings.length} 条 · 验证 {context.verification.length} 条 · 活跃变更集 {context.activeChangeSetId ? '有' : '无'}</p> : <p>{contextError || '暂无结构化上下文。'}</p>}</section> : null}
+    <div className="wb-task-actions">{task.input ? <button type="button" className="primary-button" onClick={() => onRespond?.(task)}>补充信息</button> : null}{isActiveAgentTaskStatus(task.status) ? <button type="button" className="secondary-button" onClick={() => onCancel?.(task.id)}>停止任务</button> : null}{retryable ? <button type="button" className="primary-button" onClick={() => onRetry?.(task)}>重新执行</button> : null}{!isActiveAgentTaskStatus(task.status) && onDismiss ? <button type="button" className="secondary-button" onClick={() => onDismiss(task)}>移除记录</button> : null}</div>
     {task.error ? <p className="wb-tool-error" role="alert">{task.error}</p> : null}
   </>;
 }
@@ -363,7 +390,7 @@ function WorkbenchToolPanel(props: WorkbenchToolPanelProps): JSX.Element {
   if (props.activeTool === 'tasks') {
     return <section className="wb-tool-panel" data-workbench-tool="tasks" aria-label="任务管理">
       <ToolPanelHeader kicker="AGENT TASKS" title="任务管理" busy={false} onRefresh={props.onRefresh} onClose={props.onClose} />
-      <div className="wb-tool-split"><nav className="wb-task-list" aria-label="会话任务列表">{props.tasks.map((task) => <button type="button" key={task.id} className={task.id === selectedTask?.id ? 'is-active' : ''} onClick={() => setSelectedTaskId(task.id)}><strong>{task.message}</strong><span>{AGENT_TASK_STATUS_LABELS[task.status].label} · {currentAgentStep(task)}</span></button>)}{props.tasks.length === 0 ? <p className="wb-tool-empty">当前会话暂无 Agent 任务。</p> : null}</nav><article className="wb-task-detail" aria-label="任务详情">{selectedTask ? <AgentTaskDetail task={selectedTask} onApprove={props.onApproveTask} onRetry={props.onRetryTask} onRespond={props.onRespondTask} onCancel={props.onCancelTask} /> : <div className="wb-tool-empty"><p>选择任务查看步骤、审批和结果。</p></div>}</article></div>
+      <div className="wb-tool-split"><nav className="wb-task-list" aria-label="会话任务列表">{props.tasks.map((task) => <button type="button" key={task.id} className={task.id === selectedTask?.id ? 'is-active' : ''} onClick={() => setSelectedTaskId(task.id)}><strong>{task.message}</strong><span>{AGENT_TASK_STATUS_LABELS[task.status].label} · {currentAgentStep(task)}</span></button>)}{props.tasks.length === 0 ? <p className="wb-tool-empty">当前会话暂无 Agent 任务。</p> : null}</nav><article className="wb-task-detail" aria-label="任务详情">{selectedTask ? <AgentTaskDetail task={selectedTask} onApprove={props.onApproveTask} onRetry={props.onRetryTask} onRespond={props.onRespondTask} onCancel={props.onCancelTask} onDismiss={props.onDismissTask} /> : <div className="wb-tool-empty"><p>选择任务查看步骤、审批和结果。</p></div>}</article></div>
     </section>;
   }
 
@@ -526,6 +553,7 @@ interface AgentWorkbenchProps {
   onApproveTask?: (task: AgentTask, approved: boolean) => void;
   onRetryTask?: (task: AgentTask) => void;
   onRespondTask?: (task: AgentTask) => void;
+  onDismissTask?: (task: AgentTask) => void;
   onShare?: () => Promise<string>;
   onCancelTask?: (taskId: string) => void;
   onMinimize?: () => void;
@@ -540,7 +568,7 @@ interface AgentWorkbenchProps {
   children: ReactNode;
 }
 
-export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _modelLabel, theme = 'light', onToggleTheme = () => undefined, bottomPanelOpen = false, agentAvailable = true, agentTasks = [], onNavigate, onToggleBottomPanel, onNewConversation = () => onNavigate(null), sessionTitle = '当前会话', sessionMetaLabel, sessionMessageCount = 0, workspaceLabel = '本地工作区', workspaces = [], sessions = [], activeWorkspaceId = null, activeSessionId = null, onChooseWorkspace = () => undefined, onSelectWorkspace = () => undefined, onSelectSession = () => undefined, onRenameSession = () => undefined, onDeleteSession = () => undefined, workspaceTrust = 'untrusted', onSetWorkspaceTrust = () => undefined, environment = null, inspection = null, activeTool = null, filePreview = null, diffPreview = null, verification = null, toolBusy = false, onToolAction, onRefreshInspection = () => undefined, onOpenResource = () => undefined, onPreviewFile = () => undefined, onPreviewDiff = () => undefined, onVerify = () => undefined, onApproveTask, onRetryTask = (task) => { void window.starchat.agent.retry(task.id); }, onRespondTask, onShare, onCancelTask, onMinimize = () => undefined, onClose = () => undefined, onMaximize, isMaximized = false, initialEnvironmentOpen = false, centerTitle, referenceEnvironment = false, referenceLayout = false, referenceFixture = false, children }: AgentWorkbenchProps): JSX.Element {
+export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _modelLabel, theme = 'light', onToggleTheme = () => undefined, bottomPanelOpen = false, agentAvailable = true, agentTasks = [], onNavigate, onToggleBottomPanel, onNewConversation = () => onNavigate(null), sessionTitle = '当前会话', sessionMetaLabel, sessionMessageCount = 0, workspaceLabel = '本地工作区', workspaces = [], sessions = [], activeWorkspaceId = null, activeSessionId = null, onChooseWorkspace = () => undefined, onSelectWorkspace = () => undefined, onSelectSession = () => undefined, onRenameSession = () => undefined, onDeleteSession = () => undefined, workspaceTrust = 'untrusted', onSetWorkspaceTrust = () => undefined, environment = null, inspection = null, activeTool = null, filePreview = null, diffPreview = null, verification = null, toolBusy = false, onToolAction, onRefreshInspection = () => undefined, onOpenResource = () => undefined, onPreviewFile = () => undefined, onPreviewDiff = () => undefined, onVerify = () => undefined, onApproveTask, onRetryTask = (task) => { void window.starchat.agent.retry(task.id); }, onRespondTask, onShare, onCancelTask, onDismissTask, onMinimize = () => undefined, onClose = () => undefined, onMaximize, isMaximized = false, initialEnvironmentOpen = false, centerTitle, referenceEnvironment = false, referenceLayout = false, referenceFixture = false, children }: AgentWorkbenchProps): JSX.Element {
   const initialLayout = useMemo(() => referenceLayout ? REFERENCE_WORKBENCH_LAYOUT : readWorkbenchLayoutState(), [referenceLayout]);
   const [viewport, setViewport] = useState(rendererViewport);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(initialLayout.sidebarCollapsed);
@@ -598,7 +626,7 @@ export function AgentWorkbench({ activePage, roleName: _roleName, modelLabel: _m
     '--wb-frame-bottom-inset': scaleLength(12),
     '--wb-character-width': scaleLength(initialLayout.characterWidth)
   } as CSSProperties;
-  const toolPanel = activePage === null && activeTool ? <WorkbenchToolPanel activeTool={activeTool} inspection={inspection} filePreview={filePreview} diffPreview={diffPreview} verification={verification} tasks={agentTasks} workspaceTrust={workspaceTrust} busy={toolBusy} onClose={() => onToolAction?.(activeTool)} onRefresh={onRefreshInspection} onOpenResource={onOpenResource} onPreviewFile={onPreviewFile} onPreviewDiff={onPreviewDiff} onVerify={onVerify} onCancelTask={onCancelTask} onApproveTask={onApproveTask} onRetryTask={onRetryTask} onRespondTask={onRespondTask} /> : null;
+  const toolPanel = activePage === null && activeTool ? <WorkbenchToolPanel activeTool={activeTool} inspection={inspection} filePreview={filePreview} diffPreview={diffPreview} verification={verification} tasks={agentTasks} workspaceTrust={workspaceTrust} busy={toolBusy} onClose={() => onToolAction?.(activeTool)} onRefresh={onRefreshInspection} onOpenResource={onOpenResource} onPreviewFile={onPreviewFile} onPreviewDiff={onPreviewDiff} onVerify={onVerify} onCancelTask={onCancelTask} onApproveTask={onApproveTask} onRetryTask={onRetryTask} onRespondTask={onRespondTask} onDismissTask={onDismissTask} /> : null;
   return <div className="wb-shell" style={shellStyle} data-workbench="shell" data-workbench-structure="shared" data-workbench-visual="reference" data-workbench-theme="tokenized" data-workbench-mode={activePage === null ? 'workbench' : 'settings'} data-reference-layout={referenceLayout ? 'true' : 'false'} data-agent-available={agentAvailable} data-sidebar-state={sidebarCollapsed ? 'collapsed' : 'expanded'} data-right-rail-state={rightRailCollapsed ? 'collapsed' : 'expanded'} data-bottom-panel={bottomPanelOpen ? 'open' : 'closed'} data-sidebar-width={sidebarWidth} data-right-rail-width={effectiveRightRailWidth} data-bottom-panel-height={effectiveBottomPanelHeight}>
     <Topbar sidebarCollapsed={sidebarCollapsed} onToggleSidebar={toggleSidebar} sidebarToggleRef={sidebarToggleRef} onMinimize={onMinimize} onMaximize={onMaximize} onClose={onClose} isMaximized={isMaximized} theme={theme} onToggleTheme={onToggleTheme} />
     {activePage === null ? <Sidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} onNewConversation={onNewConversation} workspaceLabel={workspaceLabel} sessionTitle={sessionTitle} sessionMeta={sessionMetaLabel ?? workbenchSessionMeta(sessionMessageCount, false)} referenceFixture={referenceFixture} workspaces={workspaces} sessions={sessions} activeWorkspaceId={activeWorkspaceId} activeSessionId={activeSessionId} onChooseWorkspace={onChooseWorkspace} onSelectWorkspace={onSelectWorkspace} onSelectSession={onSelectSession} onRenameSession={onRenameSession} onDeleteSession={onDeleteSession} /> : <SettingsSidebar collapsed={sidebarCollapsed} activePage={activePage} onNavigate={onNavigate} />}

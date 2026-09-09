@@ -65,6 +65,7 @@ import { CubismRuntimeSession } from './cubism-runtime-session';
 import { AgentStore } from './agent-store';
 import { AgentService } from './agent-service';
 import { TaskContextStore } from './task-context-store';
+import { ChangeSetStore } from './change-set-store';
 import { SessionStore } from './session-store';
 import { MemoryStore } from './memory-store';
 import { MemoryService } from './memory-service';
@@ -97,6 +98,7 @@ let live2dAdapterStore: Live2DAdapterStore;
 let agentStore: AgentStore;
 let agentService: AgentService;
 let taskContextStore: TaskContextStore;
+let changeSetStore: ChangeSetStore;
 let sessionStore: SessionStore;
 let memoryService: MemoryService;
 let isQuitting = false;
@@ -2090,6 +2092,16 @@ function registerIpc(): void {
     if (typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
     return getAgentService().get(taskId);
   });
+  ipcMain.handle('agent:context', (event, taskId: unknown) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof taskId !== 'string') throw new Error('Agent 上下文请求无效');
+    return getAgentService().context(taskId);
+  });
+  ipcMain.handle('agent:dismiss', (event, taskId: unknown) => {
+    requireIpcWindow(event.sender, 'settings', { settingsWindow, petWindow });
+    if (typeof taskId !== 'string') throw new Error('Agent 任务请求无效');
+    getAgentService().dismiss(taskId);
+  });
 }
 
 if (singleInstanceLock) {
@@ -2109,6 +2121,7 @@ if (singleInstanceLock) {
     live2dAdapterStore = new Live2DAdapterStore(userDataDir);
     agentStore = new AgentStore(join(userDataDir, 'agent-tasks.json'));
     taskContextStore = new TaskContextStore(join(userDataDir, 'agent-task-contexts.json'));
+    changeSetStore = new ChangeSetStore(join(userDataDir, 'agent-change-sets.json'));
     sessionStore = new SessionStore(join(userDataDir, 'workbench-sessions.json'));
     sessionStore.ensurePersonalSession(settingsStore.readSettings().activeRoleId);
     const memoryPath = join(userDataDir, 'memory.json');
@@ -2134,7 +2147,8 @@ if (singleInstanceLock) {
         return classifyAmbiguousWithModel(context.settings, context.apiKey, message);
       },
       emit: sendAgentEvent,
-      taskContextStore
+      taskContextStore,
+      changeSetStore
     });
     const settings = settingsStore.readSettings();
     cubismRuntimeSession.setCurrentModel(settings.live2dModelPath);

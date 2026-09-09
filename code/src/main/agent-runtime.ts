@@ -63,11 +63,17 @@ export interface AgentInputRequest {
   prompt: string;
 }
 
+export interface AgentWriteFailure {
+  state: 'apply-failed' | 'partial-failure';
+  affectedPaths: string[];
+  rollbackFailures: string[];
+}
+
 export type AgentRuntimeResult =
   | { status: 'completed'; result: AgentResult }
   | { status: 'waiting_for_approval'; approval: AgentApprovalRequest }
   | { status: 'waiting_for_input'; input: AgentInputRequest }
-  | { status: 'failed' | 'cancelled' | 'timed_out'; error: string };
+  | { status: 'failed' | 'cancelled' | 'timed_out'; error: string; writeFailure?: AgentWriteFailure };
 
 interface PendingTool {
   call: AgentToolCall;
@@ -92,6 +98,21 @@ function abortError(): Error {
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === 'AbortError';
+}
+
+function isChangeSetInvalidationError(error: unknown): boolean {
+  return error instanceof Error && error.name === 'ChangeSetInvalidatedError';
+}
+
+function writeFailure(error: unknown): AgentWriteFailure | undefined {
+  if (!(error instanceof Error) || error.name !== 'ChangeSetApplyError') return undefined;
+  const candidate = error as Error & Partial<AgentWriteFailure>;
+  if (candidate.state !== 'apply-failed' && candidate.state !== 'partial-failure') return undefined;
+  return {
+    state: candidate.state,
+    affectedPaths: Array.isArray(candidate.affectedPaths) ? candidate.affectedPaths.filter((path): path is string => typeof path === 'string').slice(0, 50) : [],
+    rollbackFailures: Array.isArray(candidate.rollbackFailures) ? candidate.rollbackFailures.filter((item): item is string => typeof item === 'string').slice(0, 20) : []
+  };
 }
 
 async function withTimeout<T>(factory: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parentSignal: AbortSignal): Promise<T> {
@@ -340,7 +361,11 @@ export class AgentRuntime {
         this.onTool?.({ invocationId: pending.call.id, toolName: pending.call.name, status: 'completed', summary: approved ? '用户批准后执行完成' : '用户拒绝计划' });
       } catch (error) {
         this.onTool?.({ invocationId: pending.call.id, toolName: pending.call.name, status: 'failed', summary: '批准后执行失败' });
-        this.messages.push({ role: 'tool', toolCallId: pending.call.id, content: `工具执行错误：${error instanceof Error ? error.message : '工具执行失败'}` });
+        const message = error instanceof Error ? error.message : '工具执行失败';
+        this.messages.push({ role: 'tool', toolCallId: pending.call.id, content: `工具执行错误：${message}` });
+        if (isChangeSetInvalidationError(error)) return { status: 'failed', error: message };
+        const failure = writeFailure(error);
+        if (failure) return { status: 'failed', error: message, writeFailure: failure };
       }
     }
     this.startedAt = Date.now();

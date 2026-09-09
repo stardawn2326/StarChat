@@ -11,6 +11,13 @@ export type AgentTaskStatus =
   | 'timed_out'
   | 'interrupted';
 
+export type AgentInterruptionReason =
+  | 'application-restart'
+  | 'runtime-lost'
+  | 'workspace-unavailable'
+  | 'approval-expired'
+  | 'input-expired';
+
 export const AGENT_MODE_OPTIONS: ReadonlyArray<{ value: AgentMode; label: string; description: string }> = [
   { value: 'auto', label: '自动判断', description: '普通对话陪伴；文件、项目、搜索、测试、构建和修改交给 Agent。' },
   { value: 'companion', label: '纯陪伴', description: '只进行角色对话，不调用后台工具。' },
@@ -79,6 +86,7 @@ export interface AgentChangePreview {
   additions: number;
   deletions: number;
   changes?: AgentChangePreviewItem[];
+  changeSetId?: string;
 }
 
 export type AgentFileChange =
@@ -131,6 +139,7 @@ export interface AgentTask {
   mode: AgentMode;
   route: AgentRouteDecision;
   status: AgentTaskStatus;
+  interruptionReason?: AgentInterruptionReason;
   createdAt: number;
   updatedAt: number;
   currentStep: number;
