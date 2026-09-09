@@ -99,14 +99,15 @@
 
 - 类型：Windows x64 Portable。
 - 文件：`outputs/StarChat 0.2.1.exe`。
-- 大小：78,986,682 bytes。
-- SHA-256：`35113ED2D8B85A4E82F5DC64780299DBEC0D878BDEB1C63A5C3C0E99C07D8745`。
+- 大小：78,989,045 bytes。
+- SHA-256：`9396BA74698F96CBAA1DD816506CB72722CCE38FBBA9C09E2219313170ED845F`。
 - 未配置代码签名证书，EXE 保持未签名；打包过程未启动应用。
 
 ## 6. 验收边界与清理策略
 
 - 自动化检查不能替代真实 Windows 窗口、托盘、Live2D、拖动/缩放和桌宠交互验收；这些实机项目仍标记为 `DEFERRED`，未虚报为已通过。
 - 本批次未实现 D7 及方案明确排除的浏览器、桌面控制、Agent 自动 Git 推送、Rebase 或硬重置能力。
+- 已删除旧的 `docs/acceptance` 验收文档目录及其中 5 个历史文档；本文件作为本批次交付记录保留在项目根目录。
 - Git 中仅保留源码、必要构建配置、测试和本变更详情；构建生成的 `code/out`、`outputs/win-unpacked`、builder 调试文件、依赖目录、缓存和日志按既有清理要求移除，最终 EXE 保留在 `outputs`。
 
 ## 7. Git 交付
