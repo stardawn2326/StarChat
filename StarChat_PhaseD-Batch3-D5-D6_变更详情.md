@@ -103,7 +103,8 @@
 | `pnpm exec vitest run --exclude=src/main/git-runner.test.ts --exclude=src/main/brand-migration.test.ts` | 通过；114 个测试文件、598 个测试 |
 | `pnpm exec vitest run src/main/git-runner.test.ts` | 通过；1 个测试文件、3 个测试 |
 | `pnpm exec vitest run src/main/brand-migration.test.ts` | 通过；1 个测试文件、2 个测试 |
-| `pnpm build` | 通过 |
+| `pnpm build` | 通过；D7 Windows 打包前置构建再次通过 |
+| `pnpm run package:win` | 通过；最终 master `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc` 生成 Windows x64 portable EXE |
 | `git diff --check` | 通过；仅有 Windows 换行转换提示 |
 
 新增覆盖包括：哈希与元数据不落正文、创建/更新/删除组合、外部修改/目标消失、内容/操作/范围/工作区身份变化、拒绝目录/敏感文件/符号链接、大小限制、事务阶段失败、三类回滚、回滚失败、Agent 终止模型循环、重启归一化、上下文审计、重试新任务、D7 组合链路和 UI/IPC 契约。
@@ -127,17 +128,21 @@
 - Multi-compaction：D7 基线链路保留至少 2 次累计上下文压缩；既有运行时专项测试继续验证 3 次压缩后的文件、错误和验证事实不丢失。
 - 组合测试共 4 个测试全部通过；测试指标只记录数量、路径和状态，不记录密钥、文件正文或绝对工作区路径。
 
-## 6. Windows 本地包装边界
+## 6. Windows Final RC 产物
 
-- D5 Seal 不强制重新打包；D7 Final 后生成新的本地 Windows Final RC 供用户下载，但本地 `outputs` EXE 不作为 GitHub Release Artifact 或 Windows/Live2D 实机验收证据。
-- Windows / Live2D 实机验收继续单独标记为 `DEFERRED`；便携 EXE 的打包成功只证明本地构建流程和文件存在性。
+- D7 Final 后已从最终 master 生成本地 Windows x64 portable EXE：`outputs/StarChat 0.2.1.exe`。
+- 文件大小：`78,990,521` bytes；SHA-256：`DD1555DC34622C3ECFC2D8338522C5AAC048BF6C5C93B3A837E519817FD5B26B`。
+- 产物未配置代码签名证书，构建日志确认跳过签名；使用前 Windows 可能显示未签名提示。
+- 该 EXE 是本机打包结果，不提交到 Git（`outputs/` 已被 `.gitignore` 忽略），不作为 GitHub Release Artifact 或 Windows/Live2D 实机验收证据。
+- Windows / Live2D 实机验收继续标记为 `DEFERRED`；便携 EXE 的打包成功只证明本地构建流程和文件存在性。
 
 ## 7. 验收边界与清理策略
 
 - 自动化检查不能替代真实 Windows 窗口、托盘、Live2D、拖动/缩放和桌宠交互验收；这些实机项目仍标记为 `DEFERRED`，未虚报为已通过。
 - D7 不扩大权限：不实现 Browser、Desktop Computer Use、任意 Shell、Agent 自动 Git add/commit/push、checkout/rebase/reset-hard。
 - 已从基线 `ffd760be62f2ad8852456a032854e23e382a2c45` 精确恢复 `docs/acceptance` 下 5 个历史验收文档，不改写其内容。
-- `code/out`、`outputs/win-unpacked`、builder 调试文件、依赖目录、缓存和日志仍按既有清理要求处理；最终 Windows RC 仅在 D7 Final 后生成。
+- 最终交付后删除 `code/node_modules`、`code/out`、`outputs/win-unpacked`、`outputs/builder-debug.yml`、pnpm 临时 store、缓存和日志；保留源码、`package.json`/`pnpm-lock.yaml` 等构建依赖声明、最终 EXE 和审计文档。
+- 依据本方案的审计链恢复要求，保留并核对 `docs/acceptance` 五个历史验收文档；这项留存优先于前序“删除 docs”的清理要求。
 
 ## 8. Git 交付
 
@@ -147,4 +152,9 @@
 - 清理提交：`a4aaa9a`（`chore: remove obsolete acceptance artifacts`；本轮已用基线恢复验收文档）。
 - 目标远程仓库：`https://github.com/stardawn2326/StarChat.git`。
 - D5/D6 推送分支：`feat/phase-d-change-review-recovery`，已合并 PR #2；D5/D6 Seal PR CI 与合并后的 master CI 均通过。
-- D7 推送分支：`feat/phase-d-agent-v1-5-e2e`；D7 提交、PR HEAD、Actions 运行编号、最终 master SHA 和本地 Windows RC 校验值将在本轮交付回执中补齐。
+- D7 提交：`02bae1b`（`test: add agent v1.5 e2e acceptance`）。
+- D7 PR：[#3](https://github.com/stardawn2326/StarChat/pull/3)，PR HEAD `02bae1b0a803ea79ce1a1f41ecbfcc5f8bdf2756`，已合并。
+- D7 PR CI：Actions run `34348153314`，通过；合并提交：`ab9d6f3e31dc9bc69920ca637902ca336bcb17dc`。
+- D7 合并后 master CI：Actions run `34348335347`，通过；当前最终 master 为 `ab9d6f3e31dc9bc69920ca637902ca336bcb17dc`。
+- D5/D6 Seal PR #2：最终提交 `7de02af`，PR CI run `34346796811` 通过；合并提交 `069a2890c0cf95f4b2322616c4798baf36572ff7`，master CI run `34347002823` 通过。
+- D7 推送分支：`feat/phase-d-agent-v1-5-e2e`；详情文档、验收代码和最终 master 状态均已推送到 `https://github.com/stardawn2326/StarChat.git`。
